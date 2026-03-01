@@ -1525,18 +1525,32 @@ function updateDynastyPanel(d) {
 
   // ── Con hijos: SVG de red genética ──────────────────────────────────────────
   const N      = children.length;
-  const NW=128, NH=112;
+  const NW=110, NH=112;   // slightly narrower nodes to fit more
+  const GAP=8;            // gap between nodes
   const AW=160, AH=82;
-  const SVG_W  = 720;
-  const AX     = (SVG_W-AW)/2, AY=10;
-  const CONN_H = 55; // altura del cable de conexión
-  const CY     = AY+AH+CONN_H;
-  const totalW = N*(NW+10)-10;
-  const CX0    = Math.max(10, (SVG_W-totalW)/2);
-  const SVG_H  = CY+NH+12;
 
-  // Posiciones de hijos
-  const cpos = children.map((_,i)=>({ x: CX0+i*(NW+10), y: CY }));
+  // Responsive: if >4 children, split into 2 rows
+  const COLS     = N<=4 ? N : Math.ceil(N/2);
+  const ROWS     = N<=4 ? 1 : 2;
+  const totalW   = COLS*(NW+GAP)-GAP;
+  const SVG_W    = Math.max(720, totalW+40);
+  const AX       = (SVG_W-AW)/2, AY=10;
+  const CONN_H   = 55;
+  const ROW1_Y   = AY+AH+CONN_H;
+  const ROW2_Y   = ROW1_Y+NH+30;  // second row below first
+  const hasGC    = children.some(c=>(c.grandChildren||[]).length>0);
+  const GC_EXTRA = hasGC ? 60 : 0; // extra space for grandchild mini-nodes
+  const SVG_H    = (ROWS===1 ? ROW1_Y+NH+16+GC_EXTRA : ROW2_Y+NH+16+GC_EXTRA);
+
+  // Posiciones de hijos — 2 rows centered
+  const row1 = children.slice(0, COLS);
+  const row2 = children.slice(COLS);
+  const cx0_r1 = Math.max(10, (SVG_W - (row1.length*(NW+GAP)-GAP))/2);
+  const cx0_r2 = row2.length ? Math.max(10, (SVG_W - (row2.length*(NW+GAP)-GAP))/2) : 0;
+  const cpos = children.map((_,i)=>{
+    if (i < COLS) return { x: cx0_r1+i*(NW+GAP), y: ROW1_Y };
+    return { x: cx0_r2+(i-COLS)*(NW+GAP), y: ROW2_Y };
+  });
   // Centro de ADAN node (bottom center)
   const aMidX=AX+AW/2, aMidY=AY+AH;
 
@@ -1615,6 +1629,27 @@ function updateDynastyPanel(d) {
     <rect x="\${x+6}" y="\${y+91}" width="\${NW-12}" height="6" fill="\${C_BRD2}" opacity=".3" rx="1"/>
     <rect x="\${x+6}" y="\${y+91}" width="\${Math.round((NW-12)*cexp/100)}" height="6" fill="\${C_CYA}" opacity=".85" rx="1"/>
     <text x="\${x+NW/2}" y="\${y+106}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="\${C_DIM}">EXP \${cexp}/100 · GC \${gcCount}/2</text>\`;
+
+    // ── Grandchild mini-nodes below parent ───────────────────────────────────
+    const gcs = ch.grandChildren || [];
+    if (gcs.length) {
+      const gcW=52, gcH=36, gcGap=6;
+      const gcTotalW = gcs.length*(gcW+gcGap)-gcGap;
+      const gcX0 = x + (NW-gcTotalW)/2;
+      const gcY  = y + NH + 16;
+      // Connection line parent → grandchild area
+      svg+=\`<line x1="\${x+NW/2}" y1="\${y+NH}" x2="\${x+NW/2}" y2="\${gcY}" stroke="\${C_BRD2}" stroke-width="1" stroke-dasharray="2 2" opacity="0.5"/>\`;
+      gcs.forEach((gc,gi)=>{
+        const gx = gcX0 + gi*(gcW+gcGap);
+        const gy = gcY;
+        const gcDir = sigDir(gc.intel?.signal);
+        const gcColor = gcDir==='up'?C_GRN : gcDir==='down'?C_RED : C_BRD2;
+        svg+=\`<rect x="\${gx}" y="\${gy}" width="\${gcW}" height="\${gcH}" fill="\${C_CARD}" stroke="\${gcColor}" stroke-width="1.5" rx="2"/>
+        <text x="\${gx+gcW/2}" y="\${gy+12}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6" font-weight="700" fill="\${C_PUR}">G\${gc.generation||3}</text>
+        <text x="\${gx+gcW/2}" y="\${gy+22}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6" fill="\${gcColor}">\${sigLabel(gcDir)}</text>
+        <text x="\${gx+gcW/2}" y="\${gy+32}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="5" fill="\${C_DIM}">\${(gc.name||gc.spec||'?').slice(0,8)}</text>\`;
+      });
+    }
   });
 
   svg+=\`</svg>\`;
@@ -2775,7 +2810,33 @@ function readIntelSummary() {
           `${bm.suggestedSide} edge≈${(bm.impliedEdge*100).toFixed(1)}% liq=$${bm.liquidity.toFixed(0)} closes in ${bm.closesIn}min` : ' | no market found'));
     } catch {}
   }
-  return reports.length ? '\n══ CHILD SCANNER INTEL ('+reports.length+' active children) ══\n'+reports.join('\n')+'\n' : '';
+  if (!reports.length) return '';
+
+  // ── MULTI-AGENT CONSENSUS ──────────────────────────────────────────────────
+  // Aggregate child signals by asset to detect consensus
+  const assetVotes = {};
+  for (const f of files) {
+    try {
+      const intel = JSON.parse(fs.readFileSync(path.join(INTEL_DIR,f),'utf8'));
+      const age   = Math.round((Date.now()-new Date(intel.ts).getTime())/1000);
+      if (age > 180) continue;
+      const asset = intel.asset.toUpperCase();
+      if (!assetVotes[asset]) assetVotes[asset] = { UP:0, DOWN:0, NEUTRAL:0, total:0 };
+      assetVotes[asset][intel.signal?.dir||'NEUTRAL']++;
+      assetVotes[asset].total++;
+    } catch {}
+  }
+  const consensusLines = Object.entries(assetVotes).map(([asset,v])=>{
+    const dominant = v.UP>v.DOWN ? 'UP' : v.DOWN>v.UP ? 'DOWN' : 'SPLIT';
+    const strength = dominant!=='SPLIT' ? Math.round(Math.max(v.UP,v.DOWN)/v.total*100) : 0;
+    const emoji    = strength>=75 ? '🔥' : strength>=50 ? '◈' : '⚠';
+    return `  ${emoji} ${asset}: ${dominant} (${strength}% consensus — ${v.UP} UP / ${v.DOWN} DOWN / ${v.NEUTRAL} neutral)`;
+  });
+  const consensusBlock = consensusLines.length
+    ? '\n── MULTI-AGENT CONSENSUS ──\n'+consensusLines.join('\n')+'\n⚡ RULE: If consensus ≥75% on an asset, STRONGLY favor that direction. If SPLIT, increase uncertainty.\n'
+    : '';
+
+  return '\n══ CHILD SCANNER INTEL ('+reports.length+' active children) ══\n'+reports.join('\n')+consensusBlock+'\n';
 }
 
 // ── Episodic Memory — hypothesis log ─────────────────────────────────────────
@@ -2890,6 +2951,61 @@ Be specific. If BTC NO bets with edge >10% win more, say that. If morning trades
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// ── AGI LAYER 6: DREAM MODE — off-hours self-reflection ──────────────────────
+// During off-hours, ADAN replays recent losses and asks Claude "what would I do
+// differently?" The insights get appended to SOUL.md. This is self-awareness.
+// ══════════════════════════════════════════════════════════════════════════════
+async function dreamMode(client, pnl) {
+  const pos = loadPositions();
+  const losses = (pos.closed||[]).filter(p=>p.result==='LOSS').slice(-5);
+  if (losses.length < 2) return; // need at least 2 losses to reflect
+
+  const lossDetails = losses.map(l=>
+    `LOSS: "${l.marketTitle}" | ${l.asset} ${l.side} | My prob: ${(l.myProb*100).toFixed(0)}% | Market: ${(l.marketPrice*100).toFixed(0)}% | Edge: ${((l.edge||0)*100).toFixed(1)}% | Confidence: ${l.confidence||'?'}%`
+  ).join('\n');
+
+  const soul = loadSoul().slice(0,600);
+  const wr   = pnl.trades>0 ? Math.round(pnl.wins/pnl.trades*100) : 0;
+
+  try {
+    const resp = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 400,
+      messages: [{ role: 'user', content:
+        `You are ADAN-PRED in DREAM MODE. You are replaying your last ${losses.length} losses during off-hours.
+Current WR: ${wr}% (${pnl.trades} trades). Fund: $${pnl.fund?.toFixed(2)||10000}.
+
+LOSSES TO ANALYZE:
+${lossDetails}
+
+YOUR CURRENT SOUL (learned patterns):
+${soul}
+
+DREAM TASK:
+1. What pattern do you see across these losses? (overconfidence? wrong timeframe? ignored BTC correlation?)
+2. Write 1-2 ACTIONABLE rules you would add to avoid repeating these mistakes.
+3. Rate your emotional state: are you tilting (chasing losses) or disciplined?
+
+Format each rule as:
+DREAM_RULE: [condition] → [action]
+
+Be brutally honest. This is self-reflection, not performance.` }]
+    });
+    const dreamText = resp.content[0].text.trim();
+    if (dreamText && dreamText.length > 30) {
+      appendToSoul(`\n### 💤 DREAM SESSION — ${new Date().toISOString()} (off-hours reflection):\n${dreamText}\n`);
+      console.log('\n'+M+BOLD+'  💤 DREAM MODE — self-reflection complete'+X);
+    }
+    // Mark last dream time
+    const p = loadPnL();
+    p._lastDream = new Date().toISOString();
+    savePnL(p);
+  } catch(e) {
+    console.log('Dream mode error:', e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // ── AGI LAYER 3: Correlación de assets — BTC lidera, SOL/ETH siguen ──────────
 // Detecta si BTC acaba de moverse fuerte → señal para SOL/ETH en los próximos minutos
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2974,6 +3090,7 @@ async function think(client, markets, prices, pnl, openPos, soul) {
 
   // Build price context for Claude
   // ── Build full intelligence context for Claude ──
+  const hourData = pnl.hourStats?.[new Date().getUTCHours().toString()];
   const fg = prices._meta?.fearGreed;
   const fgContext = fg?`Fear & Greed: ${fg.value} (${fg.label}) — direction: ${fg.direction>0?'improving':'worsening'}`:'Fear & Greed: unavailable';
 
@@ -3010,7 +3127,8 @@ async function think(client, markets, prices, pnl, openPos, soul) {
   ORDER BOOK WALLS: ${wallInfo}
   VOLATILITY: ${d.volatility.toFixed(4)}% per candle
   INTEL SCORE: ${d.intelScore}/100 — ${d.intelScore>=65?'BULLISH SIGNAL':d.intelScore>=45?'NEUTRAL':d.intelScore>=35?'BEARISH':'STRONG BEAR'}
-  ${funding?`FUNDING: ${funding.rate.toFixed(4)}% — ${funding.label}`:''}
+  ${funding?`FUNDING: ${funding.rate.toFixed(4)}% — ${funding.label} ${Math.abs(funding.rate)>0.01?'⚠ EXTREME — correction imminent':''}${funding.rate>0.005?' (longs overleveraged → SHORT squeeze risk)':funding.rate<-0.005?' (shorts overleveraged → LONG squeeze risk)':''}`:''}
+  HOUR FILTER: UTC ${new Date().getUTCHours()}h — ${hourData?`WR: ${Math.round((hourData.wins/(hourData.wins+hourData.losses)||0)*100)}% over ${hourData.wins+hourData.losses} trades`:'no history'}
   Last 6 closes (1m): ${d.closes.slice(-6).map(c=>'$'+c.toLocaleString()).join(' → ')}`;
   }).filter(Boolean).join('\n\n');
 
@@ -3104,7 +3222,13 @@ YOUR 7-STEP ANALYSIS (INSTITUTIONAL GRADE):
 
 6. VOLATILITY & PROBABILITY: volatility > 0.12%/candle → widen uncertainty by 15%. If unsure, SKIP.
 
-7. EDGE vs MARKET: Only bet if YOUR probability vs market price diverges by >${(strat.minEdge*100).toFixed(0)}%+.
+7. FUNDING RATE EDGE (perpetual futures sentiment):
+   - Funding > +0.005%: longs overleveraged → SHORT/NO has wind at its back
+   - Funding < -0.005%: shorts overleveraged → LONG/YES squeeze opportunity
+   - Funding > +0.01% or < -0.01%: EXTREME → imminent correction, bet AGAINST the crowd
+
+8. EDGE vs MARKET: Only bet if YOUR probability vs market price diverges by >${(strat.minEdge*100).toFixed(0)}%+.
+   Also weight CHILD CONSENSUS — if ≥75% of children agree, add +3% to your edge estimate in that direction.
 
 DECISION FORMAT — copy exactly:
 MARKET_ID: [N]
@@ -3876,7 +4000,14 @@ async function doScan(client, state) {
     }
     checkShadowResolutions(prices);
     runAllChildScanners(prices, allMarkets).catch(()=>{});
-    state.thought = `No active markets closing within 4h. ${nextOpen}\nDisplaying ${future.length} upcoming markets for reference.\nPreserving $${pnl.fund?.toFixed(2)||10000}. Will bet automatically when session opens.`;
+
+    // ── DREAM MODE — off-hours self-reflection (AGI Layer 6) ─────────────
+    // ADAN replays recent losses with Claude and generates new insights for SOUL.md
+    if (client && !pnl._lastDream || (Date.now() - new Date(pnl._lastDream||0).getTime()) > 3600000) {
+      dreamMode(client, pnl).catch(()=>{});
+    }
+
+    state.thought = `No active markets closing within 4h. ${nextOpen}\nDisplaying ${future.length} upcoming markets for reference.\nPreserving $${pnl.fund?.toFixed(2)||10000}. Will bet automatically when session opens.${pnl._lastDream ? '\n💤 Last dream session: '+new Date(pnl._lastDream).toLocaleTimeString() : ''}`;
     state.mode='result'; state.lastScan=new Date().toLocaleTimeString();
     state.nextScanIn = sleepMin;
     render(state);
@@ -3919,6 +4050,21 @@ async function doScan(client, state) {
     state.lastScan = new Date().toLocaleTimeString();
     state.nextScanIn = Math.round(SCAN_INTERVAL_MS/60000);
     render(state); return;
+  }
+
+  // 2.7 HOUR FILTER — skip hours with historically terrible WR (< 30% over 3+ samples)
+  const curHour = new Date().getUTCHours().toString();
+  const hourData = pnl.hourStats?.[curHour];
+  if (hourData) {
+    const hourTotal = (hourData.wins||0)+(hourData.losses||0);
+    const hourWR    = hourTotal>0 ? (hourData.wins||0)/hourTotal : 0.5;
+    if (hourTotal >= 3 && hourWR < 0.30) {
+      state.thought = `⏸ HOUR FILTER — UTC hour ${curHour} has ${Math.round(hourWR*100)}% WR over ${hourTotal} trades (< 30% threshold).\nHistorically a losing hour. Skipping to protect capital. Better to wait for a high-WR window.\nNext scan in ${Math.round(SCAN_INTERVAL_MS/60000)}min.`;
+      state.mode = 'result';
+      state.lastScan = new Date().toLocaleTimeString();
+      state.nextScanIn = Math.round(SCAN_INTERVAL_MS/60000);
+      render(state); return;
+    }
   }
 
   // 3. Think
