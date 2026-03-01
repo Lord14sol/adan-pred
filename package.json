@@ -1,0 +1,18 @@
+{
+  "name": "adan-skill",
+  "version": "1.1.0",
+  "description": "Web4 autonomous agent for Solana — PumpFun trading + Jupiter Prediction Markets. By Lord.",
+  "type": "module",
+  "bin": {
+    "adan-skill": "./adan.js",
+    "adan-pred": "./adan-pred.js"
+  },
+  "scripts": {
+    "start": "node adan.js",
+    "pred": "node adan-pred.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.0",
+    "@solana/web3.js": "^1.98.0"
+  }
+}
