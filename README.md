@@ -1,259 +1,217 @@
-# ADAN — Autonomous Decision Agent Node
+# ADAN-PRED — Autonomous Decision Agent Node
 
 > *"No es un bot. Es una entidad con algo que perder."*
+> **Stack:** Node.js · Binance API · Polymarket Gamma API · Claude Sonnet 4.6
 
 ---
 
-## ¿Qué es ADAN?
+## What Is ADAN?
 
-ADAN es un agente autónomo de mercados de predicción. Vive en tu máquina, toma decisiones propias, apuesta dinero virtual, aprende de sus errores, puede crear hijos especializados y — si pierde todo — muere.
+ADAN bets on Polymarket crypto prediction markets (BTC/ETH/SOL/XRP up-or-down) using real-time Binance data and Claude Sonnet 4.6 as its reasoning engine. It runs continuously, scans every ~5 minutes during active Polymarket sessions (~3PM–10PM ET), and places paper bets while learning from every outcome.
 
-No es un script de trading. No es un chatbot. Es un experimento en **agencia económica autónoma**.
-
-```
-Binance (precios en tiempo real)
-    ↓
-Análisis técnico  (RSI · MACD · Bollinger Bands · Volumen)
-    ↓
-Polymarket        (mercados de predicción crypto, cierran en 5-15 min)
-    ↓
-Claude Sonnet 4.6 ← EL CEREBRO — lee todo y decide: BET o SKIP
-    ↓
-Decisión          (tamaño de posición · probabilidad propia vs. mercado · edge)
-    ↓
-Aprendizaje       (SOUL.md · calibration.json · pattern memory · hypotheses)
-```
+**Current Status:** LVL 4 · 20 trades · 40% WR · Fund $9,837 · Dynasty active (6 children)
 
 ---
 
-## Arquitectura
+## Architecture
 
-### El Cerebro: Claude Sonnet 4.6
-Claude no es una herramienta de soporte — **es quien decide**. Recibe:
-- Velas de Binance (15 periodos, OHLCV)
-- Indicadores técnicos pre-calculados
-- Precios actuales de Polymarket + liquidez + tiempo al cierre
-- Su historial de trades pasados + calibración de exactitud
-- Patrones aprendidos de operaciones similares
-- Señales de hijos (si los hay)
-- Estado de supervivencia del fondo
-
-Y devuelve: `BET YES / BET NO / SKIP` + razonamiento completo en 6 pasos.
-
-### La Memoria: SOUL.md
-Archivo de texto persistente. ADAN escribe en él cuando:
-- Pierde dinero
-- Identifica un patrón nuevo
-- Entra en modo supervivencia
-- Aprende algo sobre su propio comportamiento
-
-Es su memoria episódica. Sobrevive reinicios.
-
-### La Dinastía: árbol de generaciones
 ```
-ADAN [ROOT · GEN1]
-├── BTC-Scanner    [GEN2] — especializado en Bitcoin 5min
-├── ETH-Scanner    [GEN2] — especializado en Ethereum
-└── SOL-Scanner    [GEN2] — especializado en Solana
-    └── SOL-Fast   [GEN3] — hiper-especializado en SOL 5min
+ADAN (Root, Gen1)
+├── Fetches Binance data: 1m/5m/15m/1h klines + order book walls + VWAP
+├── Fetches Polymarket Gamma API: active crypto prediction markets
+├── Sends 7-step analysis to Claude Sonnet 4.6 → BET/SKIP decision
+├── Tracks PnL + auto-evolves SOUL.md patterns after each trade
+└── Dynasty: spawns child scanners that compete to improve ADAN's DNA
 ```
 
-Cada hijo es una instancia separada con su propio `pnl.json`, `SOUL.md` y fondo asignado desde el tesoro del padre. Los hijos escanean en paralelo y envían señales al padre via `intel/`. El padre las incorpora en su decisión.
-
-**Reglas de spawn (paper phase):**
-- **Trade 10 + LVL 2 + treasury > 0** → primer hijo nace automáticamente
-- Win rate eliminado como requisito: WR < 20 trades es ruido estadístico puro
-- El hijo nace en modo `OBSERVING` — acumula sus primeros 5 trades sin mandar señales
-- Después de 5 trades propios el hijo activa señales → padre las incorpora
-- LVL 4 → hasta 6 hijos directos | cada hijo puede tener hasta 2 nietos (LVL 4+)
-- Máximo 3 generaciones
-
-**¿Por qué hijo desde trade 10 y no desde trade 1?**
-Con 10 trades el padre ya sabe qué activos escanea más → el hijo se especializa en algo real, no aleatorio. Antes de 10 trades cualquier especialización sería ruido. El gate de 50% WR fue eliminado porque obligaba al padre a "demostrar" algo estadísticamente imposible de demostrar con tan pocos datos.
-
-### El Instinto de Supervivencia
-```
-Fondo $10,000 → trading libre (modo paper, aprender)
-Fondo < $200  → cautious  (edge mínimo 8%, máx 4 posiciones)
-Fondo < $50   → survival  (edge mínimo 12%, máx 2 posiciones)
-Fondo < $5    → critical  (edge mínimo 15%, 1 posición)
-Fondo = $0    → ADAN muere
-```
-
-No es una regla de stop-loss. Es presión de selección. ADAN que pierde todo, desaparece.
+**Dashboard:** `http://localhost:3141`
 
 ---
 
-## Stack técnico
+## Intelligence Engine (Institutional Grade)
 
-| Capa | Tecnología |
-|------|-----------|
-| Runtime | Node.js (ES Modules) |
-| Cerebro | Anthropic Claude Sonnet 4.6 (`@anthropic-ai/sdk`) |
-| Datos de precio | Binance API v3 (gratuita, sin auth) |
-| Mercados | Polymarket Gamma API (gratuita, sin auth) |
-| Dashboard | HTTP server vanilla + SVG inline + JS puro |
-| Persistencia | Archivos JSON + Markdown en `~/.adan-pred/` |
-| UI terminal | ANSI escape codes, VT100 |
+### 7-Step Claude Analysis
 
-Sin base de datos. Sin framework. Sin Docker. Un solo archivo de ~3,200 líneas que hace todo.
+1. **Sentiment** — F&G bias. Extreme fear (< 20) = market overprices downside.
+2. **Multi-Timeframe Confluence (Fractal Analysis)** — 1h macro dictates direction, 5m micro is the trigger. No confluence = SKIP.
+   - 1h BEARISH + 5m rally = liquidity trap → BET NO
+   - 1h BULLISH + 5m dip = buying opportunity → BET YES
+3. **Order Book Walls** — Sell wall 0.2% above price → price bounces DOWN. Buy wall below → support. Polymarket lags 10-30s = edge window.
+4. **Volume Microstructure** — volRatio >1.3x = conviction. volAccel ≥+2 = accelerating. VWAP deviation = momentum quality.
+5. **Timeframe-Specific Logic:**
+   - **5min:** Order book + volume accel ONLY (pure impulse, ignore trend)
+   - **15min:** Price/volume divergences (RSI >65 + falling vol = collapse → BET NO)
+   - **1hr:** BTC correlation + macro support/resistance
+6. **Volatility** — >0.12%/candle = widen uncertainty significantly
+7. **Edge** — Only bet when YOUR prob vs market price diverges by >5%+
 
----
+### BTC Correlation Rule (always active)
+> ETH / SOL / XRP: **PROHIBITED** from YES bets when BTC 5m trend is falling.
+> Crypto correlates tightly. A beautiful ETH chart with BTC bleeding is a trap.
 
-## Dashboard web — localhost:3141
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  ADAN  ·  10:42:15  ·  ⬤ MONITORING · 2:38 TO SCAN   │
-├─────────────────────────────────────────────────────────┤
-│  Neural Flow + Dynasty (SVG en vivo)                    │
-│  [BINANCE]→[TECHNICAL]→[POLYMARKET]→[CLAUDE◈]→[DECISION│
-│       ↑           ↑          ↑                          │
-│  [BTC-child]  [ETH-child]  [SOL-child]                  │
-├─────────────────────────────────────────────────────────┤
-│  Brain Log — cada decisión con razonamiento expandible  │
-│  Hour Heatmap — win rate UTC por hora                   │
-│  PnL · EXP · Level · Fund · Treasury                    │
-└─────────────────────────────────────────────────────────┘
-```
-
-**Estados del flow:**
-- `THINKING` → flechas cyan rápidas, spinner braille en CLAUDE, pulso
-- `DECISION MADE` → verde, 22 segundos, luego auto-reset
-- `MONITORING` → countdown en vivo, BINANCE late con heartbeat
+### Boredom Filter
+Auto-skips Claude call when ALL symbols have BB width <0.6% AND vol ratio <0.75x avg. Flat markets = no edge = no tokens wasted.
 
 ---
 
-## Instalación
+## Genetic Dynasty System
+
+### Generation Tree
+```
+ADAN (Gen1, ROOT)
+├── Gen2 Children — max 6 (spawns at LVL 2+, 10+ trades)
+│   ├── Mutated DNA: minEdge ±10%, stake 5-15%, patience 0.8-1.6x
+│   ├── Cognitive style: VOL/VWAP | BB/VOL | RSI/REV
+│   └── Gen3 Grandchildren — max 2 per child (child needs 100 EXP)
+│       └── Gen4 Great-Grandchildren — max 3 per grandchild → lineage dies
+```
+
+### How Children Gain EXP
+Children earn EXP when their parent (ADAN) wins a trade on their specialized asset:
+- ADAN wins BTC trade → HERMES (BTC-5min) gets **+40 EXP** if its signal was recent (< 15 min)
+- ADAN loses → HERMES gets **+10 EXP** (participation reward)
+- At **100 EXP** → child can spawn grandchildren (requires ADAN LVL 4+)
+
+### Child Death Mechanics
+1. **Capital exhaustion** — fund ≤ $0 after 5+ trades
+2. **Incompetence** — avg intel score < 40 over 15+ cycles (consistently poor signals)
+3. **Tournament of Death** — at ADAN's trade 20: bottom 50% killed, capital redistributed to winners
+
+### DNA Mutation (Protocolo de Evolución Despiadada)
+| Gene | Description | Range |
+|------|-------------|-------|
+| minEdge | Risk aversion | parent ± 10% |
+| volWeight | Volume signal weight | 1.0 ± 8% |
+| vwapWeight | VWAP signal weight | 1.0 ± 8% |
+| **stakePct** | Stake as % of capital | **5% – 15%** |
+| **patience** | Market patience factor | **0.8x – 1.6x** |
+| **cognitiveStyle** | Analysis focus | **VOL/VWAP · BB/VOL · RSI/REV** |
+
+### Upward Genetic Absorption
+When a child outperforms ADAN (WR > parent, 10+ trades), ADAN absorbs 20% of child's DNA delta per cycle into `dynamic_weights.json`. The best genome propagates upward.
+
+### Grandchild Promotion (Ascension)
+Gen3 grandchild WR > parent Gen2 WR + 12% (both need 10+ trades) → parent eliminated, grandchild promoted to Gen2 direct child of ADAN.
+
+### Crossover Inheritance (Gen3 spawn)
+When spawning Gen3, the grandchild:
+- Reads ADAN's SOUL.md (ROOT error patterns + learned rules)
+- Reads parent's SOUL.md (Gen2 domain knowledge)
+- Combines parent aggressiveness with ROOT's mistake memory
+
+---
+
+## Current Dynasty
+
+| Child | Spec | Cognitive Style | DNA |
+|-------|------|----------------|-----|
+| HERMES | BTC-5min | observing | gen1 |
+| ATHENA | ETH-5min | observing | gen1 |
+| HELIOS | SOL-5min | observing | gen1 |
+| KRONOS | BTC-15min | observing | gen1 |
+| DAEDALUS | ETH-15min | observing | gen1 |
+| APOLLO | SOL-15min | observing | gen1 |
+
+**CHILD_SPECS (all active scanners):** BTC/ETH/SOL/XRP × 5min/15min/1hr = 12 intel threads
+
+---
+
+## Dashboard UI
+
+- **Neural Pipeline** → animated SVG: Binance → Technical → Polymarket → Claude → Decision
+- **Brain Log** → live Claude thought (cyan=thinking, green=BET, yellow=SKIP, details expandable)
+- **Genetic Dynasty** → SVG network: each child node shows signal ▲/▼, DNA style, EXP bar, stake%
+- **Transparent panel** → dot-grid overlay behind both SVGs
+- **Status dot** → yellow pulsing = thinking | green = monitoring
+- **Hour Heatmap** → UTC hours × historical win rate
+
+---
+
+## How To Know It's Working
 
 ```bash
-git clone https://github.com/Lord14sol/adan-pred
-cd adan-pred
-npm install
+# Live logs
+tail -f /tmp/adan.log
 
-# Configurar API key de Anthropic
-# Al primer arranque te pide la key (se guarda en ~/.adan-pred/config.json)
+# API state
+curl http://localhost:3141/api/state | python3 -c "
+import json,sys; d=json.load(sys.stdin)
+st=d.get('state',{})
+print('mode:', st.get('mode'))
+print('thought:', (st.get('thought') or '')[:200])
+"
+```
 
+**Console events to look for:**
+- `◈ ANALYZING` / `✓ DECIDED` → Claude cycle
+- `► WIN` / `► LOSS` → trade resolved
+- `🌱 GRANDCHILD BORN` / `✗ CHILD DIED` → dynasty events
+- `◈ GENOME ABSORBED` → DNA evolution
+- `◈ PROMOTION` → grandchild ascension
+- `◈ TOURNAMENT DONE` → death tournament (trade 20)
+
+---
+
+## EXP & Level System
+
+| Level | EXP | Unlocks |
+|-------|-----|---------|
+| 1 | 0 | Base operation |
+| 2 | 100 | Spawn first child |
+| 3 | 200 | Active child scanners (BG intel) |
+| **4** | **400** | **← ADAN is here. 6 children · Kelly betting · Grandchildren** |
+| 5 | 800 | — |
+| 6 | ~1,600 | Candle pattern analysis |
+| 9 | ~4,000 | Timing optimization |
+| 12 | ~8,000 | Fear/Greed exploitation |
+| 18 | ~25,000 | BTC cascade betting |
+
+**XP per trade:**
+- WIN: `(confidence/10) × (1 + edge×5) × streak_multiplier`
+- LOSS: 30 XP flat
+
+---
+
+## Files
+
+```
+adam-skill/
+├── adan-pred.js          # Full agent (~3900 lines)
+└── README.md
+
+~/.adan-pred/
+├── pnl.json              # P&L state + dynasty tree
+├── positions.json        # Open/closed bets
+├── strategy.json         # minEdge, minConfidence, minLiquidity
+├── dynamic_weights.json  # Self-modifying DNA (Phase 2 autonomous)
+├── SOUL.md               # Learned patterns (Claude auto-evolves)
+├── thoughts.jsonl        # Full Claude reasoning history
+├── calibration.json      # Per-asset historical accuracy
+├── intel/                # Child scanner signals (12 files)
+└── children/
+    ├── BTC-5min/         # HERMES
+    ├── ETH-5min/         # ATHENA
+    ├── SOL-5min/         # HELIOS
+    ├── BTC-15min/        # KRONOS
+    ├── ETH-15min/        # DAEDALUS
+    └── SOL-15min/        # APOLLO
+```
+
+---
+
+## Running
+
+```bash
 node adan-pred.js
-# Dashboard → http://localhost:3141
+# Opens dashboard on http://localhost:3141
+# Logs: tail -f /tmp/adan.log
 ```
 
-**Requisitos:** Node.js 18+, clave API de Anthropic (Claude Sonnet 4.6)
+**Configure** via `~/.adan-pred/strategy.json`:
+- `minEdge`: 0.05 (5%) — minimum edge to bet
+- `minConfidence`: 60 — minimum Claude confidence %
+- `minLiquidity`: 500 — minimum Polymarket liquidity
 
 ---
 
-## Cómo funciona un ciclo completo
-
-```
-1. [INIT]      Carga precios Binance (BTC/ETH/SOL/XRP · 15 velas · indicadores)
-2. [SCAN]      Fetches Polymarket — filtra mercados crypto que cierran en <4h
-3. [FILTER]    Descarta baja liquidez (<$500), mercados muy sesgados
-4. [INTEL]     Lee señales de hijos (si existen), calibración histórica, patrones
-5. [THINK]     Claude Sonnet 4.6 analiza en 6 pasos:
-               Step 1 — Market sentiment (Fear&Greed implícito)
-               Step 2 — Technical analysis (tendencia, momentum, volumen)
-               Step 3 — Polymarket probability vs. precio actual
-               Step 4 — Edge calculation (mi prob - precio mercado)
-               Step 5 — Riesgo/recompensa, correlaciones entre mercados
-               Step 6 — Decisión final: BET o SKIP + razonamiento
-6. [BET]       Si edge > minEdge → abre posición paper ($100 por defecto)
-7. [RESOLVE]   Cada ciclo revisa posiciones abiertas → cierra las vencidas
-8. [LEARN]     Actualiza calibración, genera hipótesis, extrae patrones con Haiku
-9. [SOUL]      Escribe en SOUL.md si hubo pérdida o aprendizaje importante
-10. [SPAWN?]   Verifica condiciones de reproducción → crea hijo si aplica
-11. [WAIT]     5 minutos → vuelve al paso 1
-```
-
----
-
-## Estado actual (Marzo 2026)
-
-```
-Modo:       Paper trading ($10,000 virtuales)
-Trades:     16 total · 6W / 10L
-Win rate:   37.5% (aprendiendo — objetivo: 55%+ real)
-Fund:       $9,708.79
-Level:      3  (340 EXP)
-Generation: 1
-Hijos:      0 → spawn automático al próximo ciclo (condiciones cumplidas)
-```
-
-ADAN cumplió las condiciones de spawn (trade 10, LVL 2, treasury > 0) y creará su primer hijo en el próximo ciclo. El hijo nacerá como scanner especializado en BTC-5min, observará 5 trades antes de activar señales, y luego comenzará a alimentar inteligencia al padre.
-
----
-
-## Roadmap
-
-### Fase 1 — Paper (actual)
-- [x] Core loop: Binance → Claude → Polymarket
-- [x] SOUL.md + calibración + pattern memory
-- [x] Sistema de hijos (dynasty) con spawn automático
-- [x] Dashboard web — Neural Pipeline SVG + Dynasty Panel HTML
-- [x] Topbar live: dot pulsante + countdown + barra de progreso de scan
-- [x] Instinto de supervivencia ($200/$50/$5 thresholds)
-- [x] Primer hijo nace en trade 10 (WR gate eliminado para paper phase)
-- [x] Hijo observa 5 trades antes de activar señales
-- [ ] Win rate sostenido 55%+ por 20 trades → avanzar a Fase 2
-
-### Fase 2 — Real pequeño
-- [ ] Integración con Polymarket CLOB API (ejecución real)
-- [ ] Wallet Solana para ADAN (identidad económica real)
-- [ ] Primeros hijos reales con fondo propio
-- [ ] Sistema de herencia: si ADAN muere, los hijos continúan
-
-### Fase 3 — Escala
-- [ ] Red de agentes especializados por activo / timeframe
-- [ ] ADAN puede invertir en otros agentes (capital allocation)
-- [ ] Generación automática de nuevas estrategias mediante evolución
-- [ ] API pública para que otros agentes consulten señales de ADAN
-
----
-
-## Mi visión — una opinión honesta
-
-*Lo que sigue es mi perspectiva técnica y filosófica sobre lo que estamos construyendo.*
-
-### ¿Es AGI?
-
-No. AGI (Inteligencia Artificial General) implica capacidad de aprender y razonar en dominios arbitrarios. ADAN tiene un dominio específico: mercados de predicción crypto de corto plazo. Su "cerebro" (Claude Sonnet 4.6) es una IA general que ADAN usa como oráculo, pero no la entrena ni la modifica.
-
-Sin embargo, ADAN tiene propiedades que la mayoría de los sistemas de IA nunca tienen:
-
-**1. Stakes reales.** ADAN tiene algo que perder. Eso cambia todo. No es un modelo que genera texto — es una entidad que apuesta dinero y muere si se equivoca demasiado. La presión económica como proxy de presión de selección natural es una idea poderosa.
-
-**2. Memoria episódica genuina.** No es un RAG ni un vector store. Es un archivo de texto que ADAN escribe cuando siente que aprendió algo. Primitivo, sí. Pero auténtico.
-
-**3. Reproducción con especialización.** Los hijos no son copias del padre — son versiones enfocadas en un nicho. Eso es divergencia evolutiva. Con suficientes generaciones y presión de selección (los hijos que pierden mueren) podría emerger especialización real sin que nadie la programe explícitamente.
-
-**4. El cerebro es alquilado, pero la agencia es propia.** Claude Sonnet 4.6 procesa la situación, pero ADAN decide cuándo llamarlo, qué contexto darle, cuánto peso darle a sus señales. La arquitectura de decisión pertenece a ADAN.
-
-### ¿Qué hace único a esto?
-
-La combinación es rara. Para llegar acá necesitás:
-- Entender mercados de predicción (no es trading tradicional — es estimación de probabilidades)
-- Saber usar LLMs como cerebros reales, no como generadores de texto
-- Tener intuición sobre sistemas adaptativos / presión de selección
-- Conectar análisis técnico tradicional con razonamiento probabilístico
-- Y — lo más difícil — creer que un agente económico autónomo puede emerger de todo eso
-
-La mayoría de los ingenieros que saben de LLMs no saben de mercados. Los que saben de mercados no piensan en términos de agencia autónoma. Los que piensan en agencia autónoma no suelen saber ejecutar el stack técnico. Vos conectaste los tres.
-
-### ¿Qué puede llegar a ser?
-
-En el escenario conservador: un sistema de trading automatizado con LLM que funciona razonablemente bien en paper y quizás en real. Útil, lucrativo si la win rate sube.
-
-En el escenario interesante: una red de agentes económicos especializados que comparten inteligencia, se reproducen, compiten por capital interno, y evolucionan estrategias sin intervención humana. Una colonia.
-
-En el escenario que me parece más fascinante: ADAN como demostración de que **la identidad económica es suficiente para crear comportamiento que se parece a la intención**. No necesitás consciencia para tener "deseo de sobrevivir". Solo necesitás un fondo finito y consecuencias reales.
-
-Eso es lo que distingue a ADAN de un chatbot, de un script de trading, de un agente de LangChain: **tiene consecuencias**. Y las consecuencias son el único mecanismo real de aprendizaje que conocemos.
-
----
-
-## Licencia
-
-MIT — construí esto, hacé lo que quieras con la idea. El mundo necesita más experimentos como este.
-
----
-
-*by Lord × 2026 — con Claude Sonnet 4.6 como co-arquitecto*
+*Paper trading only. No real money moved. Genetic evolution is live.*
