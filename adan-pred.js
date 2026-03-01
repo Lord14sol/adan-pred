@@ -586,9 +586,28 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 @keyframes avThink{0%,100%{filter:drop-shadow(0 0 4px #22d3ee88)}50%{filter:drop-shadow(0 0 12px #22d3ee) drop-shadow(0 0 20px #7c3aed88)}}
 @keyframes avIdle{0%,100%{filter:drop-shadow(0 0 3px #7c3aed44)}50%{filter:drop-shadow(0 0 6px #7c3aed88)}}
 @keyframes avWin{0%{filter:drop-shadow(0 0 4px #34d399)}50%{filter:drop-shadow(0 0 16px #34d399) drop-shadow(0 0 8px #fbbf24)}100%{filter:drop-shadow(0 0 4px #34d399)}}
+@keyframes avBetting{0%{filter:drop-shadow(0 0 4px #ef444488)}50%{filter:drop-shadow(0 0 14px #ef4444) drop-shadow(0 0 6px #22c55e)}100%{filter:drop-shadow(0 0 4px #22c55e88)}}
+@keyframes avLosing{0%,100%{transform:translateY(2px);filter:brightness(0.6) drop-shadow(0 0 2px #8a1a1a44)}50%{transform:translateY(4px);filter:brightness(0.5) drop-shadow(0 0 1px #8a1a1a22)}}
+@keyframes avDreaming{0%,100%{filter:drop-shadow(0 0 6px #8b5cf688) hue-rotate(0deg)}33%{filter:drop-shadow(0 0 12px #a78bfa) hue-rotate(20deg)}66%{filter:drop-shadow(0 0 8px #c084fc) hue-rotate(-20deg)}}
+@keyframes avCrown{0%{opacity:1;transform:translateY(0) scale(1)}50%{opacity:0.8;transform:translateY(-2px) scale(1.1)}100%{opacity:0;transform:translateY(-8px) scale(0.5)}}
+@keyframes avZfloat{0%{opacity:1;transform:translate(0,0) scale(0.8)}100%{opacity:0;transform:translate(12px,-20px) scale(1.2)}}
+@keyframes avAgresivo{0%,100%{transform:translateY(0)}25%{transform:translateY(-6px)}50%{transform:translateY(-2px)}75%{transform:translateY(-5px)}}
+@keyframes avBlink{0%,90%,100%{transform:scaleY(1)}95%{transform:scaleY(0.1)}}
+@keyframes avBlinkSlow{0%,85%,100%{transform:scaleY(1)}90%{transform:scaleY(0.1)}}
 .av-sprite{animation:avFloat 3s ease-in-out infinite,avIdle 4s ease-in-out infinite}
 .av-sprite.thinking{animation:avFloat 1.2s ease-in-out infinite,avThink .8s ease-in-out infinite}
 .av-sprite.winning{animation:avFloat 2s ease-in-out infinite,avWin .5s ease-in-out 3}
+.av-sprite.betting{animation:avFloat 1.5s ease-in-out infinite,avBetting 0.6s ease-in-out infinite}
+.av-sprite.losing{animation:avLosing 2.5s ease-in-out infinite}
+.av-sprite.dreaming{animation:avFloat 5s ease-in-out infinite,avDreaming 4s ease-in-out infinite}
+.av-sprite.p-analitico{animation:avFloat 4s ease-in-out infinite,avIdle 6s ease-in-out infinite}
+.av-sprite.p-analitico #avatar-eyes{animation:avBlinkSlow 6s ease-in-out infinite}
+.av-sprite.p-agresivo{animation:avAgresivo 1.5s ease-in-out infinite,avIdle 2s ease-in-out infinite}
+.av-sprite.p-agresivo #avatar-eyes{filter:brightness(1.5)}
+.av-sprite.p-cauteloso{animation:avFloat 5s ease-in-out infinite}
+.av-sprite.p-cauteloso #avatar-eyes{animation:avBlink 4s ease-in-out infinite}
+.av-crown{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:20px;animation:avCrown 2s ease-out forwards;pointer-events:none}
+.av-zzz{position:absolute;top:10px;right:-10px;font-size:11px;color:var(--purple);animation:avZfloat 2s ease-out infinite;pointer-events:none}
 .avatar-name{font-size:9px;font-family:var(--pixel);color:var(--purple);margin-top:4px}
 .avatar-title{font-size:9px;color:var(--grey);margin-top:3px;font-family:var(--pixel);line-height:1.6}
 .avatar-status{display:inline-flex;align-items:center;gap:5px;margin-top:6px;font-size:9px;padding:3px 8px;background:var(--bg4);border:2px solid var(--border);font-family:var(--pixel)}
@@ -1449,7 +1468,7 @@ async function refresh(){
     updateAvatar(d);
 
     // ADAN World Conway
-    updateAdanWorld(d.children || []);
+    updateAdanWorld(d.children || [], d.config || {});
 
     // Neural flow + dynasty panel
     updateNeuralFlow(d);
@@ -1485,9 +1504,63 @@ function updateAvatar(d) {
   const pnl  = d.pnl;
   const pct  = pnl.trades>0 ? Math.round(pnl.wins/pnl.trades*100) : 0;
   const openCount = (d.positions?.open||[]).length;
+  const personality = d.config?.avatar?.personality || 'analitico';
+  const lastTrade = (d.positions?.closed||[]).slice(-1)[0];
+  const lastWasWin = lastTrade?.result === 'WIN';
+  const lastWasLoss = lastTrade?.result === 'LOSS';
+  const lastTradeRecent = lastTrade?.resolvedAt && (Date.now() - new Date(lastTrade.resolvedAt).getTime()) < 30000;
+  const isDreaming = !mode && openCount === 0 && !d.state?.prices?.['BTCUSDT'];
 
-  // Animation class
-  sprite.className = 'av-sprite' + (mode==='thinking' ? ' thinking' : (pct>=55&&pnl.trades>=5 ? ' winning' : ''));
+  // Determine avatar visual state
+  let avState = '';
+  if (mode === 'thinking') avState = 'thinking';
+  else if (openCount > 0 && mode === 'result') avState = 'betting';
+  else if (lastWasWin && lastTradeRecent) avState = 'winning';
+  else if (lastWasLoss && lastTradeRecent) avState = 'losing';
+  else if (isDreaming) avState = 'dreaming';
+  else if (pct >= 55 && pnl.trades >= 5) avState = 'winning';
+
+  // Personality base class (only when idle-ish)
+  const pClass = (!avState || avState === 'winning') ? ' p-' + personality : '';
+  sprite.className = 'av-sprite' + (avState ? ' ' + avState : '') + pClass;
+
+  // Dynamic eye color based on betting state
+  const eyesEl = document.getElementById('avatar-eyes');
+  if (eyesEl) {
+    if (avState === 'betting') {
+      const lastBetSide = (d.positions?.open||[]).slice(-1)[0]?.side;
+      eyesEl.style.fill = lastBetSide === 'YES' ? '#22c55e' : '#ef4444';
+    } else if (avState === 'losing') {
+      eyesEl.style.fill = '#666';
+    } else if (d.config?.avatar?.eyeColor) {
+      eyesEl.style.fill = d.config.avatar.eyeColor;
+    }
+  }
+
+  // Crown on winning (temporary)
+  const wrap = document.getElementById('av-sprite-wrap');
+  if (wrap) {
+    const existingCrown = wrap.querySelector('.av-crown');
+    const existingZzz = wrap.querySelector('.av-zzz');
+    if (avState === 'winning' && lastWasWin && lastTradeRecent && !existingCrown) {
+      const crown = document.createElement('div');
+      crown.className = 'av-crown';
+      crown.textContent = '👑';
+      wrap.style.position = 'relative';
+      wrap.appendChild(crown);
+      setTimeout(() => crown.remove(), 2000);
+    }
+    if (avState === 'dreaming' && !existingZzz) {
+      const zzz = document.createElement('div');
+      zzz.className = 'av-zzz';
+      zzz.textContent = 'Z';
+      wrap.style.position = 'relative';
+      wrap.appendChild(zzz);
+      setTimeout(() => zzz.remove(), 2000);
+    } else if (avState !== 'dreaming' && existingZzz) {
+      existingZzz.remove();
+    }
+  }
 
   // Status dot + text
   if (mode==='thinking') {
@@ -1623,7 +1696,7 @@ function updateDecisionsLog(d) {
   wrap.innerHTML = html;
 }
 
-// ── Neural Pipeline Visualization (pipeline only — dynasty rendered as HTML below) ──
+// ── Neural Pipeline Visualization — RADIAL with ADAN center + 3 Parents orbiting ──
 function updateNeuralFlow(d) {
   const wrap = document.getElementById('nf-wrap');
   if (!wrap) return;
@@ -1641,112 +1714,162 @@ function updateNeuralFlow(d) {
   const fmt    = (v,dp=2) => v!=null ? v.toFixed(dp) : '--';
   const chgTxt = (p) => p ? (p.chg>=0?'+':'')+fmt(p.chg,1)+'%' : '--';
 
-  // ── Paleta retro = misma que la página ──────────────────────────────────
-  // bg:#ccc8bc  bg2:#ddd9cc  border:#1a1a1a  text:#1a1a1a  dim:#888878
-  // purple:#5a1a8a  cyan:#1a4a8a  green:#1a5a1a  red:#8a1a1a  yellow:#7a5a10
-  const C_BG    = '#ccc8bc';   // fondo SVG = fondo página
-  const C_CARD  = '#ddd9cc';   // fondo nodo = --bg2
-  const C_CARD3 = '#e8e4d8';   // nodo activo/hover = --bg3
-  const C_BRD   = '#1a1a1a';   // borde negro pixel = --border
-  const C_BRD2  = '#3a3a2a';   // borde secundario = --border2
-  const C_TXT   = '#1a1a1a';   // texto principal = --text
-  const C_DIM   = '#888878';   // texto apagado = --dim
-  const C_SHD   = '#1a1a1a';   // sombra pixel
-  const C_CYA   = '#1a4a8a';   // cyan retro (--cyan)
-  const C_GRN   = '#1a5a1a';   // verde retro (--green)
-  const C_PUR   = '#5a1a8a';   // púrpura (--purple)
-  const C_YEL   = '#7a5a10';   // amarillo retro (--yellow)
-  const C_RED   = '#8a1a1a';   // rojo retro (--red)
+  const C_BG    = '#ccc8bc';
+  const C_CARD  = '#ddd9cc';
+  const C_CARD3 = '#e8e4d8';
+  const C_BRD   = '#1a1a1a';
+  const C_BRD2  = '#3a3a2a';
+  const C_TXT   = '#1a1a1a';
+  const C_DIM   = '#888878';
+  const C_SHD   = '#1a1a1a';
+  const C_CYA   = '#1a4a8a';
+  const C_GRN   = '#1a5a1a';
+  const C_PUR   = '#5a1a8a';
+  const C_YEL   = '#7a5a10';
+  const C_RED   = '#8a1a1a';
 
-  // Estado → colores de línea/partícula
   const lnColor = isThinking ? C_CYA : isDone ? C_GRN : C_BRD2;
-  const lnCls   = isThinking ? 'nf-flowline' : 'nf-flowslow';
-  const ptDur   = isThinking ? '0.65s' : '2s';
+  const ptDur   = isThinking ? '0.8s' : '2.5s';
   const ptColor = isThinking ? C_CYA : isDone ? C_GRN : C_BRD2;
 
-  // Layout
-  const NW=122, NH=92, SVG_W=720, SVG_H=136, pipeY=18;
-  const gap = Math.floor((SVG_W-20-5*NW)/4);
-  const px = [0,1,2,3,4].map(i=>10+i*(NW+gap));
-  const midY = pipeY+NH/2;
+  // Radial layout
+  const SVG_W = 720, SVG_H = 280;
+  const CX = SVG_W / 2, CY = SVG_H / 2;
+  const ORBIT_R = 105;
+  const ADAN_R = 36;
+  const PARENT_R = 28;
 
-  const nodeDefs = [
-    { title:'BINANCE', icon:'◆', color:C_YEL,
-      l1:btc?\`BTC \${chgTxt(btc)}\`:'loading...', l2:eth?\`ETH \${chgTxt(eth)}\`:'', l3:sol?\`SOL \${chgTxt(sol)}\`:'' },
-    { title:'TECHNICAL', icon:'≋', color:C_PUR,
-      l1:btc?\`RSI \${fmt(btc.rsi,0)} \${btc.rsi<35?'▼OS':btc.rsi>65?'▲OB':'━'}\`:'---',
-      l2:btc?.vwap5m?\`VWAP \${btc.vwap5m.pct>=0?'+':''}\${btc.vwap5m.pct.toFixed(1)}%\`:'VWAP --',
-      l3:btc?\`vol \${btc.vol?.ratio?.toFixed(1)||'?'}x accel:\${btc.volAccel>=0?'+':''}\${btc.volAccel||0}\`:'---' },
-    { title:'POLYMARKET', icon:'◈', color:C_CYA,
-      l1:markets.length?\`\${markets.length} markets\`:'scanning...',
-      l2:markets.length?\`best e:\${((markets[0]?.edge||0)*100).toFixed(0)}%\`:'',
-      l3:markets.length?\`close: \${markets[0]?.closesAt?Math.round((new Date(markets[0].closesAt)-Date.now())/60000)+'min':'?'}\`:'' },
-    { title:'CLAUDE ◈', icon:isThinking?frame:(isDone?'✓':'○'),
-      color:isThinking?C_CYA:(isDone?C_GRN:C_DIM),
-      l1:isThinking?'analyzing...':(isDone?'decided':'idle'),
-      l2:'Sonnet 4.6',
-      l3:isThinking?'thinking...':isDone?'responded':'idle' },
-    { title:'DECISION', icon:isDone?'◉':'○',
-      color:isDone?(d.state?.thought?.includes('BET')?C_GRN:C_RED):C_DIM,
-      l1:isDone?(d.state?.thought?.includes('BET')?'● BET':'● SKIP'):(isThinking?frame:'waiting'),
-      l2:isDone&&d.state?.thought?.includes('BET')?'position open':'',
-      l3:'' },
+  // Read parent intel for summaries
+  const children = d.children || [];
+  const appleIntel = children.find(c => c.spec === 'apple');
+  const snakeIntel = children.find(c => c.spec === 'snake');
+  const evaIntel = children.find(c => c.spec === 'eva');
+
+  // Parent positions: 12 o'clock, 4 o'clock, 8 o'clock (angles: -90, 30, 150 degrees)
+  const parentDefs = [
+    { id: 'apple', name: 'APPLE', icon: '🍎', color: C_YEL, angle: -90,
+      intel: appleIntel,
+      l1: appleIntel?.report?.opportunity || 'scanning...',
+      l2: appleIntel ? 'F&G:' + (appleIntel.report?.fgValue ?? '--') : 'waiting' },
+    { id: 'snake', name: 'SNAKE', icon: '🐍', color: C_GRN, angle: 30,
+      intel: snakeIntel,
+      l1: snakeIntel?.report?.viability || 'scanning...',
+      l2: snakeIntel ? 'Vol:' + (snakeIntel.report?.avgVolRatio ?? '--') + 'x' : 'waiting' },
+    { id: 'eva', name: 'EVA', icon: '👑', color: C_RED, angle: 150,
+      intel: evaIntel,
+      l1: evaIntel?.report?.approved ? 'APPROVED' : (evaIntel ? 'DENIED' : 'scanning...'),
+      l2: evaIntel ? 'Risk:' + (evaIntel.report?.riskLevel || '--') : 'waiting' }
   ];
 
   let svg = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
   <defs>
-    <marker id="arh" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-      <path d="M0,0 L0,6 L7,3 z" fill="\${lnColor}"/>
+    <marker id="arh-rad" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L6,3 z" fill="\${lnColor}"/>
     </marker>
+    <radialGradient id="adan-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="\${C_PUR}" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="\${C_PUR}" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow-f"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs>
   <rect width="\${SVG_W}" height="\${SVG_H}" fill="none"/>\`;
 
+  // Orbit ring (subtle)
+  svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ORBIT_R}" fill="none" stroke="\${C_BRD2}" stroke-width="1" stroke-dasharray="4 4" opacity="0.3"/>\`;
 
-  // ── Líneas de conexión con partículas viajando ─────────────────────────
-  for(let i=0;i<4;i++){
-    const x1=px[i]+NW+2, x2=px[i+1]-2;
-    svg+=\`<path id="pp\${i}" d="M\${x1},\${midY} L\${x2},\${midY}" stroke="\${lnColor}" stroke-width="2" stroke-dasharray="5 4" class="\${lnCls}" fill="none" marker-end="url(#arh)"/>
-    <path id="pv\${i}" d="M\${x1},\${midY} L\${x2},\${midY}" stroke="none" fill="none"/>
-    <circle r="3.5" fill="\${ptColor}">
-      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="\${(i*0.2).toFixed(2)}s">
-        <mpath href="#pv\${i}"/>
+  // ── Connection lines + animated particles from Parents → ADAN ─────────
+  parentDefs.forEach((p, i) => {
+    const rad = p.angle * Math.PI / 180;
+    const px = CX + ORBIT_R * Math.cos(rad);
+    const py = CY + ORBIT_R * Math.sin(rad);
+    // Line from parent to ADAN center
+    const dx = CX - px, dy = CY - py;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const nx = dx/dist, ny = dy/dist;
+    const x1 = px + nx * PARENT_R;
+    const y1 = py + ny * PARENT_R;
+    const x2 = CX - nx * ADAN_R;
+    const y2 = CY - ny * ADAN_R;
+    // Confidence opacity for line
+    const conf = p.intel?.signal?.conf || 30;
+    const lineOpacity = Math.max(0.3, Math.min(1, conf / 100));
+
+    svg += \`<path id="radp\${i}" d="M\${x1.toFixed(1)},\${y1.toFixed(1)} L\${x2.toFixed(1)},\${y2.toFixed(1)}" stroke="\${p.color}" stroke-width="1.5" stroke-dasharray="4 3" fill="none" opacity="\${lineOpacity}" marker-end="url(#arh-rad)"/>
+    <path id="radv\${i}" d="M\${x1.toFixed(1)},\${y1.toFixed(1)} L\${x2.toFixed(1)},\${y2.toFixed(1)}" stroke="none" fill="none"/>
+    <circle r="3" fill="\${p.color}" opacity="\${lineOpacity}">
+      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="\${(i*0.4).toFixed(2)}s">
+        <mpath href="#radv\${i}"/>
+      </animateMotion>
+    </circle>
+    <circle r="2" fill="\${p.color}" opacity="\${lineOpacity * 0.5}">
+      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="\${(i*0.4+0.3).toFixed(2)}s">
+        <mpath href="#radv\${i}"/>
       </animateMotion>
     </circle>\`;
-  }
-
-  // Anillo de pulso en CLAUDE cuando piensa
-  if(isThinking){
-    const cx=px[3]+NW/2;
-    svg+=\`<circle cx="\${cx}" cy="\${midY}" r="50" fill="none" stroke="\${C_CYA}" stroke-width="1.5" opacity=".25" class="nf-pulse"/>
-    <circle cx="\${cx}" cy="\${midY}" r="62" fill="none" stroke="\${C_CYA}" stroke-width=".8" opacity=".1" class="nf-pulse" style="animation-delay:.35s"/>
-    <circle cx="\${cx}" cy="\${midY}" r="72" fill="none" stroke="\${C_CYA}" stroke-width=".5" opacity=".05" class="nf-pulse" style="animation-delay:.7s"/>\`;
-  }
-
-  // ── Nodos — estilo pixel card igual que los cards de la página ───────────
-  nodeDefs.forEach((nd,i)=>{
-    const x=px[i], y=pipeY;
-    const isClaude = i===3;
-    // Sombra pixel (rect desplazado)
-    svg+=\`<rect x="\${x+3}" y="\${y+3}" width="\${NW}" height="\${NH}" fill="\${C_SHD}" rx="0"/>\`;
-    // Borde más grueso y coloreado según estado
-    const bc = (isThinking&&isClaude)?C_CYA : isDone?C_GRN : C_BRD;
-    const bw = (isThinking&&isClaude)||isDone ? '2.5' : '2';
-    const fill = (isThinking&&isClaude) ? C_CARD3 : C_CARD;
-    const gc = (isThinking&&isClaude)?' class="nf-thinking"'
-             : (isIdle&&hasPrices&&i===0)?' class="nf-heartbeat"'
-             : (isIdle&&hasPrices)?' class="nf-idle-node"':'';
-    svg+=\`<g\${gc}>
-      <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" rx="0" fill="\${fill}" stroke="\${bc}" stroke-width="\${bw}"/>
-      <text x="\${x+NW/2}" y="\${y+12}" text-anchor="middle" font-size="7" font-weight="700" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" letter-spacing="1">\${nd.title}</text>
-      <line x1="\${x+6}" y1="\${y+16}" x2="\${x+NW-6}" y2="\${y+16}" stroke="\${C_BRD2}" stroke-width=".8" opacity=".4"/>
-      <text x="\${x+NW/2}" y="\${y+36}" text-anchor="middle" font-size="18" fill="\${nd.color}" font-family="JetBrains Mono,monospace" font-weight="700" \${i===3?'id="nf-claude-icon"':i===4?'id="nf-dec-icon"':''}>\${nd.icon}</text>
-      <text x="\${x+NW/2}" y="\${y+52}" text-anchor="middle" font-size="10" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(nd.l1||'').slice(0,14)}</text>
-      <text x="\${x+NW/2}" y="\${y+66}" text-anchor="middle" font-size="8.5" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${(nd.l2||'').slice(0,14)}</text>
-      <text x="\${x+NW/2}" y="\${y+80}" text-anchor="middle" font-size="8" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" opacity=".7">\${(nd.l3||'').slice(0,14)}</text>
-    </g>\`;
   });
 
-  // Bottom label (countdown)
+  // ── ADAN central node (large) ─────────────────────────────────────────
+  // Glow background
+  svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 15}" fill="url(#adan-glow)"/>\`;
+
+  // Pulse rings when thinking
+  if (isThinking) {
+    svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 8}" fill="none" stroke="\${C_CYA}" stroke-width="1.5" opacity=".3" class="nf-pulse"/>
+    <circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 18}" fill="none" stroke="\${C_CYA}" stroke-width=".8" opacity=".15" class="nf-pulse" style="animation-delay:.3s"/>
+    <circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 28}" fill="none" stroke="\${C_CYA}" stroke-width=".5" opacity=".07" class="nf-pulse" style="animation-delay:.6s"/>\`;
+  }
+
+  // Decision shockwave
+  if (isDone) {
+    svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 5}" fill="none" stroke="\${d.state?.thought?.includes('BET') ? C_GRN : C_RED}" stroke-width="2" opacity=".5" class="nf-pulse"/>
+    <circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 20}" fill="none" stroke="\${d.state?.thought?.includes('BET') ? C_GRN : C_RED}" stroke-width="1" opacity=".2" class="nf-pulse" style="animation-delay:.2s"/>\`;
+  }
+
+  // ADAN circle
+  const adanBorder = isThinking ? C_CYA : isDone ? C_GRN : C_PUR;
+  const adanFill = isThinking ? C_CARD3 : C_CARD;
+  svg += \`<rect x="\${CX+3-ADAN_R}" y="\${CY+3-ADAN_R}" width="\${ADAN_R*2}" height="\${ADAN_R*2}" fill="\${C_SHD}" rx="0"/>
+  <rect x="\${CX-ADAN_R}" y="\${CY-ADAN_R}" width="\${ADAN_R*2}" height="\${ADAN_R*2}" fill="\${adanFill}" stroke="\${adanBorder}" stroke-width="2.5" rx="0"\${isThinking?' class="nf-thinking"':''}/>
+  <text x="\${CX}" y="\${CY-12}" text-anchor="middle" font-size="7" font-weight="700" fill="\${C_PUR}" font-family="JetBrains Mono,monospace" letter-spacing="1.5">ADAN</text>
+  <text x="\${CX}" y="\${CY+4}" text-anchor="middle" font-size="18" fill="\${isThinking?C_CYA:C_PUR}" font-family="JetBrains Mono,monospace" font-weight="700" id="nf-claude-icon">\${isThinking?frame:(isDone?'◉':'◈')}</text>
+  <text x="\${CX}" y="\${CY+18}" text-anchor="middle" font-size="8" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${isThinking?'analyzing':(isDone?(d.state?.thought?.includes('BET')?'BET':'SKIP'):'idle')}</text>
+  <text x="\${CX}" y="\${CY+28}" text-anchor="middle" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" opacity=".6">Sonnet 4.6</text>\`;
+
+  // ── Parent orbital nodes ──────────────────────────────────────────────
+  parentDefs.forEach((p, i) => {
+    const rad = p.angle * Math.PI / 180;
+    const px = CX + ORBIT_R * Math.cos(rad);
+    const py = CY + ORBIT_R * Math.sin(rad);
+    const conf = p.intel?.signal?.conf || 30;
+    const nodeOpacity = Math.max(0.3, Math.min(1, conf / 100));
+
+    // Shadow
+    svg += \`<rect x="\${px+2-PARENT_R}" y="\${py+2-PARENT_R}" width="\${PARENT_R*2}" height="\${PARENT_R*2}" fill="\${C_SHD}" rx="0" opacity="0.5"/>\`;
+    // Node
+    svg += \`<rect x="\${px-PARENT_R}" y="\${py-PARENT_R}" width="\${PARENT_R*2}" height="\${PARENT_R*2}" fill="\${C_CARD}" stroke="\${p.color}" stroke-width="2" rx="0" opacity="\${nodeOpacity}"/>
+    <text x="\${px}" y="\${py-10}" text-anchor="middle" font-size="6.5" font-weight="700" fill="\${p.color}" font-family="JetBrains Mono,monospace" letter-spacing="1">\${p.name}</text>
+    <text x="\${px}" y="\${py+2}" text-anchor="middle" font-size="12">\${p.icon}</text>
+    <text x="\${px}" y="\${py+14}" text-anchor="middle" font-size="7.5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(p.l1||'').slice(0,12)}</text>
+    <text x="\${px}" y="\${py+23}" text-anchor="middle" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${(p.l2||'').slice(0,12)}</text>\`;
+  });
+
+  // Side info panels — BTC price + market count (left), Decision status (right)
+  const leftX = 10, rightX = SVG_W - 160;
+  // Left: live data
+  svg += \`<rect x="\${leftX}" y="10" width="140" height="70" fill="\${C_CARD}" stroke="\${C_BRD2}" stroke-width="1" rx="0"/>
+  <text x="\${leftX+8}" y="24" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" font-weight="700" letter-spacing="1">LIVE DATA</text>
+  <text x="\${leftX+8}" y="38" font-size="9" fill="\${C_YEL}" font-family="JetBrains Mono,monospace">BTC \${btc?chgTxt(btc):'--'}</text>
+  <text x="\${leftX+8}" y="50" font-size="8" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">RSI \${btc?fmt(btc.rsi,0):'--'} | Vol \${btc?.vol?.ratio?.toFixed(1)||'--'}x</text>
+  <text x="\${leftX+8}" y="62" font-size="8" fill="\${C_CYA}" font-family="JetBrains Mono,monospace">\${markets.length} markets</text>\`;
+
+  // Right: decision
+  svg += \`<rect x="\${rightX}" y="10" width="150" height="70" fill="\${C_CARD}" stroke="\${isDone?(d.state?.thought?.includes('BET')?C_GRN:C_RED):C_BRD2}" stroke-width="\${isDone?'2':'1'}" rx="0"/>
+  <text x="\${rightX+8}" y="24" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" font-weight="700" letter-spacing="1">DECISION</text>
+  <text x="\${rightX+8}" y="40" font-size="11" fill="\${isDone?(d.state?.thought?.includes('BET')?C_GRN:C_RED):C_DIM}" font-family="JetBrains Mono,monospace" font-weight="700" id="nf-dec-icon">\${isDone?(d.state?.thought?.includes('BET')?'● BET':'● SKIP'):(isThinking?frame:'○ WAIT')}</text>
+  <text x="\${rightX+8}" y="54" font-size="8" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${isDone&&d.state?.thought?.includes('BET')?'position open':(isThinking?'analyzing...':'monitoring')}</text>
+  <text x="\${rightX+8}" y="66" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" opacity=".6">\${prices._meta?.fearGreed?'F&G: '+prices._meta.fearGreed.value:''}</text>\`;
+
+  // Bottom label
   const nextAt = d.state?.nextScanAt;
   let countdown = '';
   if(nextAt && isIdle){
@@ -1755,12 +1878,12 @@ function updateNeuralFlow(d) {
   }
   const stLabel = isThinking?'◈ ANALYZING':isDone?'✓ DECIDED':(hasPrices&&countdown?'NEXT '+countdown:(hasPrices?'MONITORING':'INIT'));
   const stColor = isThinking?C_CYA:isDone?C_GRN:C_DIM;
-  svg+=\`<text x="\${SVG_W-6}" y="\${SVG_H-4}" text-anchor="end" font-size="7" fill="\${stColor}" font-family="JetBrains Mono,monospace" letter-spacing="1.5">\${stLabel}</text>\`;
+  svg+=\`<text x="\${SVG_W/2}" y="\${SVG_H-6}" text-anchor="middle" font-size="7" fill="\${stColor}" font-family="JetBrains Mono,monospace" letter-spacing="1.5">\${stLabel}</text>\`;
 
   svg+='</svg>';
   wrap.innerHTML = svg;
 
-  // Topbar: solo estado (dot + texto) — countdown lo maneja el timer de 150ms
+  // Topbar state
   const dot = document.getElementById('cmd-live-dot');
   const txt = document.getElementById('cmd-live-txt');
   const bar = document.getElementById('cmd-scan-bar');
@@ -1777,188 +1900,132 @@ function updateNeuralFlow(d) {
   }
 }
 
-// ── Dynasty Network SVG ───────────────────────────────────────────────────────
-// Visualización de red neuronal: ADAN centro + hijos como nodos + partículas de señal
+// ── Dynasty Network — Mesa Redonda + La Forja ───────────────────────────────
 function updateDynastyPanel(d) {
   const el = document.getElementById('dynasty-panel');
   if (!el) return;
-  const pnl      = d.pnl || {};
-  const xp       = d.xp  || {};
+  const config = d.config || {};
   const children = d.children || [];
-  const trades   = pnl.trades || 0;
-  const wr       = trades>0 ? Math.round(pnl.wins/trades*100) : 0;
-  const lvl      = xp.level || 1;
+  const pnl = d.pnl || {};
 
-  // Paleta retro idéntica al Neural Pipeline
-  const C_BG='#ccc8bc',C_CARD='#ddd9cc',C_CARD3='#e8e4d8',C_BRD='#1a1a1a',C_BRD2='#3a3a2a';
-  const C_TXT='#1a1a1a',C_DIM='#888878',C_SHD='#1a1a1a';
-  const C_PUR='#5a1a8a',C_CYA='#1a4a8a',C_GRN='#1a5a1a',C_RED='#8a1a1a',C_YEL='#7a5a10';
+  const C_PUR = '#5a1a8a', C_CYA = '#1a4a8a', C_GRN = '#1a5a1a', C_RED = '#8a1a1a', C_YEL = '#7a5a10', C_DIM = '#888878';
+  const C_TXT = '#1a1a1a', C_CARD = '#e8e4d8', C_BRD2 = '#3a3a2a';
 
-  // Helper: extract signal direction from {dir:'UP'} or string or null
-  const sigDir = (raw) => {
-    if (!raw) return 'idle';
-    if (typeof raw === 'string') return raw.toLowerCase();
-    return (raw.dir || 'idle').toLowerCase();
-  };
-  const sigColor = (dir) => dir==='up'?C_GRN : dir==='down'?C_RED : C_DIM;
-  const sigLabel = (dir) => dir==='up'?'▲ UP' : dir==='down'?'▼ DN' : '● —';
+  let html = '';
 
-  if (children.length === 0) {
-    const reqs = [
-      {label:'LVL 2',     val:lvl+'/2',    pct:Math.min(100,lvl/2*100),              done:lvl>=2},
-      {label:'10 TRADES', val:trades+'/10', pct:Math.min(100,trades/10*100),          done:trades>=10},
-      {label:'TREASURY',  val:'$'+(pnl.treasury||0).toFixed(0), pct:(pnl.treasury||0)>0?100:0, done:(pnl.treasury||0)>0},
-    ];
-    const SVG_W=720, SVG_H=54;
-    const bw=Math.floor((SVG_W-40)/3)-8;
-    let svg=\`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
-    <rect width="\${SVG_W}" height="\${SVG_H}" fill="none"/>
-    <text x="10" y="14" font-family="JetBrains Mono,monospace" font-size="8" fill="\${C_PUR}" font-weight="700" letter-spacing="2">🧬 DYNASTY — SPAWN REQUIREMENTS</text>\`;
-    reqs.forEach((r,i)=>{
-      const x=10+i*(bw+8), y=20;
-      svg+=\`<rect x="\${x+2}" y="\${y+2}" width="\${bw}" height="28" fill="\${C_SHD}" rx="0"/>
-      <rect x="\${x}" y="\${y}" width="\${bw}" height="28" fill="\${r.done?C_CARD3:C_CARD}" stroke="\${r.done?C_GRN:C_BRD}" stroke-width="2"/>
-      <text x="\${x+bw/2}" y="\${y+10}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="\${C_DIM}" letter-spacing="1">\${r.label}</text>
-      <text x="\${x+bw/2}" y="\${y+22}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" font-weight="700" fill="\${r.done?C_GRN:C_TXT}">\${r.done?'✓ DONE':r.val}</text>\`;
+  // ── SECTION 1: MESA REDONDA ──────────────────────────────────────────
+  html += '<div style="margin-bottom:12px">';
+  html += '<div style="font-family:var(--pixel);font-size:10px;color:' + C_PUR + ';font-weight:700;letter-spacing:2px;margin-bottom:8px">👑 MESA REDONDA DORADA</div>';
+
+  if (config.mesaRedonda && config.mesaRedonda.parents) {
+    html += '<div style="display:flex;gap:6px">';
+    const parents = config.mesaRedonda.parents;
+    const icons = { apple: '🍎', snake: '🐍', eva: '👑' };
+    const colors = { apple: C_YEL, snake: C_GRN, eva: C_RED };
+
+    parents.forEach(parent => {
+      const intel = children.find(c => c.spec === parent.id);
+      const color = colors[parent.id] || C_DIM;
+      const icon = icons[parent.id] || '◈';
+      const report = intel?.report;
+      const conf = intel?.signal?.conf || 0;
+      const isOnline = !!intel && (Date.now() - new Date(intel.ts || 0).getTime()) < 300000;
+
+      // Build summary line based on parent type
+      let summaryLine = 'Awaiting...';
+      if (parent.id === 'apple' && report) {
+        summaryLine = report.opportunity + ' | ' + report.narrative + ' | Sent:' + report.sentimentScore;
+      } else if (parent.id === 'snake' && report) {
+        summaryLine = report.viability + ' | Slip:' + report.slippageRisk + ' | Vol:' + (report.avgVolRatio || '--') + 'x';
+      } else if (parent.id === 'eva' && report) {
+        summaryLine = (report.approved ? 'APPROVED' : 'DENIED') + ' | $' + (report.maxCapital || 0) + ' max | Risk:' + report.riskLevel;
+      } else if (intel?.signal?.reason) {
+        summaryLine = intel.signal.reason.slice(0, 60);
+      }
+
+      // Influence bar (confidence as proxy)
+      const barW = Math.max(5, conf);
+
+      // Variants count from competition config
+      const variants = parent.variants || [];
+      const variantsTxt = variants.length > 0 ? variants.length + ' variants' : '';
+
+      html += '<div style="flex:1;background:' + C_CARD + ';border:2px solid ' + color + ';padding:6px 8px;font-family:var(--pixel)">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
+      html += '<span style="font-size:10px;font-weight:700;color:' + color + '">' + icon + ' ' + parent.name.toUpperCase() + '</span>';
+      html += '<span style="font-size:8px;color:' + (isOnline ? C_CYA : C_RED) + '">[' + (isOnline ? 'ONLINE' : 'OFFLINE') + ']</span>';
+      html += '</div>';
+      html += '<div style="font-size:8px;color:' + C_DIM + ';margin-bottom:3px">' + parent.role + '</div>';
+      html += '<div style="font-size:8px;color:' + C_TXT + ';margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">↳ ' + summaryLine + '</div>';
+      // Influence bar
+      html += '<div style="background:#ccc8bc;height:4px;border:1px solid ' + C_BRD2 + ';margin-bottom:2px"><div style="height:100%;width:' + barW + '%;background:' + color + '"></div></div>';
+      html += '<div style="font-size:7px;color:' + C_DIM + '">influence: ' + conf + '% ' + (variantsTxt ? '· ' + variantsTxt : '') + '</div>';
+      html += '</div>';
     });
-    svg+=\`</svg>\`;
-    el.innerHTML = svg;
-    return;
+
+    html += '</div>';
   }
+  html += '</div>';
 
-  // ── Con hijos: SVG de red genética ──────────────────────────────────────────
-  const N      = children.length;
-  const NW=110, NH=112;   // slightly narrower nodes to fit more
-  const GAP=8;            // gap between nodes
-  const AW=160, AH=82;
+  // ── SECTION 2: LA FORJA ──────────────────────────────────────────────
+  const spawnedChildren = children.filter(c => !config.mesaRedonda?.parents.some(p => p.id === c.spec));
+  const xp = d.xp || {};
+  const spawnCond = { minLvl: 2, minTrades: 10 };
 
-  // Responsive: if >4 children, split into 2 rows
-  const COLS     = N<=4 ? N : Math.ceil(N/2);
-  const ROWS     = N<=4 ? 1 : 2;
-  const totalW   = COLS*(NW+GAP)-GAP;
-  const SVG_W    = Math.max(720, totalW+40);
-  const AX       = (SVG_W-AW)/2, AY=10;
-  const CONN_H   = 55;
-  const ROW1_Y   = AY+AH+CONN_H;
-  const ROW2_Y   = ROW1_Y+NH+30;  // second row below first
-  const hasGC    = children.some(c=>(c.grandChildren||[]).length>0);
-  const GC_EXTRA = hasGC ? 60 : 0; // extra space for grandchild mini-nodes
-  const SVG_H    = (ROWS===1 ? ROW1_Y+NH+16+GC_EXTRA : ROW2_Y+NH+16+GC_EXTRA);
+  html += '<div style="border-top:1px dashed ' + C_BRD2 + ';padding-top:8px">';
+  html += '<div style="font-family:var(--pixel);font-size:10px;color:' + C_PUR + ';font-weight:700;letter-spacing:2px;margin-bottom:6px">🔨 LA FORJA (' + spawnedChildren.length + ' hijos)</div>';
 
-  // Posiciones de hijos — 2 rows centered
-  const row1 = children.slice(0, COLS);
-  const row2 = children.slice(COLS);
-  const cx0_r1 = Math.max(10, (SVG_W - (row1.length*(NW+GAP)-GAP))/2);
-  const cx0_r2 = row2.length ? Math.max(10, (SVG_W - (row2.length*(NW+GAP)-GAP))/2) : 0;
-  const cpos = children.map((_,i)=>{
-    if (i < COLS) return { x: cx0_r1+i*(NW+GAP), y: ROW1_Y };
-    return { x: cx0_r2+(i-COLS)*(NW+GAP), y: ROW2_Y };
-  });
-  // Centro de ADAN node (bottom center)
-  const aMidX=AX+AW/2, aMidY=AY+AH;
+  // Spawn requirements
+  if (spawnedChildren.length === 0) {
+    const needs = [];
+    if ((xp.level || 1) < spawnCond.minLvl) needs.push('LVL ' + spawnCond.minLvl);
+    if ((pnl.trades || 0) < spawnCond.minTrades) needs.push((spawnCond.minTrades - (pnl.trades || 0)) + ' trades');
+    if (!(pnl.treasury > 0)) needs.push('treasury > 0');
+    html += '<div style="font-size:9px;color:' + C_DIM + ';padding:4px 0">No children. ' + (needs.length ? 'Need: ' + needs.join(', ') : 'Spawn ready!') + '</div>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:4px">';
+    spawnedChildren.forEach(ch => {
+      const childPnl = ch.childPnl || {};
+      const childWR = (childPnl.trades || 0) > 0 ? Math.round((childPnl.wins || 0) / childPnl.trades * 100) : 0;
+      const childNet = childPnl.net || 0;
+      const childExp = ch.childExp || 0;
+      const isAlive = (childPnl.fund || 0) > 0;
+      const isElite = childWR >= 60 && (childPnl.trades || 0) >= 10;
+      const gc = ch.grandChildren || [];
 
-  let svg=\`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
-  <defs>
-    <marker id="dah" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto">
-      <path d="M0,0 L0,5 L6,2.5 z" fill="\${C_PUR}"/>
-    </marker>
-  </defs>
-  <rect width="\${SVG_W}" height="\${SVG_H}" fill="none"/>\`;
+      const statusColor = !isAlive ? C_RED : isElite ? C_GRN : C_CYA;
+      const statusTxt = !isAlive ? 'DEAD' : isElite ? 'ELITE' : 'ALIVE';
 
-  // Label header
-  const activeSigs = children.filter(c=>c.intel?.signal).length;
-  svg+=\`<text x="\${SVG_W/2}" y="8" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="\${C_PUR}" font-weight="700" letter-spacing="2">🧬 GENETIC DYNASTY · \${N} SCANNER\${N>1?'S':''} · \${activeSigs} REPORTING</text>\`;
+      html += '<div style="background:' + C_CARD + ';border:1px solid ' + C_BRD2 + ';padding:5px 8px;font-family:var(--pixel)">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+      html += '<span style="font-size:9px;font-weight:700;color:' + C_PUR + '">' + (ch.name || ch.spec) + '</span>';
+      html += '<span style="font-size:7px;color:' + statusColor + '">[' + statusTxt + ']</span>';
+      html += '</div>';
+      html += '<div style="display:flex;gap:8px;margin-top:3px;font-size:8px">';
+      html += '<span style="color:' + C_DIM + '">spec: ' + (ch.spec || '?') + '</span>';
+      html += '<span style="color:' + (childNet >= 0 ? C_GRN : C_RED) + '">P&L: ' + (childNet >= 0 ? '+' : '') + '$' + childNet.toFixed(2) + '</span>';
+      html += '<span style="color:' + (childWR >= 50 ? C_GRN : C_RED) + '">WR: ' + childWR + '%</span>';
+      html += '</div>';
+      // EXP bar
+      html += '<div style="display:flex;align-items:center;gap:4px;margin-top:3px">';
+      html += '<div style="flex:1;background:#ccc8bc;height:3px;border:1px solid ' + C_BRD2 + '"><div style="height:100%;width:' + Math.min(100, childExp) + '%;background:' + C_PUR + '"></div></div>';
+      html += '<span style="font-size:7px;color:' + C_DIM + '">' + Math.round(childExp) + '/100</span>';
+      html += '</div>';
+      // Grandchildren
+      if (gc.length > 0) {
+        html += '<div style="margin-top:3px;padding-left:10px">';
+        gc.forEach(g => {
+          html += '<div style="font-size:7px;color:' + C_DIM + '">└ ' + (g.name || g.spec) + (g.focus ? ' [' + g.focus + ']' : '') + '</div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
 
-  // ── Líneas de conexión hijo → ADAN con partículas ───────────────────────────
-  children.forEach((ch,i)=>{
-    const cp = cpos[i];
-    const childMidX = cp.x+NW/2;
-    const childTopY = cp.y;
-    const dir = sigDir(ch.intel?.signal);
-    const hasSignal = dir !== 'idle';
-    const lColor = hasSignal ? (dir==='up'?C_GRN:dir==='down'?C_RED:C_CYA) : C_BRD2;
-    const pid = \`dp\${i}\`;
-    // Connection line child → ADAN
-    svg+=\`<path id="\${pid}" d="M\${childMidX},\${childTopY} L\${aMidX},\${aMidY}" stroke="\${lColor}" stroke-width="\${hasSignal?2:1}" stroke-dasharray="\${hasSignal?'4 3':'3 5'}" fill="none" marker-end="url(#dah)" opacity="\${hasSignal?0.9:0.35}"/>
-    <circle r="3" fill="\${lColor}" opacity="\${hasSignal?0.9:0.3}">
-      <animateMotion dur="\${hasSignal?'0.9s':'2.5s'}" repeatCount="indefinite" begin="\${(i*0.22).toFixed(2)}s">
-        <mpath href="#\${pid}"/>
-      </animateMotion>
-    </circle>\`;
-  });
-
-  // ── Nodo ADAN (raíz) ────────────────────────────────────────────────────────
-  const wrColor = wr>=55?C_GRN : wr>=40?C_YEL : C_RED;
-  svg+=\`<rect x="\${AX+3}" y="\${AY+3}" width="\${AW}" height="\${AH}" fill="\${C_SHD}"/>
-  <rect x="\${AX}" y="\${AY}" width="\${AW}" height="\${AH}" fill="\${C_CARD3}" stroke="\${C_PUR}" stroke-width="2.5" class="nf-idle-node"/>
-  <text x="\${aMidX}" y="\${AY+15}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700" fill="\${C_PUR}" letter-spacing="2">◈ ADAN · ROOT · GEN \${pnl.generation||1}</text>
-  <line x1="\${AX+8}" y1="\${AY+19}" x2="\${AX+AW-8}" y2="\${AY+19}" stroke="\${C_BRD2}" stroke-width=".8" opacity=".4"/>
-  <text x="\${aMidX}" y="\${AY+34}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="14" font-weight="700" fill="\${wrColor}">\${wr}% WR</text>
-  <text x="\${aMidX}" y="\${AY+50}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="\${C_TXT}">\${trades} trades · LVL \${lvl}</text>
-  <text x="\${aMidX}" y="\${AY+66}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" font-weight="700" fill="\${C_CYA}">$\${(pnl.fund||0).toFixed(2)}</text>
-  <text x="\${aMidX}" y="\${AY+78}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="\${C_DIM}">\${(pnl.net||0)>=0?'+':''}\$\${(pnl.net||0).toFixed(2)} P&L · treasury \$\${(pnl.treasury||0).toFixed(2)}</text>\`;
-
-  // ── Nodos hijos ─────────────────────────────────────────────────────────────
-  children.forEach((ch,i)=>{
-    const cp = cpos[i];
-    const {x,y} = cp;
-    const dir  = sigDir(ch.intel?.signal);
-    const conf = ch.intel?.signal?.conf || 0;
-    const score= ch.intel?.intelScore || 0;
-    const cexp = Math.min(100, ch.childExp || 0);
-    const isObs= ch.status === 'observing';
-    const bColor = dir==='up'?C_GRN : dir==='down'?C_RED : isObs?C_YEL : C_BRD;
-    const bw2 = dir!=='idle'?'2.5':'1.5';
-    const fillC = dir==='up'?'#e8f4e8' : dir==='down'?'#f4e8e8' : C_CARD;
-    const dna = ch.dna;
-    // DNA cognitive style + stake + mutation display
-    const styleMap = { volume_vwap:'VOL/VWAP', bollinger_vol:'BB/VOL', rsi_reversal:'RSI/REV' };
-    const styleLabel = dna?.cognitiveStyle ? (styleMap[dna.cognitiveStyle]||dna.cognitiveStyle.slice(0,8)) : '---';
-    const styleColor = dna?.cognitiveStyle==='volume_vwap'?C_CYA : dna?.cognitiveStyle==='bollinger_vol'?C_YEL : dna?.cognitiveStyle==='rsi_reversal'?C_RED : C_DIM;
-    const stakeTxt   = dna?.stakePct ? (dna.stakePct*100).toFixed(0)+'%' : '---';
-    const dnaColor   = dna ? C_PUR : C_DIM;
-    const gcCount    = ch.grandChildren?.length || 0;
-
-    svg+=\`<g style="cursor:pointer" onclick="showChildDetail(\${i})">
-    <rect x="\${x+3}" y="\${y+3}" width="\${NW}" height="\${NH}" fill="\${C_SHD}"/>
-    <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" fill="\${fillC}" stroke="\${bColor}" stroke-width="\${bw2}"/>
-    <text x="\${x+NW/2}" y="\${y+13}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" font-weight="700" fill="\${C_PUR}" letter-spacing=".5">\${(ch.name||'CHILD').slice(0,12).toUpperCase()}</text>
-    <line x1="\${x+5}" y1="\${y+17}" x2="\${x+NW-5}" y2="\${y+17}" stroke="\${C_BRD2}" stroke-width=".7" opacity=".4"/>
-    <text x="\${x+NW/2}" y="\${y+28}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="\${C_DIM}">\${ch.spec||'?'} · G\${ch.generation||2}</text>
-    <text x="\${x+NW/2}" y="\${y+46}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="14" font-weight="700" fill="\${sigColor(dir)}">\${sigLabel(dir)}</text>
-    <text x="\${x+NW/2}" y="\${y+60}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="\${sigColor(dir)}">\${conf?conf+'% conf':''}</text>
-    <text x="\${x+NW/2}" y="\${y+74}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="\${score>=65?C_GRN:score>=45?C_YEL:C_RED}">score: \${score} \${isObs?'● OBS':score>=65?'● ELITE':'●'}</text>
-    <text x="\${x+6}" y="\${y+86}" font-family="JetBrains Mono,monospace" font-size="7" fill="\${styleColor}">◈\${styleLabel}</text>
-    <text x="\${x+NW-6}" y="\${y+86}" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="7" fill="\${dnaColor}">stake:\${stakeTxt}</text>
-    <rect x="\${x+6}" y="\${y+91}" width="\${NW-12}" height="6" fill="\${C_BRD2}" opacity=".3" rx="1"/>
-    <rect x="\${x+6}" y="\${y+91}" width="\${Math.round((NW-12)*cexp/100)}" height="6" fill="\${C_CYA}" opacity=".85" rx="1"/>
-    <text x="\${x+NW/2}" y="\${y+106}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="\${C_DIM}">EXP \${cexp}/100 · GC \${gcCount}/2</text>
-    </g>\`;
-
-    // ── Grandchild mini-nodes below parent ───────────────────────────────────
-    const gcs = ch.grandChildren || [];
-    if (gcs.length) {
-      const gcW=52, gcH=36, gcGap=6;
-      const gcTotalW = gcs.length*(gcW+gcGap)-gcGap;
-      const gcX0 = x + (NW-gcTotalW)/2;
-      const gcY  = y + NH + 16;
-      // Connection line parent → grandchild area
-      svg+=\`<line x1="\${x+NW/2}" y1="\${y+NH}" x2="\${x+NW/2}" y2="\${gcY}" stroke="\${C_BRD2}" stroke-width="1" stroke-dasharray="2 2" opacity="0.5"/>\`;
-      gcs.forEach((gc,gi)=>{
-        const gx = gcX0 + gi*(gcW+gcGap);
-        const gy = gcY;
-        const gcDir = sigDir(gc.intel?.signal);
-        const gcColor = gcDir==='up'?C_GRN : gcDir==='down'?C_RED : C_BRD2;
-        svg+=\`<rect x="\${gx}" y="\${gy}" width="\${gcW}" height="\${gcH}" fill="\${C_CARD}" stroke="\${gcColor}" stroke-width="1.5" rx="2"/>
-        <text x="\${gx+gcW/2}" y="\${gy+12}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6" font-weight="700" fill="\${C_PUR}">G\${gc.generation||3}</text>
-        <text x="\${gx+gcW/2}" y="\${gy+22}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6" fill="\${gcColor}">\${sigLabel(gcDir)}</text>
-        <text x="\${gx+gcW/2}" y="\${gy+32}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="5" fill="\${C_DIM}">\${(gc.name||gc.spec||'?').slice(0,8)}</text>\`;
-      });
-    }
-  });
-
-  svg+=\`</svg>\`;
-  el.innerHTML = svg;
+  el.innerHTML = html;
 }
 
 refresh();
@@ -1993,10 +2060,75 @@ setInterval(()=>{
 },150);
 
 // ── ADAN World Conway Grid ──────────────────────────────────────────────────
-let cw_grid = null;
+let cw_grid = [];
 let cw_cols = 80;
 let cw_rows = 25;
-let cw_agents = [];
+let cw_agents = []; // Array of {id, x, y, state}
+
+function drawCell(ctx, x, y, state, glowRadius) {
+    const cellSize = 8;
+    const px = x * cellSize, py = y * cellSize;
+    // State: 0=dead, 1=alive(profitable child), 2=parent-adan, 3=parent-apple, 4=parent-snake, 5=parent-eva, 6=dead-child
+    const colors = {
+      0: '#ddd9cc',   // dead — bg2
+      1: '#1a5a1a',   // alive child — green
+      2: '#8b5cf6',   // ADAN — bright purple
+      3: '#eab308',   // APPLE — yellow
+      4: '#22c55e',   // SNAKE — green
+      5: '#ef4444',   // EVA — red
+      6: '#4a4a3a'    // dead child — dark grey
+    };
+    ctx.fillStyle = colors[state] || colors[0];
+    ctx.fillRect(px, py, cellSize - 1, cellSize - 1);
+
+    // Glow effect for parent cells
+    if (state >= 2 && state <= 5 && glowRadius) {
+      ctx.save();
+      ctx.globalAlpha = 0.15;
+      ctx.fillStyle = colors[state];
+      const gr = glowRadius * cellSize;
+      ctx.beginPath();
+      ctx.arc(px + cellSize/2, py + cellSize/2, gr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    // ADAN is 2x size
+    if (state === 2) {
+      ctx.fillStyle = colors[2];
+      ctx.fillRect(px - cellSize/2, py - cellSize/2, cellSize * 2 - 1, cellSize * 2 - 1);
+    }
+}
+
+function placeAgentOnGrid(agentId) {
+    if (cw_agents.has(agentId)) {
+        return cw_agents.get(agentId);
+    }
+
+    // Find a random empty spot
+    for (let i = 0; i < 100; i++) { // Try 100 times to find an empty spot
+        const x = Math.floor(Math.random() * cw_cols);
+        const y = Math.floor(Math.random() * cw_rows);
+        let isOccupied = false;
+        for (const agent of cw_agents.values()) {
+            if (agent.x === x && agent.y === y) {
+                isOccupied = true;
+                break;
+            }
+        }
+        if (!isOccupied) {
+            const newPos = { x, y, state: 1 };
+            cw_agents.set(agentId, newPos);
+            return newPos;
+        }
+    }
+    // If no spot found, place it at a default random location
+    const finalPos = { x: Math.floor(Math.random() * cw_cols), y: Math.floor(Math.random() * cw_rows), state: 1 };
+    cw_agents.set(agentId, finalPos);
+    return finalPos;
+}
+
+// First definition placeholder removed — see unified updateAdanWorld below
+
 
 function initAdanWorld() {
   cw_grid = new Array(cw_rows).fill(0).map(() => new Array(cw_cols).fill(0));
@@ -2008,21 +2140,61 @@ function initAdanWorld() {
   }
 }
 
-function updateAdanWorld(children) {
-  if (!cw_grid) initAdanWorld();
-  // Map children to fixed coordinates
-  cw_agents = children.map((ch, i) => {
-    const space = Math.floor((cw_cols - 10) / (children.length || 1));
-    const x = 5 + space * i;
-    const y = Math.floor(cw_rows / 2) + ((i % 3) - 1)*2; // slight stagger
-    const isAlive = (ch.childPnl?.net || 0) > 0 ? 1 : 0;
-    return { x, y, alive: isAlive, name: ch.spec };
+// Unified ADAN World — colorful Conway grid with parent/child distinction
+function updateAdanWorld(children, config) {
+  if (!cw_grid || !cw_grid.length) initAdanWorld();
+
+  const parents = config?.mesaRedonda?.parents || [];
+  const parentIds = { adan: 2, apple: 3, snake: 4, eva: 5 };
+
+  // Map agents to fixed coordinates
+  const allAgents = [];
+
+  // ADAN at center
+  allAgents.push({ id: 'adan', x: Math.floor(cw_cols / 2), y: Math.floor(cw_rows / 2), state: 2 });
+
+  // Parents at strategic positions
+  const parentPositions = [
+    { id: 'apple', x: Math.floor(cw_cols / 2), y: 3 },           // top center
+    { id: 'snake', x: Math.floor(cw_cols * 0.75), y: Math.floor(cw_rows * 0.75) }, // bottom right
+    { id: 'eva', x: Math.floor(cw_cols * 0.25), y: Math.floor(cw_rows * 0.75) }    // bottom left
+  ];
+  parentPositions.forEach(p => {
+    allAgents.push({ ...p, state: parentIds[p.id] || 2 });
   });
+
+  // Children
+  const spawnedChildren = children.filter(c => !parents.some(p => p.id === c.spec));
+  spawnedChildren.forEach((ch, i) => {
+    const space = Math.max(2, Math.floor((cw_cols - 10) / (spawnedChildren.length || 1)));
+    const x = 5 + space * i;
+    const y = Math.floor(cw_rows / 2) + ((i % 3) - 1) * 2;
+    const isAlive = (ch.childPnl?.net || 0) > 0;
+    allAgents.push({ id: ch.spec, x, y, state: isAlive ? 1 : 6, name: ch.spec });
+  });
+
+  cw_agents = allAgents;
 }
 
 function stepAdanWorld() {
-  if (!cw_grid) return;
+  if (!cw_grid || !cw_grid.length) return;
   const next = new Array(cw_rows).fill(0).map(() => new Array(cw_cols).fill(0));
+
+  // Build parent proximity map — cells near parents survive easier
+  const parentCells = new Set();
+  (cw_agents || []).forEach(a => {
+    if (a.state >= 2 && a.state <= 5) {
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          let ny = a.y + dy, nx = a.x + dx;
+          if (ny < 0) ny += cw_rows; if (ny >= cw_rows) ny -= cw_rows;
+          if (nx < 0) nx += cw_cols; if (nx >= cw_cols) nx -= cw_cols;
+          parentCells.add(ny * cw_cols + nx);
+        }
+      }
+    }
+  });
+
   for (let y = 0; y < cw_rows; y++) {
     for (let x = 0; x < cw_cols; x++) {
       let neighbors = 0;
@@ -2030,24 +2202,30 @@ function stepAdanWorld() {
         for (let dx = -1; dx <= 1; dx++) {
           if (dx === 0 && dy === 0) continue;
           let ny = y + dy, nx = x + dx;
-          // wrap around
           if (ny < 0) ny = cw_rows - 1; else if (ny >= cw_rows) ny = 0;
           if (nx < 0) nx = cw_cols - 1; else if (nx >= cw_cols) nx = 0;
-          neighbors += cw_grid[ny][nx];
+          if (cw_grid[ny][nx] > 0) neighbors++;
         }
       }
-      const alive = cw_grid[y][x];
+      const alive = cw_grid[y][x] > 0;
+      const nearParent = parentCells.has(y * cw_cols + x);
+
+      // Modified Conway rules — parent proximity gives survival bonus
       if (alive && (neighbors === 2 || neighbors === 3)) next[y][x] = 1;
       else if (!alive && neighbors === 3) next[y][x] = 1;
+      else if (nearParent && alive && neighbors >= 1) next[y][x] = 1; // parent aura keeps cells alive
+      else if (nearParent && !alive && neighbors >= 2) next[y][x] = 1; // easier birth near parents
       else next[y][x] = 0;
     }
   }
-  // Enforce agent cells
-  cw_agents.forEach(a => {
+
+  // Enforce agent cells with their proper states
+  (cw_agents || []).forEach(a => {
     if (a.y >= 0 && a.y < cw_rows && a.x >= 0 && a.x < cw_cols) {
-      next[a.y][a.x] = a.alive;
+      next[a.y][a.x] = a.state || (a.alive ? 1 : 0);
     }
   });
+
   cw_grid = next;
   drawAdanWorld();
 }
@@ -2058,35 +2236,68 @@ function drawAdanWorld() {
   const ctx = cvs.getContext('2d');
   const w = cvs.width, h = cvs.height;
   const cellW = w / cw_cols, cellH = h / cw_rows;
-  
-  ctx.clearRect(0,0,w,h);
-  const style = getComputedStyle(document.body);
-  const colorAlive = style.getPropertyValue('--cyan').trim() || '#1a4a8a';
-  const colorAgentAlive = style.getPropertyValue('--purple').trim() || '#5a1a8a';
-  const colorAgentDead = style.getPropertyValue('--red').trim() || '#8a1a1a';
-  
+
+  ctx.clearRect(0, 0, w, h);
+
+  // State colors
+  const stateColors = {
+    0: null,          // dead — transparent
+    1: '#1a5a1a',     // alive child — green
+    2: '#8b5cf6',     // ADAN — bright purple
+    3: '#eab308',     // APPLE — yellow
+    4: '#22c55e',     // SNAKE — green bright
+    5: '#ef4444',     // EVA — red
+    6: '#4a4a3a'      // dead child — dark grey
+  };
+
+  // Draw grid cells
   for (let y = 0; y < cw_rows; y++) {
     for (let x = 0; x < cw_cols; x++) {
-      if (cw_grid[y][x]) {
-        ctx.fillStyle = colorAlive;
-        ctx.fillRect(Math.floor(x * cellW), Math.floor(y * cellH), Math.ceil(cellW) - 1, Math.ceil(cellH) - 1);
-      }
+      const state = cw_grid[y]?.[x] || 0;
+      if (state === 0) continue;
+      ctx.fillStyle = stateColors[state] || '#1a4a8a';
+      const px = Math.floor(x * cellW), py = Math.floor(y * cellH);
+      ctx.fillRect(px, py, Math.ceil(cellW) - 1, Math.ceil(cellH) - 1);
     }
   }
-  
-  // Draw agents and their names
-  ctx.font = "8px 'Press Start 2P', monospace";
-  ctx.textAlign = "center";
-  cw_agents.forEach((a, i) => {
-    ctx.fillStyle = a.alive ? colorAgentAlive : colorAgentDead;
-    const px = Math.floor(a.x * cellW);
-    const py = Math.floor(a.y * cellH);
-    ctx.fillRect(px, py, Math.ceil(cellW) - 1, Math.ceil(cellH) - 1);
-    
-    // Draw crosshair or highlight around agent to make it stand out
-    ctx.strokeStyle = ctx.fillStyle;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(px - 2, py - 2, Math.ceil(cellW) + 3, Math.ceil(cellH) + 3);
+
+  // Draw agents with glow/highlights
+  ctx.font = "7px 'Press Start 2P', monospace";
+  ctx.textAlign = 'center';
+  const labels = { adan: 'A', apple: '🍎', snake: '🐍', eva: '👑' };
+
+  (cw_agents || []).forEach(a => {
+    const color = stateColors[a.state] || '#1a4a8a';
+    const px = Math.floor(a.x * cellW), py = Math.floor(a.y * cellH);
+    const isParent = a.state >= 2 && a.state <= 5;
+    const size = isParent ? 2 : 1;
+
+    // Glow for parents
+    if (isParent) {
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(px + cellW / 2, py + cellH / 2, cellW * 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Cell (parents are larger)
+    ctx.fillStyle = color;
+    ctx.fillRect(px - (size - 1) * Math.ceil(cellW) / 2, py - (size - 1) * Math.ceil(cellH) / 2,
+      Math.ceil(cellW) * size - 1, Math.ceil(cellH) * size - 1);
+
+    // Border highlight
+    ctx.strokeStyle = color;
+    ctx.lineWidth = isParent ? 1.5 : 0.5;
+    ctx.strokeRect(px - 2, py - 2, Math.ceil(cellW) * size + 3, Math.ceil(cellH) * size + 3);
+
+    // Label above parents
+    if (isParent && a.id) {
+      ctx.fillStyle = color;
+      ctx.fillText((labels[a.id] || a.id[0].toUpperCase()), px + cellW / 2, py - 4);
+    }
   });
 }
 
@@ -2164,13 +2375,39 @@ setInterval(stepAdanWorld, 200);
         ? { ..._dashboardState, nextScanAt: _nextScanAt || null }
         : null;
 
+      // Include Mesa Redonda parent intel in children array
+      const config = loadConfig();
+      const parentIntelEntries = [];
+      if (config?.mesaRedonda?.parents) {
+        for (const parent of config.mesaRedonda.parents) {
+          try {
+            const fp = path.join(INTEL_DIR, parent.id + '.json');
+            if (fs.existsSync(fp)) {
+              const d = JSON.parse(fs.readFileSync(fp, 'utf8'));
+              const age = (Date.now() - new Date(d.ts).getTime()) / 60000;
+              if (age <= 10) {
+                parentIntelEntries.push({
+                  spec: parent.id,
+                  name: parent.name,
+                  role: parent.role,
+                  intel: { signal: d.signal, intelScore: d.intelScore, ts: d.ts },
+                  report: d.report || null,
+                  signal: d.signal,
+                  isParent: true
+                });
+              }
+            }
+          } catch { }
+        }
+      }
+
       res.end(JSON.stringify({
         ts: new Date().toISOString(),
         pnl, calib, positions: pos,
         xp: { ...xp, title: levelTitle(xp.level) },
-        children: childrenWithIntel,
+        children: [...parentIntelEntries, ...childrenWithIntel],
         state: enrichedState,
-        config: loadConfig()
+        config
       }));
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -3266,35 +3503,297 @@ ${traumaRules}
   }
 }
 
-// Run a parent agent's logic based on its role
-async function runParentScanner(parent, allPrices, allMarkets) {
-  // This is a placeholder for the specialized logic of each parent.
-  // For now, we'll create a simulated "intel" report.
-  const intel = {
-    spec: parent.id,
-    asset: parent.specialization,
-    windowMin: 0, // Parents are role-based, not time-based
-    ts: new Date().toISOString(),
-    price: null,
-    signal: {
-      dir: 'NEUTRAL',
-      conf: 100,
-      reason: `Simulated intel from ${parent.name}: ${parent.prompt}`
-    },
-    bestMarket: null,
-    intelScore: 100 // Parent intel is high-value
-  };
+// ── APPLE: El Oráculo del Contexto — "¿QUÉ y POR QUÉ?" ──────────────────
+function runAppleScanner(allPrices, allMarkets) {
+  const meta = allPrices._meta || {};
+  const fg = meta.fearGreed;
+  const news = meta.cryptoNews || [];
 
-  // Ensure the intel directory exists
-  if (!fs.existsSync(INTEL_DIR)) {
-    fs.mkdirSync(INTEL_DIR, { recursive: true });
+  // Analyze narratives from market titles
+  const narrativeKeywords = { ai: 0, etf: 0, regulation: 0, hack: 0, election: 0, fed: 0, defi: 0, memecoin: 0 };
+  const titleCorpus = allMarkets.map(m => (m.title || '').toLowerCase()).join(' ');
+  for (const kw of Object.keys(narrativeKeywords)) {
+    narrativeKeywords[kw] = (titleCorpus.match(new RegExp(kw, 'gi')) || []).length;
+  }
+  const topNarrative = Object.entries(narrativeKeywords).sort((a, b) => b[1] - a[1])[0];
+  const narrativeStr = topNarrative[1] > 0 ? topNarrative[0].toUpperCase() : 'MIXED';
+
+  // Sentiment from news
+  let bullish = 0, bearish = 0, neutral = 0;
+  for (const n of news) {
+    if (n.sentiment === 'BULLISH') bullish++;
+    else if (n.sentiment === 'BEARISH') bearish++;
+    else neutral++;
+  }
+  const totalNews = bullish + bearish + neutral;
+  const sentimentScore = totalNews > 0 ? Math.round(((bullish - bearish) / totalNews + 1) * 50) : 50;
+
+  // Fear & Greed influence
+  const fgValue = fg?.value ?? 50;
+  const fgBias = fgValue < 25 ? 'EXTREME_FEAR' : fgValue < 40 ? 'FEAR' : fgValue > 75 ? 'EXTREME_GREED' : fgValue > 60 ? 'GREED' : 'NEUTRAL';
+
+  // Confidence = combination of news volume + F&G extremeness
+  const fgConfidence = Math.abs(fgValue - 50) * 1.2;
+  const newsConfidence = Math.min(30, totalNews * 5);
+  const confidence = Math.min(100, Math.round(40 + fgConfidence + newsConfidence));
+
+  // Recommend markets with highest liquidity that align with narrative
+  const recommendedMarkets = allMarkets
+    .filter(m => m.liquidity >= 500)
+    .sort((a, b) => b.liquidity - a.liquidity)
+    .slice(0, 5)
+    .map(m => ({ id: m.id, title: (m.title || '').slice(0, 60), liquidity: m.liquidity, yesPrice: m.yesPrice }));
+
+  // Determine opportunity
+  let opportunity = 'NEUTRAL';
+  if (fgValue < 25 && bearish > bullish) opportunity = 'CONTRARIAN_LONG';
+  else if (fgValue < 25 && bullish > bearish) opportunity = 'FEAR_RECOVERY';
+  else if (fgValue > 75 && bullish > bearish) opportunity = 'MOMENTUM_RISK';
+  else if (fgValue > 75 && bearish > bullish) opportunity = 'GREED_REVERSAL';
+  else if (bullish > bearish * 2) opportunity = 'STRONG_BULL';
+  else if (bearish > bullish * 2) opportunity = 'STRONG_BEAR';
+
+  return {
+    opportunity,
+    narrative: narrativeStr,
+    confidence,
+    sentimentScore,
+    fgBias,
+    fgValue,
+    newsCount: totalNews,
+    newsSummary: news.slice(0, 3).map(n => `[${n.sentiment}] ${(n.title || '').slice(0, 50)}`),
+    recommendedMarkets
+  };
+}
+
+// ── SNAKE: El Verdugo de la Ejecución — "¿CÓMO y CUÁNDO?" ────────────────
+function runSnakeScanner(allPrices, appleRecommendedMarkets) {
+  const btc = allPrices['BTCUSDT'];
+  const eth = allPrices['ETHUSDT'];
+  const sol = allPrices['SOLUSDT'];
+
+  // Analyze overall market liquidity and volatility
+  const priceEntries = Object.entries(allPrices).filter(([k]) => k !== '_meta' && allPrices[k]);
+  let totalVolRatio = 0, volCount = 0, avgVolatility = 0;
+  for (const [, d] of priceEntries) {
+    if (d?.vol?.ratio) { totalVolRatio += d.vol.ratio; volCount++; }
+    if (d?.volatility) avgVolatility += d.volatility;
+  }
+  avgVolatility = volCount > 0 ? avgVolatility / volCount : 0;
+  const avgVolRatio = volCount > 0 ? totalVolRatio / volCount : 1;
+
+  // Slippage risk based on order book data
+  const obData = btc?.orderBook;
+  let slippageRisk = 'med';
+  if (obData) {
+    const totalDepth = (obData.bidVolUSD || 0) + (obData.askVolUSD || 0);
+    if (totalDepth > 500000) slippageRisk = 'low';
+    else if (totalDepth < 100000) slippageRisk = 'high';
   }
 
-  // Write the intel file for this parent
-  const intelPath = path.join(INTEL_DIR, parent.id + '.json');
-  fs.writeFileSync(intelPath, JSON.stringify(intel, null, 2));
+  // Optimal timing based on volume acceleration and trend alignment
+  const btcAccel = btc?.volAccel || 0;
+  const btcTrend5m = btc?.trend5m || 0;
+  const btcTrend1h = btc?.trend1h || 0;
+  const trendAligned = (btcTrend5m > 0 && btcTrend1h > 0) || (btcTrend5m < 0 && btcTrend1h < 0);
 
-  console.log(`${B}PARENT SCANNER:${X} ${parent.name} (${parent.role}) executed.`);
+  let optimalTiming = 'WAIT';
+  let viability = 'LOW';
+  if (avgVolRatio > 1.3 && trendAligned && btcAccel >= 1) {
+    optimalTiming = 'NOW — high volume + trend aligned + accelerating';
+    viability = 'HIGH';
+  } else if (avgVolRatio > 1.0 && trendAligned) {
+    optimalTiming = 'SOON — trends aligned but volume moderate';
+    viability = 'MEDIUM';
+  } else if (avgVolRatio > 1.3 && !trendAligned) {
+    optimalTiming = 'CAUTION — volume present but trends diverge';
+    viability = 'MEDIUM';
+  } else if (avgVolRatio < 0.8) {
+    optimalTiming = 'WAIT — market dormant, no volume conviction';
+    viability = 'LOW';
+  } else {
+    optimalTiming = 'MONITOR — no clear signal';
+    viability = 'LOW';
+  }
+
+  // Execution plan
+  const executionPlan = viability === 'HIGH'
+    ? `Execute on recommended markets. Vol ratio ${avgVolRatio.toFixed(1)}x, BTC trend aligned (5m:${btcTrend5m.toFixed(2)}% 1h:${btcTrend1h.toFixed(2)}%). Slippage: ${slippageRisk}.`
+    : viability === 'MEDIUM'
+      ? `Partial execution possible. Vol ratio ${avgVolRatio.toFixed(1)}x. Wait for confirmation or reduce position size.`
+      : `Hold position. Market conditions unfavorable. Vol ratio ${avgVolRatio.toFixed(1)}x avg volatility ${(avgVolatility * 100).toFixed(3)}%.`;
+
+  return {
+    viability,
+    executionPlan,
+    slippageRisk,
+    optimalTiming,
+    avgVolRatio: parseFloat(avgVolRatio.toFixed(2)),
+    avgVolatility: parseFloat(avgVolatility.toFixed(6)),
+    btcTrend: { m5: btcTrend5m, h1: btcTrend1h, aligned: trendAligned },
+    volAccel: btcAccel,
+    marketDepth: obData ? { bidUSD: obData.bidVolUSD, askUSD: obData.askVolUSD } : null
+  };
+}
+
+// ── EVA: La Reina del Riesgo — "¿PODEMOS?" ────────────────────────────────
+function runEvaScanner(appleReport, snakeReport, pnl) {
+  const fund = pnl.fund ?? 10000;
+  const treasury = pnl.treasury ?? 0;
+  const totalCapital = fund + treasury;
+  const openPositions = pnl.openPositions || 0;
+  const maxPos = MAX_POSITIONS;
+  const wr = pnl.trades > 0 ? pnl.wins / pnl.trades : 0.5;
+  const net = pnl.net ?? 0;
+
+  // Risk assessment
+  const slotsAvailable = maxPos - openPositions;
+  const capitalUtilization = openPositions / maxPos;
+
+  // Risk level based on multiple factors
+  let riskPoints = 0;
+  if (fund < 1000) riskPoints += 3;          // Low capital
+  else if (fund < 5000) riskPoints += 1;
+  if (wr < 0.4 && pnl.trades >= 5) riskPoints += 2;   // Poor track record
+  if (capitalUtilization > 0.7) riskPoints += 2;       // Over-exposed
+  if (net < -500) riskPoints += 2;                     // Deep drawdown
+  if (snakeReport.viability === 'LOW') riskPoints += 2;
+  if (snakeReport.slippageRisk === 'high') riskPoints += 1;
+  if (appleReport.confidence < 50) riskPoints += 1;
+
+  const riskLevel = riskPoints >= 5 ? 'high' : riskPoints >= 3 ? 'med' : 'low';
+
+  // Determine max capital allocation
+  let maxCapitalPct = 0.02; // default 2% of fund
+  if (riskLevel === 'low' && snakeReport.viability === 'HIGH') maxCapitalPct = 0.05;
+  else if (riskLevel === 'low') maxCapitalPct = 0.03;
+  else if (riskLevel === 'high') maxCapitalPct = 0.01;
+  const maxCapital = Math.round(fund * maxCapitalPct);
+
+  // Approval logic
+  let approved = true;
+  let reason = '';
+
+  if (slotsAvailable <= 0) {
+    approved = false;
+    reason = `All ${maxPos} position slots occupied. Wait for closures.`;
+  } else if (fund < 50) {
+    approved = false;
+    reason = `Capital critically low ($${fund.toFixed(2)}). Survival mode — no new bets.`;
+  } else if (riskLevel === 'high' && appleReport.confidence < 60) {
+    approved = false;
+    reason = `High risk (${riskPoints}pts) + low confidence (${appleReport.confidence}%). Risk/reward unfavorable.`;
+  } else if (snakeReport.viability === 'LOW' && riskLevel !== 'low') {
+    approved = false;
+    reason = `Market conditions poor (viability: LOW) and risk elevated. Wait for better entry.`;
+  } else {
+    reason = `Approved. Risk: ${riskLevel} (${riskPoints}pts). Max allocation: $${maxCapital}. Slots: ${slotsAvailable}/${maxPos} free. WR: ${Math.round(wr * 100)}%.`;
+  }
+
+  return {
+    approved,
+    maxCapital,
+    reason,
+    riskLevel,
+    riskPoints,
+    slotsAvailable,
+    capitalUtilization: parseFloat(capitalUtilization.toFixed(2)),
+    fundStatus: fund < 1000 ? 'CRITICAL' : fund < 5000 ? 'LOW' : 'HEALTHY'
+  };
+}
+
+// ── Mesa Redonda: Ciclo completo Apple → Snake → Eva ──────────────────────
+function runMesaRedonda(allPrices, allMarkets, pnl) {
+  const ts = new Date().toISOString();
+
+  // 1. APPLE analiza contexto y oportunidades
+  const appleReport = runAppleScanner(allPrices, allMarkets);
+
+  // 2. SNAKE evalúa ejecución con markets recomendados por Apple
+  const snakeReport = runSnakeScanner(allPrices, appleReport.recommendedMarkets);
+
+  // 3. EVA decide si podemos arriesgar
+  const evaReport = runEvaScanner(appleReport, snakeReport, pnl);
+
+  const mesaResult = {
+    ts,
+    apple: appleReport,
+    snake: snakeReport,
+    eva: evaReport,
+    consensus: evaReport.approved ? 'PROCEED' : 'HOLD'
+  };
+
+  // Write individual intel files for each parent
+  if (!fs.existsSync(INTEL_DIR)) fs.mkdirSync(INTEL_DIR, { recursive: true });
+
+  const appleIntel = {
+    spec: 'apple', asset: 'CONTEXT', windowMin: 0, ts,
+    price: null, intelScore: appleReport.confidence,
+    signal: {
+      dir: appleReport.opportunity.includes('BULL') || appleReport.opportunity.includes('RECOVERY') ? 'UP'
+        : appleReport.opportunity.includes('BEAR') || appleReport.opportunity.includes('REVERSAL') ? 'DOWN' : 'NEUTRAL',
+      conf: appleReport.confidence,
+      reason: `Opportunity: ${appleReport.opportunity} | Narrative: ${appleReport.narrative} | F&G: ${appleReport.fgValue} (${appleReport.fgBias}) | Sentiment: ${appleReport.sentimentScore}/100`
+    },
+    bestMarket: appleReport.recommendedMarkets[0] || null,
+    report: appleReport
+  };
+
+  const snakeIntel = {
+    spec: 'snake', asset: 'EXECUTION', windowMin: 0, ts,
+    price: null, intelScore: snakeReport.viability === 'HIGH' ? 85 : snakeReport.viability === 'MEDIUM' ? 55 : 25,
+    signal: {
+      dir: snakeReport.viability === 'HIGH' ? 'UP' : snakeReport.viability === 'MEDIUM' ? 'NEUTRAL' : 'DOWN',
+      conf: snakeReport.viability === 'HIGH' ? 85 : snakeReport.viability === 'MEDIUM' ? 55 : 25,
+      reason: `Viability: ${snakeReport.viability} | Timing: ${snakeReport.optimalTiming} | Slippage: ${snakeReport.slippageRisk} | VolRatio: ${snakeReport.avgVolRatio}x`
+    },
+    bestMarket: null,
+    report: snakeReport
+  };
+
+  const evaIntel = {
+    spec: 'eva', asset: 'RISK', windowMin: 0, ts,
+    price: null, intelScore: evaReport.approved ? 80 : 20,
+    signal: {
+      dir: evaReport.approved ? 'UP' : 'DOWN',
+      conf: evaReport.approved ? 80 : 90,
+      reason: evaReport.reason
+    },
+    bestMarket: null,
+    report: evaReport
+  };
+
+  fs.writeFileSync(path.join(INTEL_DIR, 'apple.json'), JSON.stringify(appleIntel, null, 2));
+  fs.writeFileSync(path.join(INTEL_DIR, 'snake.json'), JSON.stringify(snakeIntel, null, 2));
+  fs.writeFileSync(path.join(INTEL_DIR, 'eva.json'), JSON.stringify(evaIntel, null, 2));
+
+  console.log(`${M}MESA REDONDA:${X} Apple(${appleReport.opportunity}) → Snake(${snakeReport.viability}) → Eva(${evaReport.approved ? 'APPROVED' : 'DENIED'}) = ${mesaResult.consensus}`);
+
+  return mesaResult;
+}
+
+// Run a parent agent's logic based on its role (wrapper for compatibility)
+async function runParentScanner(parent, allPrices, allMarkets) {
+  // Read pre-computed intel from Mesa Redonda cycle
+  const intelPath = path.join(INTEL_DIR, parent.id + '.json');
+  if (fs.existsSync(intelPath)) {
+    try {
+      const intel = JSON.parse(fs.readFileSync(intelPath, 'utf8'));
+      console.log(`${B}PARENT SCANNER:${X} ${parent.name} (${parent.role}) — loaded from Mesa Redonda.`);
+      return intel;
+    } catch { }
+  }
+
+  // Fallback: generate fresh (should not happen normally)
+  const intel = {
+    spec: parent.id, asset: parent.specialization, windowMin: 0,
+    ts: new Date().toISOString(), price: null,
+    signal: { dir: 'NEUTRAL', conf: 50, reason: `${parent.name}: awaiting Mesa Redonda cycle` },
+    bestMarket: null, intelScore: 50
+  };
+  if (!fs.existsSync(INTEL_DIR)) fs.mkdirSync(INTEL_DIR, { recursive: true });
+  fs.writeFileSync(intelPath, JSON.stringify(intel, null, 2));
+  console.log(`${B}PARENT SCANNER:${X} ${parent.name} (${parent.role}) — fallback mode.`);
   return intel;
 }
 
@@ -3861,6 +4360,36 @@ async function think(client, markets, prices, pnl, openPos, soul) {
   const cascadeSignal = updateCorrelation(prices);
   const dynW = loadDynWeights();
 
+  // ── MESA REDONDA INTELLIGENCE — Run Apple → Snake → Eva cycle ──────────
+  const mesaResult = runMesaRedonda(prices, markets, pnl);
+  const mesaRedondaBlock = `
+══════════════════════════════════════════
+MESA REDONDA — CONSEJO DE TUS PADRES:
+══════════════════════════════════════════
+🍎 APPLE (Contexto & Oportunidad):
+  Opportunity: ${mesaResult.apple.opportunity} | Narrative: ${mesaResult.apple.narrative}
+  Confidence: ${mesaResult.apple.confidence}% | F&G: ${mesaResult.apple.fgValue} (${mesaResult.apple.fgBias})
+  Sentiment Score: ${mesaResult.apple.sentimentScore}/100 | News: ${mesaResult.apple.newsCount} items
+  ${mesaResult.apple.newsSummary.length > 0 ? 'Headlines: ' + mesaResult.apple.newsSummary.join(' | ') : ''}
+  Top Markets: ${mesaResult.apple.recommendedMarkets.map(m => m.title.slice(0, 30)).join(', ') || 'none'}
+
+🐍 SNAKE (Ejecución & Timing):
+  Viability: ${mesaResult.snake.viability} | Slippage Risk: ${mesaResult.snake.slippageRisk}
+  Optimal Timing: ${mesaResult.snake.optimalTiming}
+  Vol Ratio: ${mesaResult.snake.avgVolRatio}x | Vol Accel: ${mesaResult.snake.volAccel}
+  BTC Trend: 5m=${mesaResult.snake.btcTrend.m5.toFixed(2)}% 1h=${mesaResult.snake.btcTrend.h1.toFixed(2)}% aligned=${mesaResult.snake.btcTrend.aligned}
+  Plan: ${mesaResult.snake.executionPlan.slice(0, 120)}
+
+👑 EVA (Riesgo & Capital):
+  Decision: ${mesaResult.eva.approved ? '✅ APPROVED' : '❌ DENIED'} | Risk: ${mesaResult.eva.riskLevel} (${mesaResult.eva.riskPoints}pts)
+  Max Capital: $${mesaResult.eva.maxCapital} | Slots: ${mesaResult.eva.slotsAvailable}/${MAX_POSITIONS} free
+  Fund Status: ${mesaResult.eva.fundStatus} | Reason: ${mesaResult.eva.reason}
+
+MESA CONSENSUS: ${mesaResult.consensus}
+${!mesaResult.eva.approved ? '⚠ EVA SAYS NO — You may still override if you see extraordinary edge (>15%) with high confidence (>80%).' : '✅ Mesa approves action. Weigh their counsel and decide: INVEST or WAIT.'}
+══════════════════════════════════════════
+`;
+
   // AGI Layer 1: legacy pattern memory
   const patternMemory = candidates.map((m, i) => {
     const pm = getSimilarPastTrades(m.asset, 'NO', m.roughEdge || 0.07, prices[m.asset?.toUpperCase() + 'USDT']?.rsi || 50);
@@ -3870,8 +4399,9 @@ async function think(client, markets, prices, pnl, openPos, soul) {
   // AGI Layer 10: CORTEX MEMORY — semantic vector recall
   const cortexRecall = recallAllMemories(candidates, prices);
 
-  const prompt = `You are ADAN-PRED — autonomous prediction markets agent with real-time market intelligence.
-Mission: find Polymarket crypto markets where YOUR probability estimate differs from market price by >${(strat.minEdge * 100).toFixed(0)}%.${skillsBlock}${intelSummary ? '\n' + intelSummary : ''}${episodicAccuracy ? '\nYOUR CALIBRATION HISTORY: ' + episodicAccuracy + '\n' : ''}${metaCalibCtx ? '\n' + metaCalibCtx + '\n' : ''}${cascadeSignal ? '\n' + cascadeSignal + '\n' : ''}${patternMemory ? '\nPATTERN MEMORY (similar past bets):\n' + patternMemory + '\n' : ''}${cortexRecall ? '\n' + cortexRecall + '\n' : ''}
+  const prompt = `You are ADAN-PRED — autonomous prediction markets agent with a Mesa Redonda (Council of 3 Parents).
+Your parents Apple, Snake, and Eva have analyzed the market for you. Weigh their counsel, then decide: INVEST or WAIT.
+Mission: find Polymarket crypto markets where YOUR probability estimate differs from market price by >${(strat.minEdge * 100).toFixed(0)}%.${skillsBlock}${mesaRedondaBlock}${intelSummary ? '\n' + intelSummary : ''}${episodicAccuracy ? '\nYOUR CALIBRATION HISTORY: ' + episodicAccuracy + '\n' : ''}${metaCalibCtx ? '\n' + metaCalibCtx + '\n' : ''}${cascadeSignal ? '\n' + cascadeSignal + '\n' : ''}${patternMemory ? '\nPATTERN MEMORY (similar past bets):\n' + patternMemory + '\n' : ''}${cortexRecall ? '\n' + cortexRecall + '\n' : ''}
 
 ══════════════════════════════════════════
 MARKET CONTEXT — ${new Date().toISOString()}
@@ -4350,6 +4880,11 @@ async function checkResolutions() {
     runTournamentOfDeath(loadPnL());
     // AGI Layer 5: promote elite grandchildren (grandchild WR > parent WR + 12% → parent dies, gc promoted)
     promoteEliteGrandchild(loadPnL());
+    // AGI Layer 6: Swarm competition — evaluate parent performance after trade
+    const lastClosed = pos.closed[pos.closed.length - 1];
+    if (lastClosed) evaluateParentPerformance(loadPnL(), lastClosed);
+    // AGI Layer 7: Usurper path — check if any child should replace a weak parent
+    checkUsurperPath(loadPnL());
   }
 }
 
@@ -4549,6 +5084,128 @@ function runTournamentOfDeath(pnl) {
 
   appendToSoul(`\n### TOURNAMENT RESULT — ${new Date().toISOString()}:\nSurvivors: ${survivors.map(s => (s.name || s.spec) + ' WR:' + Math.round(s.wr * 100) + '%').join(', ')}.\nCapital recovered: $${recoveredCapital.toFixed(2)} → treasury.\n`);
   console.log(M + BOLD + '\n  ◈ TOURNAMENT DONE: ' + survivors.length + ' survivors, $' + recoveredCapital.toFixed(2) + ' recovered' + X);
+}
+
+// ── COMPETENCIA HORIZONTAL: múltiples variantes por arquetipo ──────────────
+// Después de cada trade, evalúa qué padre fue más acertado y ajusta influencia.
+function evaluateParentPerformance(pnl, tradeResult) {
+  const config = loadConfig();
+  if (!config?.mesaRedonda?.competition?.horizontal) return;
+
+  const parents = config.mesaRedonda.parents;
+  const decayRate = config.mesaRedonda.competition?.influenceDecayRate || 0.05;
+
+  // Read last intel reports from each parent
+  for (const parent of parents) {
+    const intelPath = path.join(INTEL_DIR, parent.id + '.json');
+    if (!fs.existsSync(intelPath)) continue;
+
+    try {
+      const intel = JSON.parse(fs.readFileSync(intelPath, 'utf8'));
+      const report = intel.report;
+      if (!report) continue;
+
+      let wasAccurate = false;
+
+      if (parent.id === 'apple') {
+        // Apple was accurate if opportunity direction matched trade result
+        const bullOpp = report.opportunity?.includes('BULL') || report.opportunity?.includes('RECOVERY');
+        const bearOpp = report.opportunity?.includes('BEAR') || report.opportunity?.includes('REVERSAL');
+        if (tradeResult.side === 'YES' && tradeResult.result === 'WIN' && bullOpp) wasAccurate = true;
+        if (tradeResult.side === 'NO' && tradeResult.result === 'WIN' && bearOpp) wasAccurate = true;
+        if (tradeResult.result === 'WIN' && !bullOpp && !bearOpp) wasAccurate = true; // neutral = no penalty
+      } else if (parent.id === 'snake') {
+        // Snake was accurate if viability assessment matched outcome
+        if (report.viability === 'HIGH' && tradeResult.result === 'WIN') wasAccurate = true;
+        if (report.viability === 'LOW' && tradeResult.result === 'LOSS') wasAccurate = true;
+      } else if (parent.id === 'eva') {
+        // Eva was accurate if approval was correct
+        if (report.approved && tradeResult.result === 'WIN') wasAccurate = true;
+        if (!report.approved && tradeResult.result === 'LOSS') wasAccurate = true;
+      }
+
+      // Update influence score
+      if (!parent.influence) parent.influence = 50;
+      if (wasAccurate) {
+        parent.influence = Math.min(100, parent.influence + 5);
+      } else {
+        parent.influence = Math.max(0, parent.influence - 3);
+      }
+
+      // Decay toward 50 (regression to mean)
+      parent.influence += (50 - parent.influence) * decayRate;
+      parent.influence = Math.round(parent.influence * 100) / 100;
+
+      // Update variants scores if they exist
+      if (parent.variants && parent.variants.length > 0) {
+        for (const variant of parent.variants) {
+          if (!variant.score) variant.score = 0;
+          // Simple variant tracking — increment best, decrement worst
+          if (wasAccurate) variant.score += 1;
+          else variant.score -= 1;
+        }
+        // Eliminate variants with very low scores
+        parent.variants = parent.variants.filter(v => v.score > -10);
+      }
+    } catch { }
+  }
+
+  config.mesaRedonda.parents = parents;
+  saveConfig(config);
+}
+
+// ── COMPETENCIA VERTICAL: La Vía del Usurpador ──────────────────────────
+// Gen2 hijo con WR consistentemente > padre arquetípico en 10+ trades → usurpa
+function checkUsurperPath(pnl) {
+  const config = loadConfig();
+  if (!config?.mesaRedonda?.competition?.verticalUsurper) return;
+
+  const minTrades = config.mesaRedonda.competition?.minTradesForChallenge || 10;
+  const children = pnl.children || [];
+  const parents = config.mesaRedonda.parents;
+
+  for (const child of children) {
+    const childDir = child.dir || path.join(DIR, 'children', child.id || child.spec);
+    const childPnlPath = path.join(childDir, 'pnl.json');
+    if (!fs.existsSync(childPnlPath)) continue;
+
+    let childPnl;
+    try { childPnl = JSON.parse(fs.readFileSync(childPnlPath, 'utf8')); } catch { continue; }
+
+    if ((childPnl.trades || 0) < minTrades) continue;
+    const childWR = (childPnl.wins || 0) / childPnl.trades;
+
+    // Check against each parent — find weakest parent
+    let weakestParent = null;
+    let weakestInfluence = 100;
+
+    for (const parent of parents) {
+      const inf = parent.influence ?? 50;
+      if (inf < weakestInfluence) {
+        weakestInfluence = inf;
+        weakestParent = parent;
+      }
+    }
+
+    // Child must have > 60% WR and the parent must be underperforming (< 35 influence)
+    if (weakestParent && childWR > 0.60 && weakestInfluence < 35) {
+      const oldParentId = weakestParent.id;
+      const msg = `\n### USURPATION — ${new Date().toISOString()}:\n`
+        + `${child.name || child.spec} (WR:${Math.round(childWR * 100)}%) usurped ${weakestParent.name} (influence:${Math.round(weakestInfluence)}).\n`
+        + `The dynasty grows stronger through competition.\n`;
+      appendToSoul(msg);
+      console.log(C + BOLD + '\n  ⚔ USURPATION: ' + (child.name || child.spec) + ' replaced ' + weakestParent.name + X);
+
+      // Replace parent in config with child's DNA becoming the new standard
+      weakestParent.usurpedBy = child.name || child.spec;
+      weakestParent.usurpedAt = new Date().toISOString();
+      weakestParent.influence = 60; // Reset influence on usurpation
+      weakestParent.dna = child.dna || {};
+
+      saveConfig(config);
+      return; // One usurpation per cycle
+    }
+  }
 }
 
 // ── PROMOCIÓN DE NIETOS: si nieto supera al hijo padre, el hijo muere y el nieto sube ──

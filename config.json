@@ -25,7 +25,18 @@
         "specialization": "Control AGI",
         "prompt": "Gestiono el presupuesto de $5, asigno capital a las operaciones, y tengo la última palabra (el 'go' o 'no-go') para asegurar la supervivencia económica del enjambre."
       }
-    ]
+    ],
+    "competition": {
+      "horizontal": true,
+      "verticalUsurper": true,
+      "minTradesForChallenge": 10,
+      "influenceDecayRate": 0.05
+    }
+  },
+  "swarm": {
+    "budget": 10000,
+    "maxAgents": 20,
+    "evolutionEnabled": true
   },
   "avatar": {
     "hairColor": "#5b21b6",
