@@ -2219,25 +2219,49 @@ async function fetchFundingRates() {
 }
 
 async function fetchOrderBookWalls(symbol) {
-  // Top bid/ask walls = support/resistance levels
+  // Micro-structure analysis: detect walls within 0.5% of price
   try {
     const r=await fetch(`${BINANCE_API}/depth?symbol=${symbol}&limit=20`);
     const d=await r.json();
     if (!d?.bids||!d?.asks) return null;
-    // Find biggest bid wall (support) and ask wall (resistance)
     const bids=d.bids.map(b=>({ price:parseFloat(b[0]), qty:parseFloat(b[1]) }));
     const asks=d.asks.map(a=>({ price:parseFloat(a[0]), qty:parseFloat(a[1]) }));
+    const midPrice = (bids[0].price + asks[0].price) / 2;
+    const range05  = midPrice * 0.005; // 0.5% range
+
+    // Filter to walls within 0.5% of price
+    const nearBids = bids.filter(b=>midPrice-b.price <= range05);
+    const nearAsks = asks.filter(a=>a.price-midPrice <= range05);
+    const bidVol   = nearBids.reduce((s,b)=>s+b.qty*b.price,0);
+    const askVol   = nearAsks.reduce((s,a)=>s+a.qty*a.price,0);
+    const totalVol = bidVol+askVol;
+
+    // Biggest walls
     const topBid=bids.reduce((a,b)=>b.qty>a.qty?b:a, bids[0]);
     const topAsk=asks.reduce((a,b)=>b.qty>a.qty?b:a, asks[0]);
-    const bidTotal=bids.reduce((s,b)=>s+b.qty*b.price,0);
-    const askTotal=asks.reduce((s,a)=>s+a.qty*a.price,0);
+
+    // Sell wall trap detection: sell wall within 0.5% that is 2x+ the bid volume
+    const sellWallTrap = askVol > bidVol * 2 && nearAsks.length > 0;
+    const buyWallTrap  = bidVol > askVol * 2 && nearBids.length > 0;
+    // Distance of biggest wall from price
+    const askWallDist = topAsk.price > 0 ? ((topAsk.price - midPrice)/midPrice*100).toFixed(2) : '?';
+    const bidWallDist = topBid.price > 0 ? ((midPrice - topBid.price)/midPrice*100).toFixed(2) : '?';
+
     return {
       support:      topBid.price,
       resistance:   topAsk.price,
       bidWall:      topBid.qty,
       askWall:      topAsk.qty,
-      buyPressure:  Math.round(bidTotal/(bidTotal+askTotal)*100), // % buy pressure
-      spread:       ((topAsk.price-topBid.price)/topBid.price*100).toFixed(4)
+      buyPressure:  totalVol>0 ? Math.round(bidVol/totalVol*100) : 50,
+      spread:       ((asks[0].price-bids[0].price)/bids[0].price*100).toFixed(4),
+      // New: micro-structure trap detection
+      sellWallTrap,   // true = massive sell wall 2x bids within 0.5% → price bounces DOWN
+      buyWallTrap,    // true = massive buy wall 2x asks within 0.5% → price bounces UP
+      bidVolUSD:    Math.round(bidVol),
+      askVolUSD:    Math.round(askVol),
+      ratio:        totalVol>0 ? parseFloat((bidVol/askVol).toFixed(2)) : 1,
+      askWallDist,  // % distance of biggest sell wall from price
+      bidWallDist   // % distance of biggest buy wall from price
     };
   } catch { return null; }
 }
@@ -3115,7 +3139,9 @@ async function think(client, markets, prices, pnl, openPos, soul) {
     const macd    = d.macd;
     const macro1h = d.trend1h ?? 0;
     const macroDir= macro1h > 0.3 ? '▲ MACRO UP' : macro1h < -0.3 ? '▼ MACRO DOWN' : '━ MACRO FLAT';
-    const wallInfo = ob ? (ob.buyPressure > 60 ? `BUY WALL (${ob.buyPressure}% bids) — support $${ob.support.toLocaleString()}` : ob.buyPressure < 40 ? `SELL WALL (${100-ob.buyPressure}% asks) — resist $${ob.resistance.toLocaleString()}` : `BALANCED (${ob.buyPressure}% bids)`) : '---';
+    const wallBase = ob ? (ob.buyPressure > 60 ? `BUY WALL (${ob.buyPressure}% bids) — support $${ob.support.toLocaleString()}` : ob.buyPressure < 40 ? `SELL WALL (${100-ob.buyPressure}% asks) — resist $${ob.resistance.toLocaleString()}` : `BALANCED (${ob.buyPressure}% bids)`) : '---';
+    const trapAlert = ob?.sellWallTrap ? ` ⚠ SELL WALL TRAP: asks ${ob.ratio<1?(1/ob.ratio).toFixed(1):ob.ratio.toFixed(1)}x bids within 0.5% — price will bounce DOWN. BET NO on 5min.` : ob?.buyWallTrap ? ` ⚠ BUY WALL TRAP: bids ${ob.ratio.toFixed(1)}x asks within 0.5% — floor support. BET YES safer.` : '';
+    const wallInfo = wallBase + trapAlert + (ob ? ` | Bid$${(ob.bidVolUSD/1000).toFixed(0)}k vs Ask$${(ob.askVolUSD/1000).toFixed(0)}k | wall dist: sell@${ob.askWallDist}% buy@${ob.bidWallDist}%` : '');
     return `━━ ${name} ━━
   Price: $${d.price.toLocaleString()} | Change: ${d.chg>=0?'+':''}${d.chg.toFixed(2)}%
   MACRO 1h: ${macroDir} (${macro1h>=0?'+':''}${macro1h.toFixed(2)}%) | RSI1h: ${d.rsi1h!=null?d.rsi1h.toFixed(0):'--'}  ← macro trend dictates direction
@@ -3204,11 +3230,14 @@ YOUR 7-STEP ANALYSIS (INSTITUTIONAL GRADE):
    - NO CONFLUENCE = NO BET. A great 5m signal against the 1h trend = suicide.
    - BTC CORRELATION: ETH/SOL/XRP CANNOT bet YES if BTC is falling 5m (cascade risk).
 
-3. ORDER BOOK REALITY (predicts near-term 5-15min — ignore MACD for these timeframes):
-   - BUY WALL dominant (>60% bids): price has FLOOR support. YES bets safer.
-   - SELL WALL dominant (>60% asks): price has CEILING resistance. NO bets safer.
-   - If a SELL WALL is 0.2% above current price → price will bounce DOWN. BET NO.
-   - If a BUY WALL is 0.2% below current price → price has support. BET YES.
+3. ORDER BOOK MICRO-STRUCTURE (predicts near-term 5-15min — your #1 edge on 5min markets):
+   - BUY WALL dominant (>60% bids within 0.5%): price has FLOOR support. YES bets safer.
+   - SELL WALL dominant (>60% asks within 0.5%): price has CEILING resistance. NO bets safer.
+   - ⚠ SELL WALL TRAP: If price is RISING but ask volume is 2x+ bid volume within 0.5% → IT IS A TRAP.
+     The price WILL bounce down. BET NO on 5min markets. NEVER bet YES against a sell wall trap.
+   - ⚠ BUY WALL TRAP: If price is FALLING but bid volume is 2x+ ask volume within 0.5% → floor support.
+     The price will bounce up. BET YES on 5min markets.
+   - Look at wall distance: if biggest sell wall is <0.2% above price → imminent ceiling. If >0.5% → less relevant.
 
 4. VOLUME MICROSTRUCTURE (PRIMARY EDGE — Polymarket lags Binance 10-30s):
    - volRatio > 1.3x = conviction move in progress. volRatio < 0.8x = noise → SKIP.
