@@ -389,6 +389,9 @@ function renderTreePanel(pnl, prices) {
 
 // ── Web dashboard — localhost:3141 ───────────────────────────────────────────
 let _dashboardState = null;
+let _nextScanAt     = null;   // epoch ms of next scheduled scan
+let _resultAt       = null;   // epoch ms when last 'result' was set
+const RESULT_SHOW_MS = 22000; // show "DECISION MADE" for 22s then go idle
 
 // ── Terminal braille spinner (thinking mode) ──────────────────────────────────
 let _thinkSpinTimer = null;
@@ -583,6 +586,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 .nf-pulse{animation:nfPulse .9s ease-in-out infinite}
 .nf-flowline{animation:nfFlow .6s linear infinite}
 .nf-flowslow{animation:nfFlowSlow 2s linear infinite}
+@keyframes nfHeartbeat{0%,100%{opacity:.4}10%{opacity:1}20%{opacity:.6}30%{opacity:1}40%{opacity:.4}}
+.nf-heartbeat{animation:nfHeartbeat 2.4s ease-in-out infinite}
 /* ── Decisions Log ────────────────────────────────────────────── */
 .dec-row{padding:10px 0;border-bottom:2px dashed var(--border2)}
 .dec-row:last-child{border-bottom:none}
@@ -1270,7 +1275,10 @@ function updateNeuralFlow(d) {
     const x=pipeX[i], y=pipeY;
     const bc=(isThinking&&i===3)?'#22d3ee':(isDone?'#34d39966':'#2a2a44');
     const gf=(isThinking&&i===3)?' filter="url(#nfg2)"':'';
-    const gc=(isThinking&&i===3)?' class="nf-thinking"':(isIdle&&hasPrices?' class="nf-idle-node"':'');
+    // BINANCE heartbeats when idle+has prices, CLAUDE glows when thinking
+    const gc=(isThinking&&i===3)?' class="nf-thinking"'
+            :(isIdle&&hasPrices&&i===0)?' class="nf-heartbeat"'
+            :(isIdle&&hasPrices)?' class="nf-idle-node"':'';
     svg+=\`<g\${gc}>
       <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" rx="4" fill="#0d0d18" stroke="\${bc}" stroke-width="1.2"\${gf}/>
       <text x="\${x+NW/2}" y="\${y+10}" text-anchor="middle" font-size="6.5" font-weight="700" fill="#6b7280" font-family="JetBrains Mono,monospace" letter-spacing=".8">\${nd.title}</text>
@@ -1334,10 +1342,18 @@ function updateNeuralFlow(d) {
     svg+=\`<text x="\${SVG_W/2}" y="\${childY+CH+16}" text-anchor="middle" font-size="7" fill="#4b5563" font-family="JetBrains Mono,monospace" letter-spacing=".5">\${children.length} CHILD SCANNER\${children.length>1?'S':''} FEEDING SIGNALS TO CLAUDE</text>\`;
   }
 
+  // Live countdown from nextScanAt
+  const nextAt = d.state?.nextScanAt;
+  let countdownStr = '';
+  if(nextAt && !isThinking && !isDone){
+    const rem = Math.max(0, Math.round((nextAt - Date.now()) / 1000));
+    const mm = Math.floor(rem/60), ss = String(rem%60).padStart(2,'0');
+    countdownStr = \` · \${mm}:\${ss} TO SCAN\`;
+  }
   // Status label
-  const label=isThinking?'LIVE · ANALYZING':isDone?'DECISION MADE':(hasPrices?'MONITORING':'INITIALIZING');
-  const labelColor=isThinking?'#22d3ee':isDone?'#34d399':'#4b5563';
-  svg+=\`<text x="\${SVG_W/2}" y="\${SVG_H-4}" text-anchor="middle" font-size="7" fill="\${labelColor}" font-family="JetBrains Mono,monospace" letter-spacing="2" opacity=".7">\${label}</text>\`;
+  const label=isThinking?'◈ LIVE · ANALYZING ◈':isDone?'✓ DECISION MADE':(hasPrices?\`MONITORING\${countdownStr}\`:'INITIALIZING');
+  const labelColor=isThinking?'#22d3ee':isDone?'#34d399':(hasPrices?'#6b7280':'#4b5563');
+  svg+=\`<text x="\${SVG_W/2}" y="\${SVG_H-4}" text-anchor="middle" font-size="7" fill="\${labelColor}" font-family="JetBrains Mono,monospace" letter-spacing="2" opacity=".8">\${label}</text>\`;
 
   svg += '</svg>';
   wrap.innerHTML = svg;
@@ -1399,12 +1415,21 @@ setInterval(()=>{
         return { ...child, intel, grandChildren, childExp, childSignals };
       });
 
+      // Auto-reset result → idle after RESULT_SHOW_MS so the flow goes back to monitoring
+      if (_dashboardState?.mode === 'result' && _resultAt && (Date.now() - _resultAt) > RESULT_SHOW_MS) {
+        _dashboardState = { ..._dashboardState, mode: null };
+      }
+      // Enrich state with live nextScanAt for client-side countdown
+      const enrichedState = _dashboardState
+        ? { ..._dashboardState, nextScanAt: _nextScanAt || null }
+        : null;
+
       res.end(JSON.stringify({
         ts: new Date().toISOString(),
         pnl, calib, positions: pos,
         xp: { ...xp, title: levelTitle(xp.level) },
         children: childrenWithIntel,
-        state: _dashboardState
+        state: enrichedState
       }));
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -1422,6 +1447,10 @@ setInterval(()=>{
 // ── Render ───────────────────────────────────────────────────────────────────
 function render(s) {
   _dashboardState = s; // expose to web dashboard
+  if (s.mode === 'result') {
+    _resultAt   = Date.now();
+    _nextScanAt = Date.now() + (s.nextScanIn || 5) * 60 * 1000;
+  }
   if (s.mode !== 'thinking') _stopThinkSpin();
   cls();
   const pnl      = s.pnl;
