@@ -668,10 +668,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 .brain-live-body{font-size:11px;font-family:var(--mono);color:var(--text2);line-height:1.75;white-space:pre-wrap;max-height:140px;overflow-y:auto;border-left:2px solid var(--border2);padding-left:8px}
 .brain-full-text{font-size:10px;font-family:var(--mono);color:var(--dim);line-height:1.6;white-space:pre-wrap;max-height:300px;overflow-y:auto;padding:8px;background:var(--bg3);margin-top:6px;border:1px solid var(--border2)}
 .brain-section-title{font-family:var(--pixel);font-size:7px;color:var(--grey);letter-spacing:1px;margin:10px 0 6px;padding-bottom:4px;border-bottom:1px dashed var(--border2)}
-/* ── Cmd card transparent dotgrid bg ─────────────────────────── */
-#cmd-card{position:relative}
-#cmd-card::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle,var(--border2) 1px,transparent 1px);background-size:18px 18px;opacity:.05;pointer-events:none;z-index:0}
-.nf-wrap,.dynasty-panel{position:relative;z-index:1}
 /* ── Decisions Log ────────────────────────────────────────────── */
 .dec-row{padding:10px 0;border-bottom:2px dashed var(--border2)}
 .dec-row:last-child{border-bottom:none}
@@ -1394,7 +1390,7 @@ function updateNeuralFlow(d) {
       <path d="M0,0 L0,6 L7,3 z" fill="\${lnColor}"/>
     </marker>
   </defs>
-  <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}" fill-opacity="0.45"/>\`;
+  <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}" fill-opacity="1"/>\`;
 
   // Dot grid sutil (mismo estilo que el fondo de la página)
   for(let gx=0;gx<SVG_W;gx+=36) svg+=\`<circle cx="\${gx}" cy="\${SVG_H/2}" r=".8" fill="\${C_BRD2}" opacity=".12"/>\`;
@@ -1509,7 +1505,7 @@ function updateDynastyPanel(d) {
     const SVG_W=720, SVG_H=54;
     const bw=Math.floor((SVG_W-40)/3)-8;
     let svg=\`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
-    <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}" fill-opacity="0.45"/>
+    <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}" fill-opacity="1"/>
     <text x="10" y="14" font-family="JetBrains Mono,monospace" font-size="8" fill="\${C_PUR}" font-weight="700" letter-spacing="2">🧬 DYNASTY — SPAWN REQUIREMENTS</text>\`;
     reqs.forEach((r,i)=>{
       const x=10+i*(bw+8), y=20;
@@ -1560,7 +1556,7 @@ function updateDynastyPanel(d) {
       <path d="M0,0 L0,5 L6,2.5 z" fill="\${C_PUR}"/>
     </marker>
   </defs>
-  <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}" fill-opacity="0.45"/>\`;
+  <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}" fill-opacity="1"/>\`;
 
   // Label header
   const activeSigs = children.filter(c=>c.intel?.signal).length;
@@ -3321,8 +3317,14 @@ function kellyStake(pnl, side, myProb, marketYesPrice, edge) {
   const halfKelly = kelly / 2;  // half-Kelly = safer
   const fund      = pnl.fund || 10000;
   const raw       = fund * halfKelly;
-  // Round to nearest $25, clamp $50-$400
-  return Math.round(Math.min(Math.max(raw, 50), 400) / 25) * 25;
+  // Dynamic max based on WR — protect capital when losing
+  const wr = pnl.trades > 0 ? pnl.wins / pnl.trades : 0.5;
+  const maxStake = wr >= 0.60 ? 400    // 60%+ WR → aggressive, up to $400
+                 : wr >= 0.50 ? 250    // 50-59% WR → moderate, up to $250
+                 : wr >= 0.40 ? 150    // 40-49% WR → conservative, up to $150
+                 :               75;   // <40% WR → survival mode, max $75
+  // Round to nearest $25, clamp $50-maxStake
+  return Math.round(Math.min(Math.max(raw, 50), maxStake) / 25) * 25;
 }
 
 async function enterPosition(decision) {
