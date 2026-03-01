@@ -2295,10 +2295,30 @@ async function fetchFearGreed() {
     if (!cur) return null;
     return {
       value:      parseInt(cur.value),
-      label:      cur.value_classification,   // 'Extreme Fear', 'Fear', 'Neutral', 'Greed', 'Extreme Greed'
+      label:      cur.value_classification,
       prevValue:  prev?parseInt(prev.value):null,
       direction:  prev?(parseInt(cur.value)-parseInt(prev.value)):0
     };
+  } catch { return null; }
+}
+
+// ── Crypto News Feed — detect Black Swans before looking at candles ───────────
+async function fetchCryptoNews() {
+  // CryptoCompare — free, no auth, reliable
+  try {
+    const r = await fetch('https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=BTC,ETH,SOL&sortOrder=popular', { signal: AbortSignal.timeout(5000) });
+    const d = await r.json();
+    const posts = (d?.Data || []).slice(0, 5);
+    if (!posts.length) return null;
+    const bearWords = /crash|hack|ban|fraud|scam|dump|plunge|collapse|bankrupt|sec sue|arrest|exploit/i;
+    const bullWords = /surge|rally|etf approv|record|breakout|adoption|bullish|soar|pump|ath|approve/i;
+    return posts.map(p => ({
+      title:      p.title,
+      source:     p.source || '?',
+      sentiment:  bearWords.test(p.title) ? 'BEARISH' : bullWords.test(p.title) ? 'BULLISH' : 'NEUTRAL',
+      ts:         new Date((p.published_on||0) * 1000).toISOString(),
+      currencies: (p.categories || '').split('|').filter(c => /BTC|ETH|SOL|XRP/i.test(c)).join(',') || 'CRYPTO'
+    }));
   } catch { return null; }
 }
 
@@ -2372,12 +2392,13 @@ async function fetchOrderBookWalls(symbol) {
 
 async function fetchAllPrices() {
   // Fetch all in parallel for speed
-  const [fearGreed, fundingRates] = await Promise.all([
+  const [fearGreed, fundingRates, cryptoNews] = await Promise.all([
     fetchFearGreed(),
-    fetchFundingRates()
+    fetchFundingRates(),
+    fetchCryptoNews()
   ]);
 
-  const result = { _meta: { fearGreed, fundingRates } };
+  const result = { _meta: { fearGreed, fundingRates, cryptoNews } };
 
   await Promise.all(SYMBOLS.map(async sym=>{
     const [klines1m, klines5m, klines15m, klines1h, orderBook] = await Promise.all([
@@ -2843,16 +2864,67 @@ async function spawnGrandchildren(client) {
     const gcDir     = path.join(childDir, 'children', nextGcSpec.id);
     if (!fs.existsSync(gcDir)) fs.mkdirSync(gcDir, { recursive: true });
 
-    const gcSoul = `# ${gcName} — GRANDCHILD SCANNER
+    // ── CROSSOVER DE LINAJES CAMPEONES ─────────────────────────────────────
+    // Find the 2 best-performing children (by intel score) and crossover their DNA
+    const allChildDNA = children.map(ch => {
+      try {
+        const chDir = path.join(DIR, 'children', ch.id || ch.spec);
+        const chPnl = JSON.parse(fs.readFileSync(path.join(chDir, 'pnl.json'), 'utf8'));
+        return { name: ch.name, dna: chPnl.dna || {}, scores: (chPnl.scoreHistory||[]) };
+      } catch { return null; }
+    }).filter(Boolean).sort((a,b) => {
+      const avgA = a.scores.length ? a.scores.reduce((s,v)=>s+v,0)/a.scores.length : 50;
+      const avgB = b.scores.length ? b.scores.reduce((s,v)=>s+v,0)/b.scores.length : 50;
+      return avgB - avgA;
+    });
+    const parentA = allChildDNA[0]?.dna || cp.dna || {};
+    const parentB = allChildDNA[1]?.dna || {};
+    // Weighted crossover: 70% from best parent, 30% from second + mutation
+    const crossover = (a, b, mut=0.05) => {
+      const base = (a||1) * 0.7 + (b||a||1) * 0.3;
+      return parseFloat((base * (1 + (Math.random()*2-1)*mut)).toFixed(4));
+    };
+    const gcDNA = {
+      minEdge:        crossover(parentA.minEdge, parentB.minEdge, 0.08),
+      volWeight:      crossover(parentA.volWeight, parentB.volWeight, 0.06),
+      vwapWeight:     crossover(parentA.vwapWeight, parentB.vwapWeight, 0.06),
+      stakePct:       crossover(parentA.stakePct||0.08, parentB.stakePct||0.08, 0.10),
+      patience:       crossover(parentA.patience||1.0, parentB.patience||1.0, 0.08),
+      cognitiveStyle: parentA.cognitiveStyle || 'volume_vwap',
+      mutation:       Math.round(Math.random()*100),
+      crossoverFrom:  [allChildDNA[0]?.name||'?', allChildDNA[1]?.name||'?'],
+      isElite:        true
+    };
+
+    // Destilación de traumas: read last 5 mistakes from parent SOUL.md
+    let traumaRules = '';
+    try {
+      const parentSoulPath = path.join(childDir, 'SOUL.md');
+      if (fs.existsSync(parentSoulPath)) {
+        const psoul = fs.readFileSync(parentSoulPath, 'utf8');
+        const mistakes = psoul.split('\n').filter(l => l.includes('MISTAKE') || l.includes('LOSS')).slice(-5);
+        if (mistakes.length) traumaRules = '\n## Trauma Rules (inherited from parent mistakes):\n' + mistakes.join('\n') + '\n';
+      }
+      const rootSoulContent = loadSoul();
+      const rootMistakes = rootSoulContent.split('\n').filter(l => l.includes('MISTAKE') || l.includes('DREAM_RULE')).slice(-5);
+      if (rootMistakes.length) traumaRules += '\n## ROOT Trauma Rules (from ADAN):\n' + rootMistakes.join('\n') + '\n';
+    } catch {}
+
+    const gcSoul = `# ${gcName} — ELITE GRANDCHILD (CROSSOVER)
 Created: ${new Date().toISOString().slice(0, 10)}
 Name: ${gcName} | Spec: ${nextGcSpec.id} | Focus: ${nextGcSpec.focus}
 Parent: ${child.name || child.spec}
+Crossover: ${gcDNA.crossoverFrom.join(' × ')} (70/30 weighted)
 
 ## Identity
-I am ${gcName}. Grandchild of ADAN. Child of ${child.name || child.spec}.
+I am ${gcName}. Elite grandchild of ADAN. Born from crossover of the 2 strongest lineages.
 I specialize in ${nextGcSpec.focus} signals for ${nextGcSpec.assetName.toUpperCase()} ${nextGcSpec.windowMin}min markets.
 I never bet. I scan one indicator with precision and report up.
 
+## DNA Manifest
+This genome combines ${gcDNA.crossoverFrom[0]}'s strength with ${gcDNA.crossoverFrom[1]}'s adaptability.
+volWeight: ${gcDNA.volWeight} | vwapWeight: ${gcDNA.vwapWeight} | stakePct: ${(gcDNA.stakePct*100).toFixed(1)}%
+${traumaRules}
 ## Rules
 1. Focus: ${nextGcSpec.focus} only
 2. Report signal to parent ${child.name || child.spec}
@@ -2862,11 +2934,12 @@ I never bet. I scan one indicator with precision and report up.
     fs.writeFileSync(path.join(gcDir, 'pnl.json'), JSON.stringify({
       trades: 0, wins: 0, losses: 0, net: 0, exp: 0,
       fund: 0, treasury: 0, children: [], generation: 3,
-      parentId: child.id, spec: nextGcSpec.id, name: gcName, focus: nextGcSpec.focus
+      parentId: child.id, spec: nextGcSpec.id, name: gcName, focus: nextGcSpec.focus,
+      dna: gcDNA
     }, null, 2));
 
     const gc = { id: gcId, name: gcName, spec: nextGcSpec.id, focus: nextGcSpec.focus,
-      born: new Date().toISOString(), dir: gcDir, generation: 3 };
+      born: new Date().toISOString(), dir: gcDir, generation: 3, dna: gcDNA, isElite: true };
     cp.children = [...gcList, gc];
     fs.writeFileSync(childPnlPath, JSON.stringify(cp, null, 2));
 
@@ -3222,6 +3295,14 @@ async function think(client, markets, prices, pnl, openPos, soul) {
   const fg = prices._meta?.fearGreed;
   const fgContext = fg?`Fear & Greed: ${fg.value} (${fg.label}) — direction: ${fg.direction>0?'improving':'worsening'}`:'Fear & Greed: unavailable';
 
+  // CryptoPanic news flash — detect black swans
+  const news = prices._meta?.cryptoNews;
+  const newsContext = news && news.length > 0
+    ? '\n⚡ FLASH NEWS (CryptoPanic — read BEFORE technical analysis):\n' +
+      news.map(n => `  ${n.sentiment==='BULLISH'?'🟢':n.sentiment==='BEARISH'?'🔴':'⚪'} [${n.currencies||'CRYPTO'}] "${n.title}" (${n.source}) sentiment: ${n.sentiment}`).join('\n') +
+      '\n  ⚠ If any news is a BLACK SWAN (hack, regulation, ETF, bankruptcy) → override technical analysis completely.\n'
+    : '';
+
   // BTC macro context for correlation rule
   const btcData = prices['BTCUSDT'];
   const btcMacro1h = btcData?.trend1h ?? 0;
@@ -3306,7 +3387,7 @@ Mission: find Polymarket crypto markets where YOUR probability estimate differs 
 MARKET CONTEXT — ${new Date().toISOString()}
 ══════════════════════════════════════════
 ${fgContext}${dynW.fearGreedBias!==0?`\nFEAR-GREED BIAS ACTIVE: ${dynW.fearGreedBias>0?'Lean NO on UP bets (fear premium)':'Lean YES on UP bets (greed momentum)'}`:''}
-
+${newsContext}
 REAL-TIME BINANCE INTELLIGENCE:
 ${priceContext}
 
@@ -3400,10 +3481,33 @@ Or if no edge: state SKIP and why in one sentence.`;
   // Normalize: Claude often returns edge as percentage (e.g. 15.5 or -12.0) not decimal (0.155)
   if (Math.abs(edge) > 1) edge = edge / 100;
 
-  const shouldBet = hasBet&&chosen&&Math.abs(edge)>=strat.minEdge&&conf>=strat.minConfidence;
+  let shouldBet = hasBet&&chosen&&Math.abs(edge)>=strat.minEdge&&conf>=strat.minConfidence;
+
+  // ── DUAL AI CONSULTATION — second opinion on medium confidence bets ────────
+  // If confidence is 50-65%, ask Haiku for counter-opinion. Both must agree.
+  let dualNote = '';
+  if (shouldBet && conf >= 50 && conf <= 65 && chosen) {
+    try {
+      const dualResp = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        messages: [{ role: 'user', content:
+          `Quick verdict: "${chosen.title}" — should I bet ${side} at ${(chosen.yesPrice*100).toFixed(0)}% market price? My analysis says ${side} with ${conf}% confidence, edge ${(edge*100).toFixed(1)}%.
+Asset trend 5m: ${chosen.priceData?.trend5m?.toFixed(2)||'?'}%, RSI: ${chosen.priceData?.rsi?.toFixed(0)||'?'}, volume ratio: ${chosen.priceData?.vol?.ratio?.toFixed(1)||'?'}x.
+Reply ONLY: AGREE or DISAGREE, then 1 sentence why.` }]
+      });
+      const dualText = dualResp.content[0].text.trim();
+      const agrees = /AGREE/i.test(dualText) && !/DISAGREE/i.test(dualText);
+      dualNote = `\n🤖 DUAL AI: ${agrees?'CONFIRMED':'VETOED'} — ${dualText.slice(0,120)}`;
+      if (!agrees) {
+        shouldBet = false; // Haiku disagreed → SKIP
+        dualNote += '\n⚠ BET CANCELLED by second opinion — confidence too low for disagreement.';
+      }
+    } catch {}
+  }
 
   return {
-    thought:   text,
+    thought:   text + dualNote,
     action:    shouldBet?'BET':'SKIP',
     market:    chosen,
     side, myProb, edge, confidence:conf,
@@ -3685,12 +3789,15 @@ async function checkResolutions() {
     const yesWon = Array.isArray(outcomePrices)&&parseFloat(outcomePrices[0])>=0.99;
     const won    = (p.side==='YES'&&yesWon)||(p.side==='NO'&&!yesWon);
 
+    // Slippage simulation: 0.2% deducted on entry + exit = realistic paper trading
+    const SLIPPAGE = 0.002; // 0.2% per side
+    const slippageCost = parseFloat((p.stake * SLIPPAGE * 2).toFixed(2)); // entry + exit
     let pnlVal;
     if (won) {
       const mult = p.side==='YES'?1/Math.max(p.marketPrice,0.01):1/Math.max(1-p.marketPrice,0.01);
-      pnlVal = parseFloat((p.stake*(mult-1)).toFixed(2));
+      pnlVal = parseFloat((p.stake*(mult-1) - slippageCost).toFixed(2));
     } else {
-      pnlVal = -p.stake;
+      pnlVal = parseFloat((-p.stake - slippageCost).toFixed(2));
     }
 
     p.resolved=true; p.won=won; p.pnl=pnlVal; p.result=won?'WIN':'LOSS';

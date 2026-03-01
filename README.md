@@ -1,15 +1,15 @@
 # ADAN-PRED — Autonomous Decision Agent Node
 
 > *"No es un bot. Es una entidad con algo que perder."*
-> **Stack:** Node.js · Binance API · Polymarket Gamma API · Claude Sonnet 4.6
+> **Stack:** Node.js · Binance API · Polymarket Gamma API · Claude Sonnet 4.6 · CryptoPanic
 
 ---
 
 ## What Is ADAN?
 
-ADAN bets on Polymarket crypto prediction markets (BTC/ETH/SOL/XRP up-or-down) using real-time Binance data and Claude Sonnet 4.6 as its reasoning engine. It runs continuously, scans every ~5 minutes during active Polymarket sessions (~3PM–10PM ET), and places paper bets while learning from every outcome.
+ADAN is an autonomous crypto prediction markets agent. It bets on Polymarket using real-time Binance data, CryptoPanic news, order book micro-structure, and Claude Sonnet 4.6 as its reasoning engine. It runs continuously, scans every ~5 minutes, and evolves through a genetic dynasty of child agents that compete to improve the root genome.
 
-**Current Status:** LVL 4 · 20 trades · 40% WR · Fund $9,837 · Dynasty active (6 children)
+**Current Status:** LVL 4 · 43% WR · Fund ~$10K · Dynasty active (6 children) · 9 AGI layers
 
 ---
 
@@ -17,40 +17,88 @@ ADAN bets on Polymarket crypto prediction markets (BTC/ETH/SOL/XRP up-or-down) u
 
 ```
 ADAN (Root, Gen1)
-├── Fetches Binance data: 1m/5m/15m/1h klines + order book walls + VWAP
-├── Fetches Polymarket Gamma API: active crypto prediction markets
-├── Sends 7-step analysis to Claude Sonnet 4.6 → BET/SKIP decision
-├── Tracks PnL + auto-evolves SOUL.md patterns after each trade
-└── Dynasty: spawns child scanners that compete to improve ADAN's DNA
+├── INIT: Binance 1m/5m/15m/1h klines + order book depth + VWAP + funding rates
+├── INIT: CryptoPanic news flash (black swan detection)
+├── INIT: Fear & Greed Index + meta-calibration history
+├── FILTER: Boredom filter (BB width + vol ratio) → skip flat markets
+├── FILTER: Hour filter → skip historically losing hours (<30% WR)
+├── CHILDREN: 6 rule-based scanners generate intel signals per asset/timeframe
+├── CONSENSUS: Multi-agent vote aggregation (75%+ = strong signal)
+├── THINK: 9-step Claude Sonnet 4.6 analysis → BET/SKIP
+├── VERIFY: Dual AI consultation (Haiku counter-opinion if confidence 50-65%)
+├── SIZE: Kelly Criterion bet sizing (dynamic max by WR)
+├── EXECUTE: Paper bet with 0.2% slippage simulation
+├── LEARN: SOUL.md auto-evolution + meta-calibration + DNA absorption
+└── DREAM: Off-hours self-reflection (replay losses with Claude)
 ```
 
-**Dashboard:** `http://localhost:3141`
+**Dashboard:** `http://localhost:3141` — clickable dynasty nodes, live brain log, neural pipeline
 
 ---
 
-## Intelligence Engine (Institutional Grade)
+## Intelligence Engine (9-Step Institutional Analysis)
 
-### 7-Step Claude Analysis
+### 1. Market Sentiment
+Fear & Greed bias. Extreme fear (< 20) = market overprices downside → NO often overpriced.
 
-1. **Sentiment** — F&G bias. Extreme fear (< 20) = market overprices downside.
-2. **Multi-Timeframe Confluence (Fractal Analysis)** — 1h macro dictates direction, 5m micro is the trigger. No confluence = SKIP.
-   - 1h BEARISH + 5m rally = liquidity trap → BET NO
-   - 1h BULLISH + 5m dip = buying opportunity → BET YES
-3. **Order Book Walls** — Sell wall 0.2% above price → price bounces DOWN. Buy wall below → support. Polymarket lags 10-30s = edge window.
-4. **Volume Microstructure** — volRatio >1.3x = conviction. volAccel ≥+2 = accelerating. VWAP deviation = momentum quality.
-5. **Timeframe-Specific Logic:**
-   - **5min:** Order book + volume accel ONLY (pure impulse, ignore trend)
-   - **15min:** Price/volume divergences (RSI >65 + falling vol = collapse → BET NO)
-   - **1hr:** BTC correlation + macro support/resistance
-6. **Volatility** — >0.12%/candle = widen uncertainty significantly
-7. **Edge** — Only bet when YOUR prob vs market price diverges by >5%+
+### 2. Flash News (CryptoPanic)
+Black swan detection before technical analysis. Hack, regulation, ETF, bankruptcy → overrides all technical signals.
 
-### BTC Correlation Rule (always active)
-> ETH / SOL / XRP: **PROHIBITED** from YES bets when BTC 5m trend is falling.
-> Crypto correlates tightly. A beautiful ETH chart with BTC bleeding is a trap.
+### 3. Multi-Timeframe Confluence (Fractal Analysis)
+- **1h macro DICTATES direction. 5m micro is the trigger.**
+- 1h BEARISH + 5m rally = LIQUIDITY TRAP → BET NO
+- 1h BULLISH + 5m dip = buying opportunity → BET YES
+- No confluence = no bet. A great 5m signal against 1h trend = suicide.
+- **BTC Correlation Rule:** ETH/SOL/XRP PROHIBITED from YES bets when BTC 5m is falling.
 
-### Boredom Filter
-Auto-skips Claude call when ALL symbols have BB width <0.6% AND vol ratio <0.75x avg. Flat markets = no edge = no tokens wasted.
+### 4. Order Book Micro-Structure (Sell Wall Trap)
+Analyzes bid/ask volume within 0.5% of price:
+- **SELL WALL TRAP:** Ask volume > 2x bid volume → price bounces DOWN. **Never bet YES against a sell wall.**
+- **BUY WALL TRAP:** Bid volume > 2x ask volume → floor support. YES bets safer.
+- Wall distance: sell wall < 0.2% from price = imminent ceiling.
+
+### 5. Volume Microstructure
+- volRatio > 1.3x = conviction move. < 0.8x = noise → SKIP.
+- volAccel >= +2 = accelerating candle-over-candle.
+- VWAP deviation: price ABOVE VWAP + rising vol = genuine momentum.
+
+### 6. Timeframe-Specific Logic
+- **5min:** Order book + volume accel ONLY (pure impulse)
+- **15min:** Divergences (RSI >65 + falling vol = collapse → BET NO)
+- **1hr:** BTC correlation + macro support/resistance
+
+### 7. Funding Rate Edge
+- Funding > +0.005%: longs overleveraged → SHORT/NO has wind at its back
+- Funding < -0.005%: shorts overleveraged → LONG/YES squeeze opportunity
+- Funding > ±0.01%: EXTREME → imminent correction, bet AGAINST the crowd
+
+### 8. Volatility
+> 0.12%/candle = widen uncertainty by 15%. If unsure, SKIP.
+
+### 9. Edge + Consensus
+Only bet if probability diverges > 5% from market. Child consensus >= 75% adds +3% to edge estimate.
+
+### Dual AI Consultation
+When confidence is 50-65% (medium), Haiku provides a counter-opinion. Both must agree or bet is cancelled. Prevents overconfident marginal bets.
+
+### Slippage Simulation
+0.2% deducted on entry + exit. Forces ADAN to only pick trades with clear, large margins.
+
+---
+
+## AGI Layers
+
+| Layer | Name | Description | Status |
+|-------|------|-------------|--------|
+| 1 | **Pattern Memory** | Episodic memory of similar past trades | Active |
+| 2 | **Soul Evolution** | Claude auto-evolves SOUL.md rules every 5 trades | Active |
+| 3 | **BTC Correlation** | Cascade detection: BTC moves → ETH/SOL follow | Active |
+| 4 | **Genetic Pruning** | Death by capital, incompetence, or tournament | Active |
+| 5 | **DNA Absorption** | Best child genome lerped 20% into parent weights | Active |
+| 6 | **Dream Mode** | Off-hours: replay losses, generate DREAM_RULEs | Active |
+| 7 | **Multi-Agent Consensus** | 6 children vote, 75%+ consensus = strong signal | Active |
+| 8 | **Dual AI Verification** | Haiku counter-opinion on medium-confidence bets | Active |
+| 9 | **News Intelligence** | CryptoPanic flash news for black swan detection | Active |
 
 ---
 
@@ -63,92 +111,81 @@ ADAN (Gen1, ROOT)
 │   ├── Mutated DNA: minEdge ±10%, stake 5-15%, patience 0.8-1.6x
 │   ├── Cognitive style: VOL/VWAP | BB/VOL | RSI/REV
 │   └── Gen3 Grandchildren — max 2 per child (child needs 100 EXP)
-│       └── Gen4 Great-Grandchildren — max 3 per grandchild → lineage dies
+│       ├── CROSSOVER DNA: 70/30 weighted from 2 best parents
+│       ├── Trauma distillation: inherits parent + ROOT mistakes
+│       └── Gen4 Great-Grandchildren — max 3 → lineage ends
 ```
 
 ### How Children Gain EXP
-Children earn EXP when their parent (ADAN) wins a trade on their specialized asset:
-- ADAN wins BTC trade → HERMES (BTC-5min) gets **+40 EXP** if its signal was recent (< 15 min)
-- ADAN loses → HERMES gets **+10 EXP** (participation reward)
+- ADAN wins BTC trade → HERMES (BTC-5min) gets **+40 EXP** (if signal < 15 min old)
+- ADAN loses → HERMES gets **+10 EXP** (participation)
 - At **100 EXP** → child can spawn grandchildren (requires ADAN LVL 4+)
 
-### Child Death Mechanics
-1. **Capital exhaustion** — fund ≤ $0 after 5+ trades
-2. **Incompetence** — avg intel score < 40 over 15+ cycles (consistently poor signals)
-3. **Tournament of Death** — at ADAN's trade 20: bottom 50% killed, capital redistributed to winners
+### Crossover de Linajes Campeones (Gen3 Spawn)
+When a grandchild is born:
+1. Finds the 2 best-performing children by intel score
+2. **70/30 weighted crossover** of their DNA (weights, edge, stake, patience)
+3. **Trauma distillation**: reads last 5 mistakes from parent SOUL.md + ROOT SOUL.md
+4. Generates "Regla de Oro Inviolable" combining both parents' learned errors
+5. Grandchild marked as **Elite Candidate** (red highlight in UI)
 
-### DNA Mutation (Protocolo de Evolución Despiadada)
-| Gene | Description | Range |
-|------|-------------|-------|
-| minEdge | Risk aversion | parent ± 10% |
-| volWeight | Volume signal weight | 1.0 ± 8% |
-| vwapWeight | VWAP signal weight | 1.0 ± 8% |
-| **stakePct** | Stake as % of capital | **5% – 15%** |
-| **patience** | Market patience factor | **0.8x – 1.6x** |
-| **cognitiveStyle** | Analysis focus | **VOL/VWAP · BB/VOL · RSI/REV** |
+### Death Mechanics
+1. **Capital exhaustion** — fund <= $0 after 5+ trades
+2. **Incompetence** — avg intel score < 40 over 15+ cycles
+3. **Tournament of Death** — at trade 20: bottom 50% killed, capital redistributed
 
 ### Upward Genetic Absorption
-When a child outperforms ADAN (WR > parent, 10+ trades), ADAN absorbs 20% of child's DNA delta per cycle into `dynamic_weights.json`. The best genome propagates upward.
+Child outperforms ADAN (WR > parent, 10+ trades) → ADAN absorbs 20% of child's DNA delta into `dynamic_weights.json`. Best genome propagates upward.
 
 ### Grandchild Promotion (Ascension)
-Gen3 grandchild WR > parent Gen2 WR + 12% (both need 10+ trades) → parent eliminated, grandchild promoted to Gen2 direct child of ADAN.
-
-### Crossover Inheritance (Gen3 spawn)
-When spawning Gen3, the grandchild:
-- Reads ADAN's SOUL.md (ROOT error patterns + learned rules)
-- Reads parent's SOUL.md (Gen2 domain knowledge)
-- Combines parent aggressiveness with ROOT's mistake memory
+Gen3 WR > parent Gen2 WR + 12% (both 10+ trades) → parent eliminated, grandchild promoted to Gen2.
 
 ---
 
 ## Current Dynasty
 
-| Child | Spec | Cognitive Style | DNA |
-|-------|------|----------------|-----|
-| HERMES | BTC-5min | observing | gen1 |
-| ATHENA | ETH-5min | observing | gen1 |
-| HELIOS | SOL-5min | observing | gen1 |
-| KRONOS | BTC-15min | observing | gen1 |
-| DAEDALUS | ETH-15min | observing | gen1 |
-| APOLLO | SOL-15min | observing | gen1 |
+| Child | Spec | Cognitive Style | Stake | Status |
+|-------|------|----------------|-------|--------|
+| HERMES | BTC-5min | BB/VOL | 11.2% | observing |
+| ATHENA | ETH-5min | RSI/REV | 11.2% | observing |
+| HELIOS | SOL-5min | VOL/VWAP | 9.1% | observing |
+| KRONOS | BTC-15min | VOL/VWAP | 9.7% | observing |
+| DAEDALUS | ETH-15min | VOL/VWAP | 11.0% | observing |
+| APOLLO | SOL-15min | BB/VOL | 7.9% | observing |
 
-**CHILD_SPECS (all active scanners):** BTC/ETH/SOL/XRP × 5min/15min/1hr = 12 intel threads
+**Scanner Coverage:** BTC/ETH/SOL/XRP x 5min/15min/1hr = 12 intel threads
+
+---
+
+## Safety Systems
+
+### Kelly Criterion (Dynamic Caps)
+| Win Rate | Max Stake | Mode |
+|----------|-----------|------|
+| 60%+ | $400 | Aggressive — proved edge |
+| 50-59% | $250 | Moderate |
+| 40-49% | $150 | Conservative |
+| < 40% | $75 | Survival mode |
+
+### Filters
+- **Boredom Filter** — BB width < 0.6% AND vol < 0.75x → skip Claude (save tokens)
+- **Hour Filter** — UTC hours with < 30% WR over 3+ trades → auto-skip
+- **Dual AI** — Medium confidence (50-65%) requires Haiku agreement
+- **Slippage** — 0.2% per side deducted (realistic paper trading)
+
+### Kill Switch
+`kill -9 $(lsof -ti:3141)` — instant stop. State saved in `~/.adan-pred/`.
 
 ---
 
 ## Dashboard UI
 
-- **Neural Pipeline** → animated SVG: Binance → Technical → Polymarket → Claude → Decision
-- **Brain Log** → live Claude thought (cyan=thinking, green=BET, yellow=SKIP, details expandable)
-- **Genetic Dynasty** → SVG network: each child node shows signal ▲/▼, DNA style, EXP bar, stake%
-- **Transparent panel** → dot-grid overlay behind both SVGs
-- **Status dot** → yellow pulsing = thinking | green = monitoring
-- **Hour Heatmap** → UTC hours × historical win rate
-
----
-
-## How To Know It's Working
-
-```bash
-# Live logs
-tail -f /tmp/adan.log
-
-# API state
-curl http://localhost:3141/api/state | python3 -c "
-import json,sys; d=json.load(sys.stdin)
-st=d.get('state',{})
-print('mode:', st.get('mode'))
-print('thought:', (st.get('thought') or '')[:200])
-"
-```
-
-**Console events to look for:**
-- `◈ ANALYZING` / `✓ DECIDED` → Claude cycle
-- `► WIN` / `► LOSS` → trade resolved
-- `🌱 GRANDCHILD BORN` / `✗ CHILD DIED` → dynasty events
-- `◈ GENOME ABSORBED` → DNA evolution
-- `◈ PROMOTION` → grandchild ascension
-- `◈ TOURNAMENT DONE` → death tournament (trade 20)
+- **Neural Pipeline** — animated SVG: Binance → Technical → Polymarket → Claude → Decision
+- **Brain Log** — live Claude thought (cyan=thinking, green=BET, yellow=SKIP)
+- **Genetic Dynasty** — clickable SVG nodes. Click any child to see: DNA genome, intel signal, score history, EXP bar, grandchildren, trade history
+- **Dynasty Layout** — auto 2-row layout when >4 children. Grandchild mini-nodes below parents
+- **Status dot** — yellow pulsing = thinking | green = monitoring
+- **Hour Heatmap** — UTC hours x historical win rate
 
 ---
 
@@ -156,19 +193,50 @@ print('thought:', (st.get('thought') or '')[:200])
 
 | Level | EXP | Unlocks |
 |-------|-----|---------|
-| 1 | 0 | Base operation |
-| 2 | 100 | Spawn first child |
-| 3 | 200 | Active child scanners (BG intel) |
-| **4** | **400** | **← ADAN is here. 6 children · Kelly betting · Grandchildren** |
-| 5 | 800 | — |
-| 6 | ~1,600 | Candle pattern analysis |
-| 9 | ~4,000 | Timing optimization |
-| 12 | ~8,000 | Fear/Greed exploitation |
-| 18 | ~25,000 | BTC cascade betting |
+| 1 | 0 | Base operation — live feed |
+| 2 | 100 | Trend analysis 1m/5m/15m |
+| 3 | 200 | First child + edge filter |
+| **4** | **400** | **Kelly betting + 6 children + grandchildren** |
+| 5 | 800 | Multi-bet (up to 9 positions) |
+| 6 | 1,600 | Candle pattern analysis (hammer/engulfing/doji) |
+| 8 | 3,000 | Per-asset calibration tracking |
+| 9 | 4,000 | Timing optimization (best entry minute) |
+| 10 | 5,000 | Volatility sense (avoid chaotic markets) |
+| 12 | 8,000 | Fear & Greed exploitation (F&G < 20) |
+| 15 | 12,000 | Strategy auto-evolution (every 5 trades) |
+| 18 | 18,000 | BTC cascade → SOL/ETH follow-through |
+| 20 | 22,000 | Night Owl — off-hours pattern memory |
+| 25 | 30,000 | Shadow Mode — Binance-only training offline |
+| 30 | 40,000 | Sonic Mind — deep candle pattern recognition |
+| 35 | 55,000 | X Radar — Twitter/X sentiment analysis |
+| 40 | 75,000 | **REAL USDC** — graduated to live betting |
+| 50 | 120,000 | Auto-Fund — self-pay API costs on-chain |
+| 60 | 180,000 | Multi-Market — Jupiter + Kalshi + Manifold |
+| 70 | 260,000 | Sniper — only highest-edge bet per cycle |
+| 80 | 360,000 | Full Dynasty — 3-gen tree operational |
+| 90 | 480,000 | Self-Coding — writes own data scripts |
+| 100 | 650,000 | **SOVEREIGN** — fully autonomous, no human needed |
 
 **XP per trade:**
-- WIN: `(confidence/10) × (1 + edge×5) × streak_multiplier`
+- WIN: `(confidence/10) x (1 + edge x 5) x streak_multiplier`
 - LOSS: 30 XP flat
+
+---
+
+## Roadmap (Future Directivas)
+
+### Phase 2 — Intelligence (LVL 25-50)
+- **Headless Browser** — Puppeteer reads X/news articles for event markets
+- **Vector Memory** — replace linear SOUL.md with vector DB for instant recall
+- **Shadow ADAN** — adversarial mirror that bets against the dynasty
+- **Wallet Tracking** — follow top 5 Polymarket whale wallets on-chain
+
+### Phase 3 — Sovereignty (LVL 50-100)
+- **On-Chain Wallet** — own Solana keys via @solana/web3.js
+- **Fuel Management** — pays its own API tokens. If balance = 0, process stops
+- **Yield Farming** — idle capital to staking/lending during SKIP periods
+- **Self-Coding** — writes/executes Python/Node scripts for new data sources
+- **Multi-IA Council** — consults GPT-4 + Gemini + local models before big bets
 
 ---
 
@@ -176,25 +244,34 @@ print('thought:', (st.get('thought') or '')[:200])
 
 ```
 adam-skill/
-├── adan-pred.js          # Full agent (~3900 lines)
+├── adan-pred.js          # Full agent (~4200 lines)
 └── README.md
 
 ~/.adan-pred/
 ├── pnl.json              # P&L state + dynasty tree
 ├── positions.json        # Open/closed bets
 ├── strategy.json         # minEdge, minConfidence, minLiquidity
-├── dynamic_weights.json  # Self-modifying DNA (Phase 2 autonomous)
-├── SOUL.md               # Learned patterns (Claude auto-evolves)
+├── dynamic_weights.json  # Self-modifying DNA (auto-adjusted)
+├── SOUL.md               # Learned patterns + dream rules (Claude evolves)
 ├── thoughts.jsonl        # Full Claude reasoning history
 ├── calibration.json      # Per-asset historical accuracy
+├── meta_calibration.json # Confidence accuracy tracking (0.5-1.3x multiplier)
+├── correlation.json      # BTC → ETH/SOL cascade signals
 ├── intel/                # Child scanner signals (12 files)
+│   ├── btc-5min.json
+│   ├── eth-5min.json
+│   ├── sol-5min.json
+│   └── ...
 └── children/
-    ├── BTC-5min/         # HERMES
-    ├── ETH-5min/         # ATHENA
-    ├── SOL-5min/         # HELIOS
-    ├── BTC-15min/        # KRONOS
-    ├── ETH-15min/        # DAEDALUS
-    └── SOL-15min/        # APOLLO
+    ├── BTC-5min/         # HERMES (BB/VOL)
+    │   ├── SOUL.md
+    │   ├── pnl.json
+    │   └── children/     # grandchildren (when EXP >= 100)
+    ├── ETH-5min/         # ATHENA (RSI/REV)
+    ├── SOL-5min/         # HELIOS (VOL/VWAP)
+    ├── BTC-15min/        # KRONOS (VOL/VWAP)
+    ├── ETH-15min/        # DAEDALUS (VOL/VWAP)
+    └── SOL-15min/        # APOLLO (BB/VOL)
 ```
 
 ---
@@ -203,7 +280,7 @@ adam-skill/
 
 ```bash
 node adan-pred.js
-# Opens dashboard on http://localhost:3141
+# Dashboard: http://localhost:3141
 # Logs: tail -f /tmp/adan.log
 ```
 
@@ -212,6 +289,20 @@ node adan-pred.js
 - `minConfidence`: 60 — minimum Claude confidence %
 - `minLiquidity`: 500 — minimum Polymarket liquidity
 
+**Verify it works:**
+```bash
+curl -s http://localhost:3141/api/state | python3 -c "
+import json,sys; d=json.load(sys.stdin)
+st=d.get('state',{})
+pnl=d.get('pnl',{})
+print('mode:', st.get('mode'))
+print('WR:', round(pnl.get('wins',0)/max(pnl.get('trades',1),1)*100), '%')
+print('fund:', pnl.get('fund'))
+print('children:', len(d.get('children',[])))
+print('thought:', (st.get('thought') or '')[:200])
+"
+```
+
 ---
 
-*Paper trading only. No real money moved. Genetic evolution is live.*
+*Paper trading with 0.2% slippage. No real money moved. Genetic evolution is live. 9 AGI layers active.*
