@@ -3024,15 +3024,16 @@ function applySurvivalMode(pnl) {
   let maxPos  = 9;
   let soulNote = null;
 
-  if (fund < 8000) {
+  // Paper trade $10k: trade freely to learn — survival only near death
+  if (fund < 5) {
     mode = 'critical'; minEdge = 0.15; maxPos = 1;
-    soulNote = `CRITICAL SURVIVAL: fund $${fund.toFixed(0)} — only betting with 15%+ edge, 1 position max.`;
-  } else if (fund < 9000) {
+    soulNote = `CRITICAL: fund $${fund.toFixed(2)} — near death. 15%+ edge only, 1 position. Must survive.`;
+  } else if (fund < 50) {
     mode = 'survival'; minEdge = 0.12; maxPos = 2;
-    soulNote = `SURVIVAL MODE: fund $${fund.toFixed(0)} — must make money to keep living. 12%+ edge, 2 positions max.`;
-  } else if (fund < 9500) {
+    soulNote = `SURVIVAL: fund $${fund.toFixed(2)} — almost gone. 12%+ edge, 2 positions. Make money or die.`;
+  } else if (fund < 200) {
     mode = 'cautious'; minEdge = 0.08; maxPos = 4;
-    soulNote = null; // no memory write for minor caution
+    soulNote = null;
   }
 
   // Update strategy dynamically
