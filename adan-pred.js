@@ -1052,7 +1052,7 @@ async function refresh(){
         </div>\`;
       }
     }
-    document.getElementById('tree-wrap').innerHTML=treeHtml;
+    const tw=document.getElementById('tree-wrap'); if(tw) tw.innerHTML=treeHtml;
 
     // Open positions
     const openPos=d.positions?.open||[];
