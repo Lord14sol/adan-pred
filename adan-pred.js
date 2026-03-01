@@ -68,12 +68,16 @@ const TREE_RULES = {
   //   LVL 4 → hasta 6 hijos
   maxChildrenGen1: 6,   // max hijos directos del padre (solo al LVL 4+)
   maxChildrenAtLvl3: 1, // al LVL 3 solo puede tener 1 hijo
-  // Nietos: cada hijo puede tener hasta 2 nietos — solo cuando ADAN es LVL 4+
+  // Nietos (Gen2 → Gen3): cada hijo puede tener hasta 2 nietos
   maxChildrenGen2: 2,   // max nietos por hijo (hijo necesita expChild >= 100)
-  maxGen:          3,
-  canSpawnGen3:    false,
+  // Bisnietos (Gen3 → Gen4): cada nieto puede tener hasta 3 bisnietos, luego muere
+  maxChildrenGen3: 3,
+  canSpawnGen3:    true,
+  maxGen:          4,
   treasuryPct:     0.10,
   childExpToSpawn: 100, // EXP que debe tener un hijo para poder engendrar nietos
+  // Torneo de la Muerte: al trade 20, bottom 50% de hijos muere, capital redistribuído
+  tournamentTrades: 20,
   // Condiciones spawn padre (paper phase: WR gate eliminado — 10 trades + LVL 2):
   spawnConditions: { minWinRate: 0.00, minTrades: 10, minLvl: 2, minNetPositive: false }
 };
@@ -652,6 +656,22 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 .nf-flowslow{animation:nfFlowSlow 2s linear infinite}
 @keyframes nfHeartbeat{0%,100%{opacity:.4}10%{opacity:1}20%{opacity:.6}30%{opacity:1}40%{opacity:.4}}
 .nf-heartbeat{animation:nfHeartbeat 2.4s ease-in-out infinite}
+/* ── Brain Live Block ─────────────────────────────────────────── */
+.brain-live-block{padding:12px;border:2px solid var(--border);background:var(--bg4);margin-bottom:12px;box-shadow:var(--shadow-sm);position:relative;overflow:hidden}
+.brain-live-block::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cyan)}
+.brain-live-block.bet::before{background:var(--green)}
+.brain-live-block.skip::before{background:var(--yellow)}
+.brain-live-block.thinking::before{background:var(--cyan);animation:pulse .4s infinite}
+.brain-live-block.thinking{border-color:var(--cyan)}
+.brain-live-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-family:var(--mono)}
+.brain-live-dot{width:8px;height:8px;background:var(--cyan);display:inline-block;flex-shrink:0;animation:pulse .4s infinite}
+.brain-live-body{font-size:11px;font-family:var(--mono);color:var(--text2);line-height:1.75;white-space:pre-wrap;max-height:140px;overflow-y:auto;border-left:2px solid var(--border2);padding-left:8px}
+.brain-full-text{font-size:10px;font-family:var(--mono);color:var(--dim);line-height:1.6;white-space:pre-wrap;max-height:300px;overflow-y:auto;padding:8px;background:var(--bg3);margin-top:6px;border:1px solid var(--border2)}
+.brain-section-title{font-family:var(--pixel);font-size:7px;color:var(--grey);letter-spacing:1px;margin:10px 0 6px;padding-bottom:4px;border-bottom:1px dashed var(--border2)}
+/* ── Cmd card transparent dotgrid bg ─────────────────────────── */
+#cmd-card{position:relative}
+#cmd-card::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle,var(--border2) 1px,transparent 1px);background-size:18px 18px;opacity:.05;pointer-events:none;z-index:0}
+.nf-wrap,.dynasty-panel{position:relative;z-index:1}
 /* ── Decisions Log ────────────────────────────────────────────── */
 .dec-row{padding:10px 0;border-bottom:2px dashed var(--border2)}
 .dec-row:last-child{border-bottom:none}
@@ -1213,44 +1233,89 @@ function updateHourHeatmap(d) {
 function updateDecisionsLog(d) {
   const wrap = document.getElementById('decisions-wrap');
   if (!wrap) return;
-  const closed = (d.positions?.closed||[]).slice(-6).reverse();
-  const open   = d.positions?.open||[];
-  const all    = [...open.map(p=>({...p,_open:true})), ...closed];
-  if (all.length===0){
-    wrap.innerHTML='<div style="color:var(--grey);font-size:12px;padding:8px 0">No decisions yet — ADAN is observing...</div>';
-    return;
-  }
-  wrap.innerHTML = all.slice(0,7).map((p,idx) => {
-    const w  = p.result==='WIN';
-    const isO= p._open;
-    const badgeCls = isO ? 'b-lvl' : (w ? 'b-wr-good' : 'b-wr-bad');
-    const badgeTxt = isO ? 'OPEN' : (w?'WIN':'LOSS');
-    const edge = ((p.edge||0)*100).toFixed(1);
-    const side = p.side==='YES' ? '<span style="color:var(--green)">YES ▲</span>' : '<span style="color:var(--red)">NO ▼</span>';
-    const pnlTxt = isO ? '' : \`<span style="color:\${w?'var(--green)':'var(--red)'};font-weight:700">\${w?'+':''}\$\${p.pnl}</span>\`;
-    // Extract key reasoning lines from entryThought
-    const thought = p.entryThought || '';
-    const reasonLines = thought.split('\\n').filter(l=>l.trim()&&!l.startsWith('#')).slice(0,3).join('\\n');
-    const fullReason = thought.replace(/^#.*$/mg,'').trim();
-    const id = 'dec-'+idx;
-    return \`<div class="dec-row">
-      <div class="dec-header" onclick="document.getElementById('\${id}').classList.toggle('open')">
-        <span class="badge2 \${badgeCls}">\${badgeTxt}</span>
-        \${side}
-        <span class="dec-title">\${(p.marketTitle||'').slice(0,45)}</span>
-        \${pnlTxt}
-        <span class="dec-toggle">edge:\${edge>0?'+':''}\${edge}% ▾</span>
+  const closed  = (d.positions?.closed||[]).slice(-6).reverse();
+  const open    = d.positions?.open||[];
+  const all     = [...open.map(p=>({...p,_open:true})), ...closed];
+  const thought = d.state?.thought || '';
+  const mode    = d.state?.mode;
+  const isThinking = mode === 'thinking';
+  const hasThought = thought.length > 10;
+
+  let html = '';
+
+  // ── LIVE THOUGHT BLOCK ────────────────────────────────────────────────────
+  if (isThinking) {
+    const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+    const frame  = frames[Math.floor(Date.now()/150) % frames.length];
+    html += \`<div class="brain-live-block thinking">
+      <div class="brain-live-header">
+        <span class="brain-live-dot"></span>
+        <span style="color:var(--cyan);font-weight:700;font-size:11px;font-family:var(--mono)">\${frame} ANALYZING — Claude Sonnet 4.6</span>
+        <span style="color:var(--grey);font-size:9px;margin-left:auto;font-family:var(--mono)">thinking...</span>
       </div>
-      <div class="dec-meta">
-        <span>\${(p.asset||'?').toUpperCase()}</span>
-        <span>conf:\${p.confidence||'--'}%</span>
-        <span>stake:\$\${p.stake||100}</span>
-        <span style="color:var(--grey)">\${(p.entryTime||'').slice(11,16)} UTC</span>
-      </div>
-      \${reasonLines ? \`<div class="dec-learn">\${reasonLines.slice(0,120)}...</div>\` : ''}
-      \${fullReason ? \`<div class="dec-reason" id="\${id}">\${fullReason.slice(0,800)}</div>\` : ''}
+      <div class="brain-live-body">Procesando mercados + datos Binance + señales hijos...</div>
     </div>\`;
-  }).join('');
+  } else if (hasThought) {
+    const isBet  = thought.includes('BET') || thought.includes('MARKET_ID');
+    const isSkip = thought.includes('SKIP') || thought.includes('AUTO-SKIP') || thought.includes('Session offline');
+    const isAuto = thought.includes('AUTO-SKIP');
+    const blockCls = isBet ? 'bet' : isSkip ? 'skip' : 'result';
+    const dotColor = isBet ? 'var(--green)' : isAuto ? 'var(--yellow)' : isSkip ? 'var(--grey)' : 'var(--cyan)';
+    const label    = isBet ? '◉ BET PLACED' : isAuto ? '⏸ AUTO-SKIP' : isSkip ? '⏸ SKIP / MONITORING' : '● ANALYSIS COMPLETE';
+    // Extract key lines (skip headers, code fences, separators)
+    const lines = thought.split('\\n')
+      .filter(l => l.trim() && !l.startsWith('#') && l.slice(0,3)!=='---' && l.slice(0,3)!=='~~~')
+      .slice(0,5);
+    html += \`<div class="brain-live-block \${blockCls}">
+      <div class="brain-live-header">
+        <span style="color:\${dotColor};font-weight:700;font-size:11px;font-family:var(--mono)">\${label}</span>
+        <span style="color:var(--grey);font-size:9px;margin-left:auto;font-family:var(--mono)">\${d.state?.lastScan||''}</span>
+      </div>
+      <div class="brain-live-body">\${lines.join('\\n').slice(0,500)}</div>
+      \${thought.length > 200 ? \`<details style="margin-top:8px"><summary style="color:var(--grey);font-size:9px;font-family:var(--pixel);cursor:pointer;user-select:none">▸ FULL REASONING</summary><div class="brain-full-text">\${thought.slice(0,3000)}</div></details>\` : ''}
+    </div>\`;
+  }
+
+  // ── PAST DECISIONS ────────────────────────────────────────────────────────
+  if (all.length === 0) {
+    if (!hasThought && !isThinking) {
+      html += '<div style="color:var(--grey);font-size:12px;padding:8px 0">No decisions yet — ADAN is observing markets...</div>';
+    }
+  } else {
+    html += '<div class="brain-section-title">TRADE HISTORY · LAST DECISIONS</div>';
+    html += all.slice(0,7).map((p,idx) => {
+      const w  = p.result==='WIN';
+      const isO= p._open;
+      const badgeCls = isO ? 'b-lvl' : (w ? 'b-wr-good' : 'b-wr-bad');
+      const badgeTxt = isO ? 'OPEN' : (w?'WIN':'LOSS');
+      const edge = ((p.edge||0)*100).toFixed(1);
+      const side = p.side==='YES' ? '<span style="color:var(--green)">YES ▲</span>' : '<span style="color:var(--red)">NO ▼</span>';
+      const pnlTxt = isO ? '' : \`<span style="color:\${w?'var(--green)':'var(--red)'};font-weight:700">\${w?'+':''}\$\${p.pnl}</span>\`;
+      const entryThought = p.entryThought || '';
+      const reasonLines  = entryThought.split('\\n').filter(l=>l.trim()&&!l.startsWith('#')).slice(0,3).join('\\n');
+      const fullReason   = entryThought.replace(/^#.*$/mg,'').trim();
+      const id = 'dec-'+idx;
+      return \`<div class="dec-row">
+        <div class="dec-header" onclick="document.getElementById('\${id}').classList.toggle('open')">
+          <span class="badge2 \${badgeCls}">\${badgeTxt}</span>
+          \${side}
+          <span class="dec-title">\${(p.marketTitle||'').slice(0,45)}</span>
+          \${pnlTxt}
+          <span class="dec-toggle">edge:\${edge>0?'+':''}\${edge}% ▾</span>
+        </div>
+        <div class="dec-meta">
+          <span>\${(p.asset||'?').toUpperCase()}</span>
+          <span>conf:\${p.confidence||'--'}%</span>
+          <span>stake:\$\${p.stake||100}</span>
+          <span style="color:var(--grey)">\${(p.entryTime||'').slice(11,16)} UTC</span>
+        </div>
+        \${reasonLines ? \`<div class="dec-learn">\${reasonLines.slice(0,120)}...</div>\` : ''}
+        \${fullReason ? \`<div class="dec-reason" id="\${id}">\${fullReason.slice(0,800)}</div>\` : ''}
+      </div>\`;
+    }).join('');
+  }
+
+  wrap.innerHTML = html;
 }
 
 // ── Neural Pipeline Visualization (pipeline only — dynasty rendered as HTML below) ──
@@ -1329,7 +1394,7 @@ function updateNeuralFlow(d) {
       <path d="M0,0 L0,6 L7,3 z" fill="\${lnColor}"/>
     </marker>
   </defs>
-  <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}"/>\`;
+  <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}" fill-opacity="0.45"/>\`;
 
   // Dot grid sutil (mismo estilo que el fondo de la página)
   for(let gx=0;gx<SVG_W;gx+=36) svg+=\`<circle cx="\${gx}" cy="\${SVG_H/2}" r=".8" fill="\${C_BRD2}" opacity=".12"/>\`;
@@ -1444,7 +1509,7 @@ function updateDynastyPanel(d) {
     const SVG_W=720, SVG_H=54;
     const bw=Math.floor((SVG_W-40)/3)-8;
     let svg=\`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
-    <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}"/>
+    <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}" fill-opacity="0.45"/>
     <text x="10" y="14" font-family="JetBrains Mono,monospace" font-size="8" fill="\${C_PUR}" font-weight="700" letter-spacing="2">🧬 DYNASTY — SPAWN REQUIREMENTS</text>\`;
     reqs.forEach((r,i)=>{
       const x=10+i*(bw+8), y=20;
@@ -1481,7 +1546,7 @@ function updateDynastyPanel(d) {
       <path d="M0,0 L0,5 L6,2.5 z" fill="\${C_PUR}"/>
     </marker>
   </defs>
-  <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}"/>\`;
+  <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}" fill-opacity="0.45"/>\`;
 
   // Label header
   const activeSigs = children.filter(c=>c.intel?.signal).length;
@@ -1529,9 +1594,13 @@ function updateDynastyPanel(d) {
     const bw2 = dir!=='idle'?'2.5':'1.5';
     const fillC = dir==='up'?'#e8f4e8' : dir==='down'?'#f4e8e8' : C_CARD;
     const dna = ch.dna;
-    // DNA mutation indicator (como un pequeño termómetro)
-    const dnaStr = dna ? 'DNA·'+dna.mutation : 'NO DNA';
-    const dnaColor = dna ? C_PUR : C_DIM;
+    // DNA cognitive style + stake + mutation display
+    const styleMap = { volume_vwap:'VOL/VWAP', bollinger_vol:'BB/VOL', rsi_reversal:'RSI/REV' };
+    const styleLabel = dna?.cognitiveStyle ? (styleMap[dna.cognitiveStyle]||dna.cognitiveStyle.slice(0,8)) : '---';
+    const styleColor = dna?.cognitiveStyle==='volume_vwap'?C_CYA : dna?.cognitiveStyle==='bollinger_vol'?C_YEL : dna?.cognitiveStyle==='rsi_reversal'?C_RED : C_DIM;
+    const stakeTxt   = dna?.stakePct ? (dna.stakePct*100).toFixed(0)+'%' : '---';
+    const dnaColor   = dna ? C_PUR : C_DIM;
+    const gcCount    = ch.grandChildren?.length || 0;
 
     svg+=\`<rect x="\${x+3}" y="\${y+3}" width="\${NW}" height="\${NH}" fill="\${C_SHD}"/>
     <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" fill="\${fillC}" stroke="\${bColor}" stroke-width="\${bw2}"/>
@@ -1541,10 +1610,11 @@ function updateDynastyPanel(d) {
     <text x="\${x+NW/2}" y="\${y+46}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="14" font-weight="700" fill="\${sigColor(dir)}">\${sigLabel(dir)}</text>
     <text x="\${x+NW/2}" y="\${y+60}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="\${sigColor(dir)}">\${conf?conf+'% conf':''}</text>
     <text x="\${x+NW/2}" y="\${y+74}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="\${score>=65?C_GRN:score>=45?C_YEL:C_RED}">score: \${score} \${isObs?'● OBS':score>=65?'● ELITE':'●'}</text>
-    <text x="\${x+NW/2}" y="\${y+86}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="\${dnaColor}">\${dnaStr}</text>
+    <text x="\${x+6}" y="\${y+86}" font-family="JetBrains Mono,monospace" font-size="7" fill="\${styleColor}">◈\${styleLabel}</text>
+    <text x="\${x+NW-6}" y="\${y+86}" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="7" fill="\${dnaColor}">stake:\${stakeTxt}</text>
     <rect x="\${x+6}" y="\${y+91}" width="\${NW-12}" height="6" fill="\${C_BRD2}" opacity=".3" rx="1"/>
     <rect x="\${x+6}" y="\${y+91}" width="\${Math.round((NW-12)*cexp/100)}" height="6" fill="\${C_CYA}" opacity=".85" rx="1"/>
-    <text x="\${x+NW/2}" y="\${y+106}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="\${C_DIM}">EXP \${cexp}/100\${ch.grandChildren?.length?' · '+ch.grandChildren.length+' GC':''}</text>\`;
+    <text x="\${x+NW/2}" y="\${y+106}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="\${C_DIM}">EXP \${cexp}/100 · GC \${gcCount}/2</text>\`;
   });
 
   svg+=\`</svg>\`;
@@ -2337,9 +2407,15 @@ const CHILD_SPECS = [
   { id:'btc-5min',  asset:'BTCUSDT', assetName:'btc', windowMin:5  },
   { id:'eth-5min',  asset:'ETHUSDT', assetName:'eth', windowMin:5  },
   { id:'sol-5min',  asset:'SOLUSDT', assetName:'sol', windowMin:5  },
+  { id:'xrp-5min',  asset:'XRPUSDT', assetName:'xrp', windowMin:5  },
   { id:'btc-15min', asset:'BTCUSDT', assetName:'btc', windowMin:15 },
   { id:'eth-15min', asset:'ETHUSDT', assetName:'eth', windowMin:15 },
   { id:'sol-15min', asset:'SOLUSDT', assetName:'sol', windowMin:15 },
+  { id:'xrp-15min', asset:'XRPUSDT', assetName:'xrp', windowMin:15 },
+  { id:'btc-1hr',   asset:'BTCUSDT', assetName:'btc', windowMin:60 },
+  { id:'eth-1hr',   asset:'ETHUSDT', assetName:'eth', windowMin:60 },
+  { id:'sol-1hr',   asset:'SOLUSDT', assetName:'sol', windowMin:60 },
+  { id:'xrp-1hr',   asset:'XRPUSDT', assetName:'xrp', windowMin:60 },
 ];
 
 // Simple rule-based signal from Binance data (no Claude needed)
@@ -2472,6 +2548,10 @@ const GRANDCHILD_SPECS = {
     { id:'sol-1min-mom',  asset:'SOLUSDT', assetName:'sol', windowMin:5,  focus:'1min-momentum' },
     { id:'sol-orderbook', asset:'SOLUSDT', assetName:'sol', windowMin:5,  focus:'orderbook'     },
   ],
+  'XRP-5min':  [
+    { id:'xrp-5min-mom',  asset:'XRPUSDT', assetName:'xrp', windowMin:5,  focus:'1min-momentum' },
+    { id:'xrp-5min-vol',  asset:'XRPUSDT', assetName:'xrp', windowMin:5,  focus:'volume-spike'  },
+  ],
   'BTC-15min': [
     { id:'btc-15min-bb',  asset:'BTCUSDT', assetName:'btc', windowMin:15, focus:'bollinger'     },
     { id:'btc-15min-macd',asset:'BTCUSDT', assetName:'btc', windowMin:15, focus:'macd-cross'    },
@@ -2483,6 +2563,26 @@ const GRANDCHILD_SPECS = {
   'SOL-15min': [
     { id:'sol-15min-bb',  asset:'SOLUSDT', assetName:'sol', windowMin:15, focus:'bollinger'     },
     { id:'sol-15min-macd',asset:'SOLUSDT', assetName:'sol', windowMin:15, focus:'macd-cross'    },
+  ],
+  'XRP-15min': [
+    { id:'xrp-15min-bb',  asset:'XRPUSDT', assetName:'xrp', windowMin:15, focus:'bollinger'     },
+    { id:'xrp-15min-rsi', asset:'XRPUSDT', assetName:'xrp', windowMin:15, focus:'rsi-extreme'   },
+  ],
+  'BTC-1hr':   [
+    { id:'btc-1hr-trend', asset:'BTCUSDT', assetName:'btc', windowMin:60, focus:'trend-follow'  },
+    { id:'btc-1hr-rev',   asset:'BTCUSDT', assetName:'btc', windowMin:60, focus:'mean-reversion'},
+  ],
+  'ETH-1hr':   [
+    { id:'eth-1hr-trend', asset:'ETHUSDT', assetName:'eth', windowMin:60, focus:'trend-follow'  },
+    { id:'eth-1hr-bb',    asset:'ETHUSDT', assetName:'eth', windowMin:60, focus:'bollinger'     },
+  ],
+  'SOL-1hr':   [
+    { id:'sol-1hr-trend', asset:'SOLUSDT', assetName:'sol', windowMin:60, focus:'trend-follow'  },
+    { id:'sol-1hr-vol',   asset:'SOLUSDT', assetName:'sol', windowMin:60, focus:'volume-spike'  },
+  ],
+  'XRP-1hr':   [
+    { id:'xrp-1hr-trend', asset:'XRPUSDT', assetName:'xrp', windowMin:60, focus:'trend-follow'  },
+    { id:'xrp-1hr-rsi',   asset:'XRPUSDT', assetName:'xrp', windowMin:60, focus:'rsi-extreme'   },
   ],
 };
 
@@ -3213,16 +3313,26 @@ ${inheritedLines.join('\n')}
   const capital   = Math.min(pnl.treasury * 0.3, 500);
 
   // ── MUTACIÓN GENÉTICA — presión evolutiva ─────────────────────────────────
-  // Cada hijo nace con hyperparámetros ligeramente diferentes al padre.
-  // La supervivencia del capital decide qué mutación fue mejor.
+  // Gen 1 (Riesgo): minEdge ±10%, Gen 2 (Stake): 5-15% capital, Gen 3 (Paciencia): ±20%
+  // Gen C (Cognitivo): estilo de análisis (A=volume/vwap, B=bollinger/vol, C=rsi/reversal)
   const mutate = (base, pct=0.08) => parseFloat((base * (1 + (Math.random()*2-1)*pct)).toFixed(4));
   const parentStrat = loadStrategy();
+  // Cognitive style: read from parent's best child or random
+  const cognitiveStyles = ['volume_vwap', 'bollinger_vol', 'rsi_reversal'];
+  const cognitiveStyle = cognitiveStyles[Math.floor(Math.random()*3)];
+  // Stake: 5%-15% of available fund (vs fixed $100 in parent)
+  const stakePct = parseFloat((0.05 + Math.random()*0.10).toFixed(3)); // 5-15%
+  // Market patience: minutes before skipping a market (shorter = more selective)
+  const patience  = parseFloat((0.8 + Math.random()*0.8).toFixed(2)); // 0.8-1.6x
   const dna = {
-    minEdge:       mutate(parentStrat.minEdge    || 0.05, 0.10), // ±10% del minEdge del padre
-    volWeight:     mutate(1.0,                             0.08), // peso en volumen relativo al padre
-    vwapWeight:    mutate(1.0,                             0.08), // peso en VWAP deviation
-    boredBBMin:    mutate(0.006,                           0.10), // umbral de aburrimiento de BB
-    mutation:      Math.round(Math.random()*100)                  // seed para trazabilidad
+    minEdge:       mutate(parentStrat.minEdge    || 0.05, 0.10), // Gen 1: risk aversion ±10%
+    volWeight:     mutate(1.0,                             0.08), // peso volumen
+    vwapWeight:    mutate(1.0,                             0.08), // peso VWAP
+    boredBBMin:    mutate(0.006,                           0.10), // umbral aburrimiento
+    stakePct,                                                      // Gen 2: stake 5-15% capital
+    patience,                                                      // Gen 3: market patience factor
+    cognitiveStyle,                                                // Estilo cognitivo A/B/C
+    mutation:      Math.round(Math.random()*100)                   // seed trazabilidad
   };
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -3327,6 +3437,8 @@ async function checkResolutions() {
     absorbEliteGenome(pnlFinal);
     // AGI Layer 4: prune dead children (capital = 0 OR incompetence → natural death)
     pruneDeadChildren(loadPnL());
+    // AGI Layer 4b: Tournament of Death — at trade 20, kill bottom 50%, redistribute capital
+    runTournamentOfDeath(loadPnL());
     // AGI Layer 5: promote elite grandchildren (grandchild WR > parent WR + 12% → parent dies, gc promoted)
     promoteEliteGrandchild(loadPnL());
   }
@@ -3463,6 +3575,71 @@ function pruneDeadChildren(pnl) {
   // Actualiza el árbol del padre
   pnl.children = alive;
   savePnL(pnl);
+}
+
+// ── TORNEO DE LA MUERTE: al trade 20 mata bottom 50%, redistribuye capital ────────────
+// La selección natural acelerada: sólo los más rentables sobreviven la primera purga.
+// Capital de los muertos va al Tesoro del padre para redistribuirse entre los vivos.
+function runTournamentOfDeath(pnl) {
+  const children = pnl.children || [];
+  if (!children.length) return;
+  if ((pnl.trades || 0) < TREE_RULES.tournamentTrades) return;
+  if (pnl._tournamentDone) return; // solo una vez
+
+  // Leer PnL de cada hijo
+  const withStats = children.map(ch => {
+    const childDir = ch.dir || path.join(DIR, 'children', ch.id || ch.spec);
+    const cpPath   = path.join(childDir, 'pnl.json');
+    if (!fs.existsSync(cpPath)) return { ...ch, wr:0, fund:0 };
+    try {
+      const cp = JSON.parse(fs.readFileSync(cpPath, 'utf8'));
+      const wr = cp.trades > 0 ? cp.wins / cp.trades : 0;
+      return { ...ch, wr, fund: cp.fund || 0, trades: cp.trades || 0 };
+    } catch { return { ...ch, wr:0, fund:0 }; }
+  });
+
+  // Solo si suficientes hijos tienen trades para comparar
+  const active = withStats.filter(c => c.trades >= 5);
+  if (active.length < 2) return;
+
+  // Ordenar por WR (mejor primero)
+  active.sort((a,b) => b.wr - a.wr);
+  const cutoff   = Math.ceil(active.length / 2);
+  const survivors= active.slice(0, cutoff);
+  const losers   = active.slice(cutoff);
+
+  if (losers.length === 0) { pnl._tournamentDone = true; savePnL(pnl); return; }
+
+  let recoveredCapital = 0;
+  for (const loser of losers) {
+    recoveredCapital += loser.fund || 0;
+    const childDir = loser.dir || path.join(DIR, 'children', loser.id || loser.spec);
+    const cpPath   = path.join(childDir, 'pnl.json');
+    // Zero out capital — death
+    try {
+      const cp = JSON.parse(fs.readFileSync(cpPath, 'utf8'));
+      cp.fund = 0;
+      fs.writeFileSync(cpPath, JSON.stringify(cp, null, 2));
+    } catch {}
+    const msg = `\n### TOURNAMENT DEATH — ${new Date().toISOString()}:\n`
+      + `${loser.name||loser.spec} eliminado en Torneo de la Muerte (trade ${pnl.trades}).\n`
+      + `WR: ${Math.round(loser.wr*100)}% — perdió el corte. Capital recuperado: $${(loser.fund||0).toFixed(2)}.\n`;
+    appendToSoul(msg);
+    console.log(R+BOLD+'\n  ✗ TOURNAMENT KILL: '+(loser.name||loser.spec)+' WR '+Math.round(loser.wr*100)+'%'+X);
+  }
+
+  // Capital redistribuído al tesoro
+  pnl.treasury = parseFloat(((pnl.treasury||0) + recoveredCapital).toFixed(2));
+  pnl._tournamentDone = true;
+
+  // Mantener solo survivors + children sin suficientes trades
+  const survivorIds = new Set(survivors.map(s => s.id));
+  const noTrades    = withStats.filter(c => !active.find(a=>a.id===c.id));
+  pnl.children = [...survivors, ...noTrades];
+  savePnL(pnl);
+
+  appendToSoul(`\n### TOURNAMENT RESULT — ${new Date().toISOString()}:\nSurvivors: ${survivors.map(s=>(s.name||s.spec)+' WR:'+Math.round(s.wr*100)+'%').join(', ')}.\nCapital recovered: $${recoveredCapital.toFixed(2)} → treasury.\n`);
+  console.log(M+BOLD+'\n  ◈ TOURNAMENT DONE: '+survivors.length+' survivors, $'+recoveredCapital.toFixed(2)+' recovered'+X);
 }
 
 // ── PROMOCIÓN DE NIETOS: si nieto supera al hijo padre, el hijo muere y el nieto sube ──
