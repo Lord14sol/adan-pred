@@ -956,7 +956,9 @@ async function refresh(){
     const circ=2*Math.PI*30;
     const offset=circ*(1-fundPct);
     document.getElementById('fund-arc').style.strokeDashoffset=offset;
-    document.getElementById('ring-fund').textContent='\$'+(pnl.fund/1000).toFixed(1)+'k';
+    document.getElementById('fund-arc').style.stroke=fundPct>=0.9?'var(--green)':fundPct>=0.7?'var(--cyan)':fundPct>=0.4?'var(--yellow)':'var(--red)';
+    document.getElementById('ring-fund').textContent='\$'+(pnl.fund/1000).toFixed(2)+'k';
+    document.getElementById('ring-fund').style.color=fundPct>=0.9?'var(--green)':fundPct>=0.7?'var(--cyan)':fundPct>=0.4?'var(--yellow)':'var(--red)';
 
     // Stats
     document.getElementById('s-net').innerHTML=\`<span style="color:\${pnl.net>=0?'var(--green)':'var(--red)'}">\${pnl.net>=0?'+':''}\$\${(pnl.net||0).toFixed(2)}</span>\`;
@@ -1293,28 +1295,32 @@ function updateNeuralFlow(d) {
   const ptColor = isThinking ? C_CYA : isDone ? C_GRN : C_BRD2;
 
   // Layout
-  const NW=82, NH=64, SVG_W=720, SVG_H=96, pipeY=14;
+  const NW=122, NH=92, SVG_W=720, SVG_H=136, pipeY=18;
   const gap = Math.floor((SVG_W-20-5*NW)/4);
   const px = [0,1,2,3,4].map(i=>10+i*(NW+gap));
   const midY = pipeY+NH/2;
 
   const nodeDefs = [
     { title:'BINANCE', icon:'◆', color:C_YEL,
-      l1:btc?\`BTC \${chgTxt(btc)}\`:'loading...', l2:eth?\`ETH \${chgTxt(eth)}\`:'' },
+      l1:btc?\`BTC \${chgTxt(btc)}\`:'loading...', l2:eth?\`ETH \${chgTxt(eth)}\`:'', l3:sol?\`SOL \${chgTxt(sol)}\`:'' },
     { title:'TECHNICAL', icon:'≋', color:C_PUR,
       l1:btc?\`RSI \${fmt(btc.rsi,0)} \${btc.rsi<35?'▼OS':btc.rsi>65?'▲OB':'━'}\`:'---',
-      l2:btc?.macd?\`MACD \${btc.macd.hist>0?'▲bull':'▼bear'}\`:'---' },
+      l2:btc?.vwap5m?\`VWAP \${btc.vwap5m.pct>=0?'+':''}\${btc.vwap5m.pct.toFixed(1)}%\`:'VWAP --',
+      l3:btc?\`vol \${btc.vol?.ratio?.toFixed(1)||'?'}x accel:\${btc.volAccel>=0?'+':''}\${btc.volAccel||0}\`:'---' },
     { title:'POLYMARKET', icon:'◈', color:C_CYA,
       l1:markets.length?\`\${markets.length} markets\`:'scanning...',
-      l2:markets.length?\`best e:\${((markets[0]?.edge||0)*100).toFixed(0)}%\`:'' },
+      l2:markets.length?\`best e:\${((markets[0]?.edge||0)*100).toFixed(0)}%\`:'',
+      l3:markets.length?\`close: \${markets[0]?.closesAt?Math.round((new Date(markets[0].closesAt)-Date.now())/60000)+'min':'?'}\`:'' },
     { title:'CLAUDE ◈', icon:isThinking?frame:(isDone?'✓':'○'),
       color:isThinking?C_CYA:(isDone?C_GRN:C_DIM),
       l1:isThinking?'analyzing...':(isDone?'decided':'idle'),
-      l2:'Sonnet 4.6' },
+      l2:'Sonnet 4.6',
+      l3:isThinking?'thinking...':isDone?'responded':'idle' },
     { title:'DECISION', icon:isDone?'◉':'○',
       color:isDone?(d.state?.thought?.includes('BET')?C_GRN:C_RED):C_DIM,
       l1:isDone?(d.state?.thought?.includes('BET')?'● BET':'● SKIP'):(isThinking?frame:'waiting'),
-      l2:'' },
+      l2:isDone&&d.state?.thought?.includes('BET')?'position open':'',
+      l3:'' },
   ];
 
   let svg = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
@@ -1343,8 +1349,9 @@ function updateNeuralFlow(d) {
   // Anillo de pulso en CLAUDE cuando piensa
   if(isThinking){
     const cx=px[3]+NW/2;
-    svg+=\`<circle cx="\${cx}" cy="\${midY}" r="38" fill="none" stroke="\${C_CYA}" stroke-width="1.5" opacity=".25" class="nf-pulse"/>
-    <circle cx="\${cx}" cy="\${midY}" r="46" fill="none" stroke="\${C_CYA}" stroke-width=".8" opacity=".1" class="nf-pulse" style="animation-delay:.35s"/>\`;
+    svg+=\`<circle cx="\${cx}" cy="\${midY}" r="50" fill="none" stroke="\${C_CYA}" stroke-width="1.5" opacity=".25" class="nf-pulse"/>
+    <circle cx="\${cx}" cy="\${midY}" r="62" fill="none" stroke="\${C_CYA}" stroke-width=".8" opacity=".1" class="nf-pulse" style="animation-delay:.35s"/>
+    <circle cx="\${cx}" cy="\${midY}" r="72" fill="none" stroke="\${C_CYA}" stroke-width=".5" opacity=".05" class="nf-pulse" style="animation-delay:.7s"/>\`;
   }
 
   // ── Nodos — estilo pixel card igual que los cards de la página ───────────
@@ -1362,11 +1369,12 @@ function updateNeuralFlow(d) {
              : (isIdle&&hasPrices)?' class="nf-idle-node"':'';
     svg+=\`<g\${gc}>
       <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" rx="0" fill="\${fill}" stroke="\${bc}" stroke-width="\${bw}"/>
-      <text x="\${x+NW/2}" y="\${y+11}" text-anchor="middle" font-size="6" font-weight="700" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" letter-spacing="1">\${nd.title}</text>
-      <line x1="\${x+6}" y1="\${y+14}" x2="\${x+NW-6}" y2="\${y+14}" stroke="\${C_BRD2}" stroke-width=".8" opacity=".4"/>
-      <text x="\${x+NW/2}" y="\${y+28}" text-anchor="middle" font-size="14" fill="\${nd.color}" font-family="JetBrains Mono,monospace" font-weight="700" \${i===3?'id="nf-claude-icon"':i===4?'id="nf-dec-icon"':''}>\${nd.icon}</text>
-      <text x="\${x+NW/2}" y="\${y+40}" text-anchor="middle" font-size="8.5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(nd.l1||'').slice(0,12)}</text>
-      <text x="\${x+NW/2}" y="\${y+52}" text-anchor="middle" font-size="7.5" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${(nd.l2||'').slice(0,12)}</text>
+      <text x="\${x+NW/2}" y="\${y+12}" text-anchor="middle" font-size="7" font-weight="700" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" letter-spacing="1">\${nd.title}</text>
+      <line x1="\${x+6}" y1="\${y+16}" x2="\${x+NW-6}" y2="\${y+16}" stroke="\${C_BRD2}" stroke-width=".8" opacity=".4"/>
+      <text x="\${x+NW/2}" y="\${y+36}" text-anchor="middle" font-size="18" fill="\${nd.color}" font-family="JetBrains Mono,monospace" font-weight="700" \${i===3?'id="nf-claude-icon"':i===4?'id="nf-dec-icon"':''}>\${nd.icon}</text>
+      <text x="\${x+NW/2}" y="\${y+52}" text-anchor="middle" font-size="10" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(nd.l1||'').slice(0,14)}</text>
+      <text x="\${x+NW/2}" y="\${y+66}" text-anchor="middle" font-size="8.5" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${(nd.l2||'').slice(0,14)}</text>
+      <text x="\${x+NW/2}" y="\${y+80}" text-anchor="middle" font-size="8" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" opacity=".7">\${(nd.l3||'').slice(0,14)}</text>
     </g>\`;
   });
 
@@ -1452,11 +1460,11 @@ function updateDynastyPanel(d) {
 
   // ── Con hijos: SVG de red genética ──────────────────────────────────────────
   const N      = children.length;
-  const NW=104, NH=82;
-  const AW=120, AH=64;
+  const NW=128, NH=112;
+  const AW=160, AH=82;
   const SVG_W  = 720;
-  const AX     = (SVG_W-AW)/2, AY=8;
-  const CONN_H = 44; // altura del cable de conexión
+  const AX     = (SVG_W-AW)/2, AY=10;
+  const CONN_H = 55; // altura del cable de conexión
   const CY     = AY+AH+CONN_H;
   const totalW = N*(NW+10)-10;
   const CX0    = Math.max(10, (SVG_W-totalW)/2);
@@ -1501,11 +1509,12 @@ function updateDynastyPanel(d) {
   const wrColor = wr>=55?C_GRN : wr>=40?C_YEL : C_RED;
   svg+=\`<rect x="\${AX+3}" y="\${AY+3}" width="\${AW}" height="\${AH}" fill="\${C_SHD}"/>
   <rect x="\${AX}" y="\${AY}" width="\${AW}" height="\${AH}" fill="\${C_CARD3}" stroke="\${C_PUR}" stroke-width="2.5" class="nf-idle-node"/>
-  <text x="\${aMidX}" y="\${AY+13}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" font-weight="700" fill="\${C_PUR}" letter-spacing="2">◈ ADAN</text>
-  <line x1="\${AX+6}" y1="\${AY+16}" x2="\${AX+AW-6}" y2="\${AY+16}" stroke="\${C_BRD2}" stroke-width=".8" opacity=".4"/>
-  <text x="\${aMidX}" y="\${AY+28}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="\${C_DIM}">ROOT · GEN \${pnl.generation||1}</text>
-  <text x="\${aMidX}" y="\${AY+41}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" font-weight="700" fill="\${wrColor}">\${wr}% WR · \${trades} trades</text>
-  <text x="\${aMidX}" y="\${AY+55}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="\${C_CYA}">LVL \${lvl} · $\${(pnl.fund||0).toFixed(0)}</text>\`;
+  <text x="\${aMidX}" y="\${AY+15}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700" fill="\${C_PUR}" letter-spacing="2">◈ ADAN · ROOT · GEN \${pnl.generation||1}</text>
+  <line x1="\${AX+8}" y1="\${AY+19}" x2="\${AX+AW-8}" y2="\${AY+19}" stroke="\${C_BRD2}" stroke-width=".8" opacity=".4"/>
+  <text x="\${aMidX}" y="\${AY+34}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="14" font-weight="700" fill="\${wrColor}">\${wr}% WR</text>
+  <text x="\${aMidX}" y="\${AY+50}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="\${C_TXT}">\${trades} trades · LVL \${lvl}</text>
+  <text x="\${aMidX}" y="\${AY+66}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" font-weight="700" fill="\${C_CYA}">$\${(pnl.fund||0).toFixed(2)}</text>
+  <text x="\${aMidX}" y="\${AY+78}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="\${C_DIM}">\${(pnl.net||0)>=0?'+':''}\$\${(pnl.net||0).toFixed(2)} P&L · treasury \$\${(pnl.treasury||0).toFixed(2)}</text>\`;
 
   // ── Nodos hijos ─────────────────────────────────────────────────────────────
   children.forEach((ch,i)=>{
@@ -1524,17 +1533,18 @@ function updateDynastyPanel(d) {
     const dnaStr = dna ? 'DNA·'+dna.mutation : 'NO DNA';
     const dnaColor = dna ? C_PUR : C_DIM;
 
-    svg+=\`<rect x="\${x+2}" y="\${y+2}" width="\${NW}" height="\${NH}" fill="\${C_SHD}"/>
+    svg+=\`<rect x="\${x+3}" y="\${y+3}" width="\${NW}" height="\${NH}" fill="\${C_SHD}"/>
     <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" fill="\${fillC}" stroke="\${bColor}" stroke-width="\${bw2}"/>
-    <text x="\${x+NW/2}" y="\${y+11}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" font-weight="700" fill="\${C_PUR}" letter-spacing=".5">\${(ch.name||'CHILD').slice(0,10).toUpperCase()}</text>
-    <line x1="\${x+4}" y1="\${y+14}" x2="\${x+NW-4}" y2="\${y+14}" stroke="\${C_BRD2}" stroke-width=".7" opacity=".4"/>
-    <text x="\${x+NW/2}" y="\${y+24}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="\${C_DIM}">\${ch.spec||'?'} · GEN\${ch.generation||2}</text>
-    <text x="\${x+NW/2}" y="\${y+37}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" font-weight="700" fill="\${sigColor(dir)}">\${sigLabel(dir)}\${conf?' '+conf+'%':''}</text>
-    <text x="\${x+NW/2}" y="\${y+49}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="\${score>=65?C_GRN:score>=45?C_YEL:C_DIM}">score:\${score} \${isObs?'[obs]':''}</text>
-    <text x="\${x+NW/2}" y="\${y+60}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="\${dnaColor}">\${dnaStr}</text>
-    <rect x="\${x+6}" y="\${y+65}" width="\${NW-12}" height="5" fill="\${C_BRD2}" opacity=".3"/>
-    <rect x="\${x+6}" y="\${y+65}" width="\${Math.round((NW-12)*cexp/100)}" height="5" fill="\${C_CYA}" opacity=".8"/>
-    <text x="\${x+NW/2}" y="\${y+78}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="\${C_DIM}">EXP \${cexp}/100</text>\`;
+    <text x="\${x+NW/2}" y="\${y+13}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" font-weight="700" fill="\${C_PUR}" letter-spacing=".5">\${(ch.name||'CHILD').slice(0,12).toUpperCase()}</text>
+    <line x1="\${x+5}" y1="\${y+17}" x2="\${x+NW-5}" y2="\${y+17}" stroke="\${C_BRD2}" stroke-width=".7" opacity=".4"/>
+    <text x="\${x+NW/2}" y="\${y+28}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="\${C_DIM}">\${ch.spec||'?'} · G\${ch.generation||2}</text>
+    <text x="\${x+NW/2}" y="\${y+46}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="14" font-weight="700" fill="\${sigColor(dir)}">\${sigLabel(dir)}</text>
+    <text x="\${x+NW/2}" y="\${y+60}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="\${sigColor(dir)}">\${conf?conf+'% conf':''}</text>
+    <text x="\${x+NW/2}" y="\${y+74}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="\${score>=65?C_GRN:score>=45?C_YEL:C_RED}">score: \${score} \${isObs?'● OBS':score>=65?'● ELITE':'●'}</text>
+    <text x="\${x+NW/2}" y="\${y+86}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="\${dnaColor}">\${dnaStr}</text>
+    <rect x="\${x+6}" y="\${y+91}" width="\${NW-12}" height="6" fill="\${C_BRD2}" opacity=".3" rx="1"/>
+    <rect x="\${x+6}" y="\${y+91}" width="\${Math.round((NW-12)*cexp/100)}" height="6" fill="\${C_CYA}" opacity=".85" rx="1"/>
+    <text x="\${x+NW/2}" y="\${y+106}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="\${C_DIM}">EXP \${cexp}/100\${ch.grandChildren?.length?' · '+ch.grandChildren.length+' GC':''}</text>\`;
   });
 
   svg+=\`</svg>\`;
@@ -2403,7 +2413,14 @@ async function runChildScanner(spec, allPrices, allMarkets) {
       intelScore: d?.intelScore||50
     };
 
-    fs.writeFileSync(path.join(INTEL_DIR, spec.id+'.json'), JSON.stringify(intel,null,2));
+    // Rolling scoreHistory for death-by-incompetence detection
+    const intelPath = path.join(INTEL_DIR, spec.id+'.json');
+    let prevHistory = [];
+    if (fs.existsSync(intelPath)) {
+      try { prevHistory = JSON.parse(fs.readFileSync(intelPath,'utf8')).scoreHistory || []; } catch {}
+    }
+    intel.scoreHistory = [...prevHistory, intel.intelScore].slice(-20);
+    fs.writeFileSync(intelPath, JSON.stringify(intel,null,2));
     return intel;
   } catch(e) { return null; }
 }
@@ -3308,8 +3325,10 @@ async function checkResolutions() {
     if (_agiClient) autoEvolveSoul(_agiClient, pnlFinal).catch(()=>{});
     // AGI Layer 3: absorb elite child genome if any child outperforms parent
     absorbEliteGenome(pnlFinal);
-    // AGI Layer 4: prune dead children (capital = 0 after ≥5 trades → natural death)
+    // AGI Layer 4: prune dead children (capital = 0 OR incompetence → natural death)
     pruneDeadChildren(loadPnL());
+    // AGI Layer 5: promote elite grandchildren (grandchild WR > parent WR + 12% → parent dies, gc promoted)
+    promoteEliteGrandchild(loadPnL());
   }
 }
 
@@ -3401,29 +3420,109 @@ function pruneDeadChildren(pnl) {
     try { cp = JSON.parse(fs.readFileSync(cpPath, 'utf8')); } catch { alive.push(ch); continue; }
 
     const fund = cp.fund || 0;
+    // Death 1: capital exhausted
     if (fund <= 0 && (cp.trades || 0) >= 5) {
-      // Hijo murió — ya hizo al menos 5 trades (no es error de inicio)
-      dead.push({ ...ch, finalWR: cp.trades > 0 ? Math.round(cp.wins/cp.trades*100) : 0, finalTrades: cp.trades });
-    } else {
-      alive.push(ch);
+      dead.push({ ...ch, deathReason:'capital', finalWR: cp.trades > 0 ? Math.round(cp.wins/cp.trades*100) : 0, finalTrades: cp.trades });
+      continue;
     }
+    // Death 2: consistently low intel score (incompetence)
+    const slug2 = ch.spec.replace(/[^a-z0-9]/gi,'-').toLowerCase();
+    const intelPath2 = path.join(INTEL_DIR, slug2+'.json');
+    if (fs.existsSync(intelPath2)) {
+      try {
+        const intel2 = JSON.parse(fs.readFileSync(intelPath2,'utf8'));
+        const hist2 = intel2.scoreHistory || [];
+        if (hist2.length >= 15) {
+          const avgScore = hist2.reduce((a,b)=>a+b,0)/hist2.length;
+          if (avgScore < 40) {
+            dead.push({ ...ch, deathReason:'incompetence', avgScore: avgScore.toFixed(0), finalTrades: cp.trades||0 });
+            continue;
+          }
+        }
+      } catch {}
+    }
+    alive.push(ch);
   }
 
   if (dead.length === 0) return;
 
   // Graba la muerte en SOUL.md
   for (const d of dead) {
+    const reason = d.deathReason === 'incompetence'
+      ? `Avg intel score: ${d.avgScore}/100 over 15 cycles — consistently weak signal.`
+      : `Capital agotado. WR final: ${d.finalWR}% en ${d.finalTrades} trades.`;
     const msg = `\n### CHILD DIED — ${new Date().toISOString()}:\n`
-      + `${d.name||d.spec} (${d.spec}) ha muerto. WR final: ${d.finalWR}% en ${d.finalTrades} trades.\n`
-      + `Capital agotado. DNA: ${JSON.stringify(d.dna||{})}\n`
+      + `${d.name||d.spec} (${d.spec}) ha muerto por ${d.deathReason||'capital'}.\n`
+      + `${reason} DNA: ${JSON.stringify(d.dna||{})}\n`
       + `Selección natural ha hablado. Este genoma no sobrevivió.\n`;
     appendToSoul(msg);
-    console.log(R+BOLD+'\n  ✗ CHILD DIED: '+(d.name||d.spec)+' ('+d.spec+') — fund exhausted'+X);
+    const cause = d.deathReason==='incompetence' ? 'incompetent (score avg '+d.avgScore+')' : 'capital exhausted';
+    console.log(R+BOLD+'\n  ✗ CHILD DIED: '+(d.name||d.spec)+' ('+d.spec+') — '+cause+X);
   }
 
   // Actualiza el árbol del padre
   pnl.children = alive;
   savePnL(pnl);
+}
+
+// ── PROMOCIÓN DE NIETOS: si nieto supera al hijo padre, el hijo muere y el nieto sube ──
+// Esto implementa selección ascendente: el mejor genoma siempre sube al nivel más alto.
+// Nieto (Gen3) → mata al Hijo (Gen2) → Nieto pasa a ser Hijo directo de ADAN (Gen2)
+// El nieto hereda la posición y puede crear nuevos hijos propios.
+function promoteEliteGrandchild(pnl) {
+  const children = pnl.children || [];
+  if (!children.length) return;
+
+  for (let i = children.length - 1; i >= 0; i--) {
+    const child = children[i];
+    const childDir = child.dir || path.join(DIR, 'children', child.id || child.spec);
+    const childPnlPath = path.join(childDir, 'pnl.json');
+    if (!fs.existsSync(childPnlPath)) continue;
+
+    let childPnl;
+    try { childPnl = JSON.parse(fs.readFileSync(childPnlPath, 'utf8')); } catch { continue; }
+
+    const childWR = (childPnl.trades||0) >= 10 ? (childPnl.wins||0) / childPnl.trades : null;
+    const grandChildren = childPnl.children || [];
+    if (!grandChildren.length) continue;
+
+    for (const gc of grandChildren) {
+      const gcDir = gc.dir || path.join(childDir, 'children', gc.id || gc.spec);
+      const gcPnlPath = path.join(gcDir, 'pnl.json');
+      if (!fs.existsSync(gcPnlPath)) continue;
+
+      let gcPnl;
+      try { gcPnl = JSON.parse(fs.readFileSync(gcPnlPath, 'utf8')); } catch { continue; }
+
+      const gcWR = (gcPnl.trades||0) >= 10 ? (gcPnl.wins||0) / gcPnl.trades : null;
+      if (childWR === null || gcWR === null) continue;
+      if (gcWR <= childWR + 0.12) continue; // nieto debe superar al padre por >12%
+
+      // PROMOCIÓN: nieto elimina al padre y sube a Gen 2
+      const msg = `\n### GRANDCHILD PROMOTION — ${new Date().toISOString()}:\n`
+        + `${gc.name||gc.spec} (GC·WR:${Math.round(gcWR*100)}%) eliminó a ${child.name||child.spec} (WR:${Math.round(childWR*100)}%)\n`
+        + `${gc.name||gc.spec} promovido a Gen 2 — hijo directo de ADAN. El mejor genoma sobrevive.\n`
+        + `DNA del nieto: ${JSON.stringify(gc.dna||{})}\n`;
+      appendToSoul(msg);
+      console.log(C+BOLD+'\n  ◈ PROMOTION: '+(gc.name||gc.spec)+' → Gen2 (eliminated parent '+(child.name||child.spec)+')'+X);
+
+      // Nieto pasa a ser hijo directo de ADAN
+      const promoted = {
+        ...gc,
+        generation: (pnl.generation||1) + 1,
+        dir: gcDir,
+        status: 'observing',
+        promotedFrom: child.name || child.spec,
+        promotedAt: new Date().toISOString()
+      };
+
+      // Reemplaza al hijo con el nieto promovido
+      children.splice(i, 1, promoted);
+      pnl.children = children;
+      savePnL(pnl);
+      return; // una promoción por ciclo
+    }
+  }
 }
 
 // AGI client reference (set in main)
