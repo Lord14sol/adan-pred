@@ -1,0 +1,37 @@
+{
+  "anthropicKey": "sk-ant-api03-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "mode": "paper",
+  "createdAt": "2026-02-28T19:15:20.701Z",
+  "mesaRedonda": {
+    "parents": [
+      {
+        "id": "apple",
+        "name": "Apple",
+        "role": "Contexto y Oportunidad",
+        "specialization": "Polymarket",
+        "prompt": "Analizo el sentimiento del mercado, identifico narrativas y encuentro oportunidades de alto potencial en Polymarket. Soy el 'qué' y el 'porqué'."
+      },
+      {
+        "id": "snake",
+        "name": "Snake",
+        "role": "Ejecución y Alpha",
+        "specialization": "Solana/Jupiter",
+        "prompt": "Busco la ejecución óptima en Solana (usando Jupiter), analizo la liquidez y encuentro el 'cuándo' y 'cómo' para maximizar el alpha. Soy la acción."
+      },
+      {
+        "id": "eva",
+        "name": "Eva",
+        "role": "Riesgo y Presupuesto",
+        "specialization": "Control AGI",
+        "prompt": "Gestiono el presupuesto de $5, asigno capital a las operaciones, y tengo la última palabra (el 'go' o 'no-go') para asegurar la supervivencia económica del enjambre."
+      }
+    ]
+  },
+  "avatar": {
+    "hairColor": "#5b21b6",
+    "suitColor": "#0d0d18",
+    "eyeColor": "#22d3ee",
+    "skinColor": "#e0b98a",
+    "personality": "analitico"
+  }
+}

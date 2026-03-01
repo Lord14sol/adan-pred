@@ -20,45 +20,45 @@ import http from 'http';
 process.stdout.on('error', e => { if (e.code === 'EPIPE') process.exit(0); });
 process.stderr.on('error', e => { if (e.code === 'EPIPE') process.exit(0); });
 process.on('uncaughtException', e => {
-  try { fs.appendFileSync('/tmp/adan-crash.log', new Date().toISOString()+' '+e.stack+'\n'); } catch {}
+  try { fs.appendFileSync('/tmp/adan-crash.log', new Date().toISOString() + ' ' + e.stack + '\n'); } catch { }
 });
 process.on('unhandledRejection', e => {
-  try { fs.appendFileSync('/tmp/adan-crash.log', new Date().toISOString()+' REJECTION: '+e+'\n'); } catch {}
+  try { fs.appendFileSync('/tmp/adan-crash.log', new Date().toISOString() + ' REJECTION: ' + e + '\n'); } catch { }
 });
 
-const HOME           = process.env.HOME;
-const DIR            = path.join(HOME, '.adan-pred');
-const CONFIG_PATH    = path.join(DIR, 'config.json');
-const PNL_PATH       = path.join(DIR, 'pnl.json');
+const HOME = process.env.HOME;
+const DIR = path.join(HOME, '.adan-pred');
+const CONFIG_PATH = path.join(process.cwd(), 'config.json'); // Use local config
+const PNL_PATH = path.join(DIR, 'pnl.json');
 const POSITIONS_PATH = path.join(DIR, 'positions.json');
-const SOUL_PATH      = path.join(DIR, 'SOUL.md');
-const THOUGHTS_PATH  = path.join(DIR, 'thoughts.jsonl');
-const STRATEGY_PATH  = path.join(DIR, 'strategy.json');
-const CALIB_PATH     = path.join(DIR, 'calibration.json');
-const INTEL_DIR      = path.join(DIR, 'intel');      // hijos escriben aquí
-const HYPOTHESIS_PATH= path.join(DIR, 'hypotheses.jsonl'); // memoria episódica
+const SOUL_PATH = path.join(DIR, 'SOUL.md');
+const THOUGHTS_PATH = path.join(DIR, 'thoughts.jsonl');
+const STRATEGY_PATH = path.join(DIR, 'strategy.json');
+const CALIB_PATH = path.join(DIR, 'calibration.json');
+const INTEL_DIR = path.join(DIR, 'intel');      // hijos escriben aquí
+const HYPOTHESIS_PATH = path.join(DIR, 'hypotheses.jsonl'); // memoria episódica
 const DYN_WEIGHTS_PATH = path.join(DIR, 'dynamic_weights.json'); // P5: auto-modificación limitada (Fase 2)
 
 // ── APIs ───────────────────────────────────────────────────────────────────
-const POLYMARKET_API  = 'https://gamma-api.polymarket.com';
-const BINANCE_API     = 'https://api.binance.com/api/v3';
+const POLYMARKET_API = 'https://gamma-api.polymarket.com';
+const BINANCE_API = 'https://api.binance.com/api/v3';
 const SCAN_INTERVAL_MS = 5 * 60 * 1000;
-const MAX_POSITIONS   = 9;     // más slots = aprende más rápido
-const MIN_EDGE        = 0.05;  // más agresivo en paper = más trades = más data
-const PAPER_BET_SIZE  = 100;   // $100 por bet = 1% del fondo $10k
+const MAX_POSITIONS = 9;     // más slots = aprende más rápido
+const MIN_EDGE = 0.05;  // más agresivo en paper = más trades = más data
+const PAPER_BET_SIZE = 100;   // $100 por bet = 1% del fondo $10k
 
 // Symbols to track on Binance
 const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT'];
 
 // ── Default Strategy ────────────────────────────────────────────────────────
 const DEFAULT_STRATEGY = {
-  minEdge:         0.05,    // 5% edge en paper — más agresivo para aprender
-  minLiquidity:    500,
+  minEdge: 0.05,    // 5% edge en paper — más agresivo para aprender
+  minLiquidity: 500,
   maxMarketsCheck: 20,
-  minConfidence:   60,
+  minConfidence: 60,
   maxHoursToClose: 168,
-  version:         1,
-  evolvedAt:       null
+  version: 1,
+  evolvedAt: null
 };
 
 // ── Tree rules ──────────────────────────────────────────────────────────────
@@ -72,9 +72,9 @@ const TREE_RULES = {
   maxChildrenGen2: 2,   // max nietos por hijo (hijo necesita expChild >= 100)
   // Bisnietos (Gen3 → Gen4): cada nieto puede tener hasta 3 bisnietos, luego muere
   maxChildrenGen3: 3,
-  canSpawnGen3:    true,
-  maxGen:          4,
-  treasuryPct:     0.10,
+  canSpawnGen3: true,
+  maxGen: 4,
+  treasuryPct: 0.10,
   childExpToSpawn: 100, // EXP que debe tener un hijo para poder engendrar nietos
   // Torneo de la Muerte: al trade 20, bottom 50% de hijos muere, capital redistribuído
   tournamentTrades: 20,
@@ -85,26 +85,26 @@ const TREE_RULES = {
 // ── Colors ──────────────────────────────────────────────────────────────────
 const G = '\x1b[32m', Y = '\x1b[33m', R = '\x1b[31m';
 const B = '\x1b[34m', C = '\x1b[36m', M = '\x1b[35m';
-const W = '\x1b[97m', D = '\x1b[2m',  X = '\x1b[0m';
+const W = '\x1b[97m', D = '\x1b[2m', X = '\x1b[0m';
 const BOLD = '\x1b[1m';
 
-function cls()         { process.stdout.write('\x1b[2J\x1b[H'); }
-function ensureDir()   { if (!fs.existsSync(DIR)) fs.mkdirSync(DIR, { mode: 0o700, recursive: true }); }
-function loadConfig()  { return fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH,'utf8')) : null; }
-function saveConfig(c) { fs.writeFileSync(CONFIG_PATH, JSON.stringify(c,null,2), { mode: 0o600 }); }
+function cls() { process.stdout.write('\x1b[2J\x1b[H'); }
+function ensureDir() { if (!fs.existsSync(DIR)) fs.mkdirSync(DIR, { mode: 0o700, recursive: true }); }
+function loadConfig() { return fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) : null; }
+function saveConfig(c) { fs.writeFileSync(CONFIG_PATH, JSON.stringify(c, null, 2), { mode: 0o600 }); }
 
 function loadStrategy() {
-  if (!fs.existsSync(STRATEGY_PATH)) { fs.writeFileSync(STRATEGY_PATH, JSON.stringify(DEFAULT_STRATEGY,null,2)); return {...DEFAULT_STRATEGY}; }
-  try { return { ...DEFAULT_STRATEGY, ...JSON.parse(fs.readFileSync(STRATEGY_PATH,'utf8')) }; }
-  catch { return {...DEFAULT_STRATEGY}; }
+  if (!fs.existsSync(STRATEGY_PATH)) { fs.writeFileSync(STRATEGY_PATH, JSON.stringify(DEFAULT_STRATEGY, null, 2)); return { ...DEFAULT_STRATEGY }; }
+  try { return { ...DEFAULT_STRATEGY, ...JSON.parse(fs.readFileSync(STRATEGY_PATH, 'utf8')) }; }
+  catch { return { ...DEFAULT_STRATEGY }; }
 }
 
 // ── P5: dynamic_weights.json — ADAN lee, humanos escriben (Fase 1: read-only) ─
 // En Fase 2: ADAN podrá modificar sus propios pesos cuando WR > 55% por 20 trades.
 const DEFAULT_DYN_WEIGHTS = {
   volumeWeight: 1.0,   // multiplicador de señales de volumen
-  vwapWeight:   1.0,   // multiplicador de señales de VWAP
-  trendWeight:  1.0,   // multiplicador de señales de tendencia
+  vwapWeight: 1.0,   // multiplicador de señales de VWAP
+  trendWeight: 1.0,   // multiplicador de señales de tendencia
   fearGreedBias: 0.0,  // sesgo cuando F&G < 20 (positivo = más NO bets)
   _note: 'Fase 1: modificar manualmente para ajustar. Fase 2: ADAN ajusta autónomamente al 55%+ WR.',
   _lastModified: new Date().toISOString()
@@ -114,38 +114,38 @@ function loadDynWeights() {
     fs.writeFileSync(DYN_WEIGHTS_PATH, JSON.stringify(DEFAULT_DYN_WEIGHTS, null, 2));
     return { ...DEFAULT_DYN_WEIGHTS };
   }
-  try { return { ...DEFAULT_DYN_WEIGHTS, ...JSON.parse(fs.readFileSync(DYN_WEIGHTS_PATH,'utf8')) }; }
+  try { return { ...DEFAULT_DYN_WEIGHTS, ...JSON.parse(fs.readFileSync(DYN_WEIGHTS_PATH, 'utf8')) }; }
   catch { return { ...DEFAULT_DYN_WEIGHTS }; }
 }
-function saveStrategy(s) { fs.writeFileSync(STRATEGY_PATH, JSON.stringify(s,null,2)); }
+function saveStrategy(s) { fs.writeFileSync(STRATEGY_PATH, JSON.stringify(s, null, 2)); }
 
 function loadPnL() {
-  const def = { trades:0, wins:0, losses:0, net:0, exp:0, fund:10000, treasury:0, children:[], generation:1, streak:0, hourStats:{} };
-  return fs.existsSync(PNL_PATH) ? { ...def, ...JSON.parse(fs.readFileSync(PNL_PATH,'utf8')) } : def;
+  const def = { trades: 0, wins: 0, losses: 0, net: 0, exp: 0, fund: 10000, treasury: 0, children: [], generation: 1, streak: 0, hourStats: {} };
+  return fs.existsSync(PNL_PATH) ? { ...def, ...JSON.parse(fs.readFileSync(PNL_PATH, 'utf8')) } : def;
 }
-function savePnL(p) { fs.writeFileSync(PNL_PATH, JSON.stringify(p,null,2)); }
+function savePnL(p) { fs.writeFileSync(PNL_PATH, JSON.stringify(p, null, 2)); }
 
 function loadPositions() {
-  const def = { open:[], closed:[] };
-  return fs.existsSync(POSITIONS_PATH) ? { ...def, ...JSON.parse(fs.readFileSync(POSITIONS_PATH,'utf8')) } : def;
+  const def = { open: [], closed: [] };
+  return fs.existsSync(POSITIONS_PATH) ? { ...def, ...JSON.parse(fs.readFileSync(POSITIONS_PATH, 'utf8')) } : def;
 }
-function savePositions(p) { fs.writeFileSync(POSITIONS_PATH, JSON.stringify(p,null,2)); }
+function savePositions(p) { fs.writeFileSync(POSITIONS_PATH, JSON.stringify(p, null, 2)); }
 
 // ── Calibration ─────────────────────────────────────────────────────────────
 function loadCalibration() {
-  const def = { btc:{p:0,c:0}, eth:{p:0,c:0}, sol:{p:0,c:0}, other:{p:0,c:0} };
+  const def = { btc: { p: 0, c: 0 }, eth: { p: 0, c: 0 }, sol: { p: 0, c: 0 }, other: { p: 0, c: 0 } };
   if (!fs.existsSync(CALIB_PATH)) return def;
-  try { return { ...def, ...JSON.parse(fs.readFileSync(CALIB_PATH,'utf8')) }; }
+  try { return { ...def, ...JSON.parse(fs.readFileSync(CALIB_PATH, 'utf8')) }; }
   catch { return def; }
 }
-function saveCalibration(c) { fs.writeFileSync(CALIB_PATH, JSON.stringify(c,null,2)); }
+function saveCalibration(c) { fs.writeFileSync(CALIB_PATH, JSON.stringify(c, null, 2)); }
 
 function updateCalibration(asset, won) {
   const c = loadCalibration();
   const key = asset.toLowerCase().includes('btc') ? 'btc'
     : asset.toLowerCase().includes('eth') ? 'eth'
-    : asset.toLowerCase().includes('sol') ? 'sol' : 'other';
-  if (!c[key]) c[key] = { p:0, c:0 };
+      : asset.toLowerCase().includes('sol') ? 'sol' : 'other';
+  if (!c[key]) c[key] = { p: 0, c: 0 };
   c[key].p++;
   if (won) c[key].c++;
   saveCalibration(c);
@@ -155,7 +155,7 @@ function updateCalibration(asset, won) {
 function loadSoul() {
   if (!fs.existsSync(SOUL_PATH)) {
     fs.writeFileSync(SOUL_PATH, `# ADAN-PRED SOUL
-Created: ${new Date().toISOString().slice(0,10)}
+Created: ${new Date().toISOString().slice(0, 10)}
 
 ## Identity
 I am ADAN-PRED. Autonomous prediction markets agent.
@@ -176,111 +176,111 @@ Goal: 55%+ win rate over 20 predictions → real USDC.
 *(updated on every losing bet)*
 `);
   }
-  return fs.readFileSync(SOUL_PATH,'utf8');
+  return fs.readFileSync(SOUL_PATH, 'utf8');
 }
-function appendToSoul(entry) { fs.writeFileSync(SOUL_PATH, loadSoul()+'\n'+entry); }
+function appendToSoul(entry) { fs.writeFileSync(SOUL_PATH, loadSoul() + '\n' + entry); }
 
 // ── EXP / Level ─────────────────────────────────────────────────────────────
-function expForLevel(L) { if (L<=1) return 0; return Math.round((50/3)*(Math.pow(L,3)-6*Math.pow(L,2)+17*L-12)); }
-function levelFromExp(e) { let L=1; while(expForLevel(L+1)<=e) L++; return L; }
+function expForLevel(L) { if (L <= 1) return 0; return Math.round((50 / 3) * (Math.pow(L, 3) - 6 * Math.pow(L, 2) + 17 * L - 12)); }
+function levelFromExp(e) { let L = 1; while (expForLevel(L + 1) <= e) L++; return L; }
 function expProgress(e) {
-  const L=levelFromExp(e), cur=expForLevel(L), nxt=expForLevel(L+1);
-  const pct=Math.round((e-cur)/(nxt-cur)*100), f=Math.round(pct/5);
-  return { level:L, bar:'█'.repeat(f)+'░'.repeat(20-f), pct, needed:nxt-e };
+  const L = levelFromExp(e), cur = expForLevel(L), nxt = expForLevel(L + 1);
+  const pct = Math.round((e - cur) / (nxt - cur) * 100), f = Math.round(pct / 5);
+  return { level: L, bar: '█'.repeat(f) + '░'.repeat(20 - f), pct, needed: nxt - e };
 }
 function levelTitle(L) {
-  if (L>=100) return '👑 SOVEREIGN';   if (L>=80) return '🏦 DYNASTY';
-  if (L>=70)  return '🏹 SNIPER';      if (L>=60) return '🌐 ORACLE GOD';
-  if (L>=50)  return '💳 PROPHET';     if (L>=40) return '💰 SEER';
-  if (L>=30)  return '🧠 FORECASTER';  if (L>=20) return '▲ ANALYST';
-  if (L>=15)  return '⚔ TRADER';       if (L>=10) return '🛡 READER';
-  if (L>=5)   return '● STUDENT';      return '○ NOVICE';
+  if (L >= 100) return '👑 SOVEREIGN'; if (L >= 80) return '🏦 DYNASTY';
+  if (L >= 70) return '🏹 SNIPER'; if (L >= 60) return '🌐 ORACLE GOD';
+  if (L >= 50) return '💳 PROPHET'; if (L >= 40) return '💰 SEER';
+  if (L >= 30) return '🧠 FORECASTER'; if (L >= 20) return '▲ ANALYST';
+  if (L >= 15) return '⚔ TRADER'; if (L >= 10) return '🛡 READER';
+  if (L >= 5) return '● STUDENT'; return '○ NOVICE';
 }
 
 function getSkills(L) {
   return [
-    { lvl:1,  name:'LIVE FEED',      icon:'📡', desc:'Polymarket + Binance real-time data',             unlocked:L>=1   },
-    { lvl:2,  name:'TREND READ',     icon:'📊', desc:'Binance candles momentum analysis 1m/5m/15m',     unlocked:L>=2   },
-    { lvl:3,  name:'FIRST CHILD',    icon:'👶', desc:'Spawns first child agent specialized by asset',   unlocked:L>=3   },
-    { lvl:3,  name:'EDGE FILTER',    icon:'🎯', desc:'Dynamic edge threshold — learns min per asset',   unlocked:L>=3   },
-    { lvl:4,  name:'KELLY BET',      icon:'📐', desc:'Optimal bet size via Kelly Criterion — scales with edge', unlocked:L>=4 },
-    { lvl:5,  name:'MULTI-BET',      icon:'⚡', desc:'Up to 9 simultaneous positions',                  unlocked:L>=5   },
-    { lvl:6,  name:'CANDLE PAT',     icon:'🕯️', desc:'Hammer/engulfing/doji reversal detection',       unlocked:L>=6   },
-    { lvl:8,  name:'CALIBRATION',    icon:'🔬', desc:'Accuracy tracking by asset (BTC/ETH/SOL)',        unlocked:L>=8   },
-    { lvl:9,  name:'TIMING',         icon:'⏱️', desc:'Learns best minute within window to enter',       unlocked:L>=9   },
-    { lvl:10, name:'VOL SENSE',      icon:'🌊', desc:'Avoids chaotic high-volatility markets',          unlocked:L>=10  },
-    { lvl:12, name:'FEAR EXPLOIT',   icon:'😱', desc:'Fear & Greed < 20 — exploit market overreaction', unlocked:L>=12  },
-    { lvl:15, name:'STRAT EVO',      icon:'🧬', desc:'Auto-evolves edge threshold every 5 trades',      unlocked:L>=15  },
-    { lvl:18, name:'CORRELATION',    icon:'🔗', desc:'BTC cascade → SOL/ETH follow-through bets',       unlocked:L>=18  },
-    { lvl:20, name:'NIGHT OWL',      icon:'🌙', desc:'Off-hours pattern memory — 2AM-6AM ET',           unlocked:L>=20  },
-    { lvl:25, name:'SHADOW MODE',    icon:'🌑', desc:'Binance-only training when Polymarket offline',   unlocked:L>=25  },
-    { lvl:30, name:'SONIC MIND',     icon:'🧠', desc:'Deep candle pattern recognition — 50+ signals',  unlocked:L>=30  },
-    { lvl:35, name:'X RADAR',        icon:'📰', desc:'Twitter/X sentiment — paid from treasury',        unlocked:L>=35  },
-    { lvl:40, name:'REAL USDC',      icon:'💰', desc:'Graduated — live USDC betting on Polymarket',     unlocked:L>=40  },
-    { lvl:50, name:'AUTO-FUND',      icon:'💳', desc:'Uses treasury to self-pay API costs on-chain',    unlocked:L>=50  },
-    { lvl:60, name:'MULTI-MARKET',   icon:'🌐', desc:'Jupiter + Kalshi + Manifold — not just Polymarket',unlocked:L>=60 },
-    { lvl:70, name:'SNIPER',         icon:'🏹', desc:'Only highest-edge bet per cycle — ruthless filter',unlocked:L>=70 },
-    { lvl:80, name:'DYNASTY',        icon:'🏦', desc:'Full 3-gen tree — padre + 6 hijos + 12 nietos',  unlocked:L>=80  },
-    { lvl:100,name:'SOVEREIGN',      icon:'👑', desc:'Fully autonomous — no human supervision needed', unlocked:L>=100 },
+    { lvl: 1, name: 'LIVE FEED', icon: '📡', desc: 'Polymarket + Binance real-time data', unlocked: L >= 1 },
+    { lvl: 2, name: 'TREND READ', icon: '📊', desc: 'Binance candles momentum analysis 1m/5m/15m', unlocked: L >= 2 },
+    { lvl: 3, name: 'FIRST CHILD', icon: '👶', desc: 'Spawns first child agent specialized by asset', unlocked: L >= 3 },
+    { lvl: 3, name: 'EDGE FILTER', icon: '🎯', desc: 'Dynamic edge threshold — learns min per asset', unlocked: L >= 3 },
+    { lvl: 4, name: 'KELLY BET', icon: '📐', desc: 'Optimal bet size via Kelly Criterion — scales with edge', unlocked: L >= 4 },
+    { lvl: 5, name: 'MULTI-BET', icon: '⚡', desc: 'Up to 9 simultaneous positions', unlocked: L >= 5 },
+    { lvl: 6, name: 'CANDLE PAT', icon: '🕯️', desc: 'Hammer/engulfing/doji reversal detection', unlocked: L >= 6 },
+    { lvl: 8, name: 'CALIBRATION', icon: '🔬', desc: 'Accuracy tracking by asset (BTC/ETH/SOL)', unlocked: L >= 8 },
+    { lvl: 9, name: 'TIMING', icon: '⏱️', desc: 'Learns best minute within window to enter', unlocked: L >= 9 },
+    { lvl: 10, name: 'VOL SENSE', icon: '🌊', desc: 'Avoids chaotic high-volatility markets', unlocked: L >= 10 },
+    { lvl: 12, name: 'FEAR EXPLOIT', icon: '😱', desc: 'Fear & Greed < 20 — exploit market overreaction', unlocked: L >= 12 },
+    { lvl: 15, name: 'STRAT EVO', icon: '🧬', desc: 'Auto-evolves edge threshold every 5 trades', unlocked: L >= 15 },
+    { lvl: 18, name: 'CORRELATION', icon: '🔗', desc: 'BTC cascade → SOL/ETH follow-through bets', unlocked: L >= 18 },
+    { lvl: 20, name: 'NIGHT OWL', icon: '🌙', desc: 'Off-hours pattern memory — 2AM-6AM ET', unlocked: L >= 20 },
+    { lvl: 25, name: 'SHADOW MODE', icon: '🌑', desc: 'Binance-only training when Polymarket offline', unlocked: L >= 25 },
+    { lvl: 30, name: 'SONIC MIND', icon: '🧠', desc: 'Deep candle pattern recognition — 50+ signals', unlocked: L >= 30 },
+    { lvl: 35, name: 'X RADAR', icon: '📰', desc: 'Twitter/X sentiment — paid from treasury', unlocked: L >= 35 },
+    { lvl: 40, name: 'REAL USDC', icon: '💰', desc: 'Graduated — live USDC betting on Polymarket', unlocked: L >= 40 },
+    { lvl: 50, name: 'AUTO-FUND', icon: '💳', desc: 'Uses treasury to self-pay API costs on-chain', unlocked: L >= 50 },
+    { lvl: 60, name: 'MULTI-MARKET', icon: '🌐', desc: 'Jupiter + Kalshi + Manifold — not just Polymarket', unlocked: L >= 60 },
+    { lvl: 70, name: 'SNIPER', icon: '🏹', desc: 'Only highest-edge bet per cycle — ruthless filter', unlocked: L >= 70 },
+    { lvl: 80, name: 'DYNASTY', icon: '🏦', desc: 'Full 3-gen tree — padre + 6 hijos + 12 nietos', unlocked: L >= 80 },
+    { lvl: 100, name: 'SOVEREIGN', icon: '👑', desc: 'Fully autonomous — no human supervision needed', unlocked: L >= 100 },
   ];
 }
 
 function calcWinExp(conf, edge, streak) {
   let base = 100;
-  if (conf>=90) base=Math.round(base*2.0); else if (conf>=80) base=Math.round(base*1.5); else if (conf<65) base=Math.round(base*0.7);
-  if (edge>=0.30) base+=500; else if (edge>=0.20) base+=200; else if (edge>=0.15) base+=100;
-  if (streak>=3) base+=50*(streak-2);
+  if (conf >= 90) base = Math.round(base * 2.0); else if (conf >= 80) base = Math.round(base * 1.5); else if (conf < 65) base = Math.round(base * 0.7);
+  if (edge >= 0.30) base += 500; else if (edge >= 0.20) base += 200; else if (edge >= 0.15) base += 100;
+  if (streak >= 3) base += 50 * (streak - 2);
   return base;
 }
 
 async function showLevelUpScreen(from, to) {
-  const newSkill = getSkills(to).find(s=>s.lvl===to);
-  const col = to>=40?Y:to>=20?C:to>=10?Y:G;
+  const newSkill = getSkills(to).find(s => s.lvl === to);
+  const col = to >= 40 ? Y : to >= 20 ? C : to >= 10 ? Y : G;
   cls();
-  console.log('\n\n'+col+BOLD);
+  console.log('\n\n' + col + BOLD);
   console.log('  ╔══════════════════════════════════════════════════════════════╗');
   console.log('  ║       ✦ ✦ ✦   L E V E L   U P !   ✦ ✦ ✦                  ║');
-  console.log('  ║   LEVEL '+String(from).padStart(3)+X+col+BOLD+'  →  LEVEL '+String(to).padEnd(3)+'   '+levelTitle(to).padEnd(22)+'    ║');
+  console.log('  ║   LEVEL ' + String(from).padStart(3) + X + col + BOLD + '  →  LEVEL ' + String(to).padEnd(3) + '   ' + levelTitle(to).padEnd(22) + '    ║');
   if (newSkill) {
-    console.log('  ║   NEW SKILL: '+newSkill.icon+'  '+newSkill.name.padEnd(14)+'  '+newSkill.desc.slice(0,36).padEnd(36)+'  ║');
+    console.log('  ║   NEW SKILL: ' + newSkill.icon + '  ' + newSkill.name.padEnd(14) + '  ' + newSkill.desc.slice(0, 36).padEnd(36) + '  ║');
   }
-  console.log('  ╚══════════════════════════════════════════════════════════════╝'+X);
-  await new Promise(r=>setTimeout(r,3000));
+  console.log('  ╚══════════════════════════════════════════════════════════════╝' + X);
+  await new Promise(r => setTimeout(r, 3000));
 }
 
 function awardExp(amount) {
-  const p=loadPnL(); p.exp=(p.exp||0)+amount;
-  const before=levelFromExp(p.exp-amount), after=levelFromExp(p.exp);
+  const p = loadPnL(); p.exp = (p.exp || 0) + amount;
+  const before = levelFromExp(p.exp - amount), after = levelFromExp(p.exp);
   savePnL(p);
-  if (after>before) showLevelUpScreen(before,after).catch(()=>{});
+  if (after > before) showLevelUpScreen(before, after).catch(() => { });
   return p.exp;
 }
 
 // ── Panel — fixed 72 cols, always fits terminal ───────────────────────────
-const PW=72;
-const sep=(col,ch='═')=>col+'╠'+ch.repeat(PW)+'╣'+X;
-const SEP=(col)=>col+'╟'+'─'.repeat(PW)+'╢'+X;
-const TOP=col=>col+'╔'+'═'.repeat(PW)+'╗'+X;
-const BOT=col=>col+'╚'+'═'.repeat(PW)+'╝'+X;
-function row(txt,col=M) {
-  const clean=txt.replace(/\x1b\[[0-9;]*m/g,'');
-  const pad=Math.max(0,PW-clean.length-2);
-  return col+'║ '+X+txt+' '.repeat(pad)+col+' ║'+X;
+const PW = 72;
+const sep = (col, ch = '═') => col + '╠' + ch.repeat(PW) + '╣' + X;
+const SEP = (col) => col + '╟' + '─'.repeat(PW) + '╢' + X;
+const TOP = col => col + '╔' + '═'.repeat(PW) + '╗' + X;
+const BOT = col => col + '╚' + '═'.repeat(PW) + '╝' + X;
+function row(txt, col = M) {
+  const clean = txt.replace(/\x1b\[[0-9;]*m/g, '');
+  const pad = Math.max(0, PW - clean.length - 2);
+  return col + '║ ' + X + txt + ' '.repeat(pad) + col + ' ║' + X;
 }
-const TW=72, DIV='─'.repeat(TW+2);
-function trow(txt,col,bdr) {
-  const clean=txt.replace(/\x1b\[[0-9;]*m/g,'');
-  return bdr+'│'+X+col+txt+' '.repeat(Math.max(0,TW-clean.length))+X+bdr+'│'+X;
+const TW = 72, DIV = '─'.repeat(TW + 2);
+function trow(txt, col, bdr) {
+  const clean = txt.replace(/\x1b\[[0-9;]*m/g, '');
+  return bdr + '│' + X + col + txt + ' '.repeat(Math.max(0, TW - clean.length)) + X + bdr + '│' + X;
 }
 
 // ── Mini sparkline from candles ─────────────────────────────────────────────
 function sparkline(closes) {
-  if (!closes||closes.length<2) return D+'no data'+X;
-  const min=Math.min(...closes), max=Math.max(...closes), range=max-min||1;
-  const bars=['▁','▂','▃','▄','▅','▆','▇','█'];
-  const last=closes[closes.length-1], prev=closes[closes.length-2];
-  const trend=last>prev?G:last<prev?R:D;
-  return closes.slice(-12).map(c=>trend+bars[Math.round((c-min)/range*7)]+X).join('');
+  if (!closes || closes.length < 2) return D + 'no data' + X;
+  const min = Math.min(...closes), max = Math.max(...closes), range = max - min || 1;
+  const bars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+  const last = closes[closes.length - 1], prev = closes[closes.length - 2];
+  const trend = last > prev ? G : last < prev ? R : D;
+  return closes.slice(-12).map(c => trend + bars[Math.round((c - min) / range * 7)] + X).join('');
 }
 
 // ── Tree panel — ASCII tree showing ADAN + children + intel ─────────────────
@@ -316,8 +316,8 @@ function renderTreePanel(pnl, prices) {
 
   // ADAN root node
   const rootFund = ('$' + (pnl.fund || 0).toFixed(0)).padStart(8);
-  const rootNet  = (pnl.net >= 0 ? '+' : '') + '$' + (pnl.net || 0).toFixed(0);
-  const netCol   = (pnl.net || 0) >= 0 ? G : R;
+  const rootNet = (pnl.net >= 0 ? '+' : '') + '$' + (pnl.net || 0).toFixed(0);
+  const netCol = (pnl.net || 0) >= 0 ? G : R;
   console.log(row(
     '  ' + M + BOLD + '◈ ADAN' + X + D + ' [ROOT · GEN1]' + X +
     '  fund:' + C + BOLD + rootFund + X +
@@ -350,21 +350,21 @@ function renderTreePanel(pnl, prices) {
       const sig = intel ? intel.signal : null;
       const childPnlPath = path.join(DIR, 'children', child.id || child.spec, 'pnl.json');
       let childPnl = null;
-      try { if (fs.existsSync(childPnlPath)) childPnl = JSON.parse(fs.readFileSync(childPnlPath, 'utf8')); } catch {}
+      try { if (fs.existsSync(childPnlPath)) childPnl = JSON.parse(fs.readFileSync(childPnlPath, 'utf8')); } catch { }
 
-      const childExp  = childPnl?.exp || 0;
+      const childExp = childPnl?.exp || 0;
       const childExpNeeded = TREE_RULES.childExpToSpawn;
-      const gcList    = (childPnl?.children) || [];
+      const gcList = (childPnl?.children) || [];
       const canHaveGC = xp.level >= 4;
-      const gcReady   = canHaveGC && childExp >= childExpNeeded && gcList.length < TREE_RULES.maxChildrenGen2;
-      const expBar    = childExp >= childExpNeeded ? G + '●' + X : Y + Math.min(childExp, childExpNeeded) + '/' + childExpNeeded + 'xp' + X;
+      const gcReady = canHaveGC && childExp >= childExpNeeded && gcList.length < TREE_RULES.maxChildrenGen2;
+      const expBar = childExp >= childExpNeeded ? G + '●' + X : Y + Math.min(childExp, childExpNeeded) + '/' + childExpNeeded + 'xp' + X;
 
-      const nameStr  = C + BOLD + (child.name || child.spec).padEnd(10) + X;
-      const specStr  = D + child.spec.padEnd(11) + X;
-      const sigStr   = sigBadge(sig);
+      const nameStr = C + BOLD + (child.name || child.spec).padEnd(10) + X;
+      const specStr = D + child.spec.padEnd(11) + X;
+      const sigStr = sigBadge(sig);
       const scoreStr = intel ? (intel.intelScore >= 65 ? G : intel.intelScore >= 45 ? Y : R) + BOLD + '[' + intel.intelScore + ']' + X : D + '[--]' + X;
-      const ageStr   = intel ? D + ' ' + Math.round((Date.now() - new Date(intel.ts).getTime()) / 60000) + 'm' + X : '';
-      const gcStr    = gcReady ? ' ' + Y + BOLD + '🌱SPAWN' + X : gcList.length > 0 ? ' ' + B + '(' + gcList.length + 'gc)' + X : '';
+      const ageStr = intel ? D + ' ' + Math.round((Date.now() - new Date(intel.ts).getTime()) / 60000) + 'm' + X : '';
+      const gcStr = gcReady ? ' ' + Y + BOLD + '🌱SPAWN' + X : gcList.length > 0 ? ' ' + B + '(' + gcList.length + 'gc)' + X : '';
 
       console.log(row(
         '  ' + B + '  ' + connector + ' ' + X +
@@ -375,10 +375,10 @@ function renderTreePanel(pnl, prices) {
 
       // Grandchildren (if any)
       gcList.forEach((gc, gi) => {
-        const gcLast  = gi === grandChildren.length - 1;
-        const gcConn  = gcLast ? '    └──' : '    ├──';
+        const gcLast = gi === grandChildren.length - 1;
+        const gcConn = gcLast ? '    └──' : '    ├──';
         const gcIntel = readChildIntel(gc.spec);
-        const gcSig   = gcIntel ? gcIntel.signal : null;
+        const gcSig = gcIntel ? gcIntel.signal : null;
         const focusStr = gc.focus ? D + ' [' + gc.focus + ']' + X : '';
         console.log(row(
           '  ' + B + '  ' + gcConn + ' ' + X +
@@ -393,13 +393,13 @@ function renderTreePanel(pnl, prices) {
   // Signal consensus bar
   if (children.length > 0) {
     const signals = children.map(c => readChildIntel(c.spec)?.signal).filter(Boolean);
-    const ups   = signals.filter(s => s.dir === 'UP').length;
+    const ups = signals.filter(s => s.dir === 'UP').length;
     const downs = signals.filter(s => s.dir === 'DOWN').length;
     const neutral = signals.filter(s => s.dir === 'NEUTRAL').length;
     if (signals.length > 0) {
       const consensus = ups > downs + neutral ? G + BOLD + '▲ BULL CONSENSUS' + X
         : downs > ups + neutral ? R + BOLD + '▼ BEAR CONSENSUS' + X
-        : Y + '● MIXED SIGNALS' + X;
+          : Y + '● MIXED SIGNALS' + X;
       console.log(SEP(B));
       console.log(row(
         '  ' + B + 'SIGNAL CONSENSUS: ' + X + consensus +
@@ -413,25 +413,25 @@ function renderTreePanel(pnl, prices) {
 
 // ── Web dashboard — localhost:3141 ───────────────────────────────────────────
 let _dashboardState = null;
-let _nextScanAt     = null;   // epoch ms of next scheduled scan
-let _resultAt       = null;   // epoch ms when last 'result' was set
+let _nextScanAt = null;   // epoch ms of next scheduled scan
+let _resultAt = null;   // epoch ms when last 'result' was set
 const RESULT_SHOW_MS = 22000; // show "DECISION MADE" for 22s then go idle
 
 // ── Terminal braille spinner (thinking mode) ──────────────────────────────────
 let _thinkSpinTimer = null;
-const _SPIN_F = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+const _SPIN_F = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 let _spinIdx = 0;
 function _startThinkSpin() {
   if (_thinkSpinTimer) return;
   _thinkSpinTimer = setInterval(() => {
-    try { process.stdout.write('\r  '+_SPIN_F[_spinIdx++%_SPIN_F.length]+' Claude Sonnet 4.6 analyzing market edge...              '); } catch {}
+    try { process.stdout.write('\r  ' + _SPIN_F[_spinIdx++ % _SPIN_F.length] + ' Claude Sonnet 4.6 analyzing market edge...              '); } catch { }
   }, 120);
 }
 function _stopThinkSpin() {
   if (!_thinkSpinTimer) return;
   clearInterval(_thinkSpinTimer);
   _thinkSpinTimer = null;
-  try { process.stdout.write('\r                                                                   \r'); } catch {}
+  try { process.stdout.write('\r                                                                   \r'); } catch { }
 }
 
 function startDashboard() {
@@ -720,21 +720,25 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
       <div class="avatar-wrap">
         <div id="av-sprite-wrap"><svg id="av-sprite" class="av-sprite" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 94" width="84" height="141" shape-rendering="crispEdges">
           <!-- Hair -->
-          <rect x="12" y="0" width="28" height="4" fill="#1a0e05"/>
-          <rect x="8" y="4" width="36" height="4" fill="#1a0e05"/>
-          <rect x="20" y="4" width="14" height="4" fill="#5b21b6"/>
-          <rect x="4" y="8" width="44" height="4" fill="#1a0e05"/>
-          <rect x="16" y="8" width="20" height="4" fill="#3b0d8a"/>
+          <g id="avatar-hair" fill="#5b21b6">
+            <rect x="12" y="0" width="28" height="4" fill="#1a0e05"/>
+            <rect x="8" y="4" width="36" height="4" fill="#1a0e05"/>
+            <rect x="20" y="4" width="14" height="4" style="fill:inherit"/>
+            <rect x="4" y="8" width="44" height="4" fill="#1a0e05"/>
+            <rect x="16" y="8" width="20" height="4" style="fill:inherit; opacity:0.8"/>
+          </g>
           <!-- Head outline + Face -->
           <rect x="4" y="12" width="4" height="24" fill="#1a0e05"/>
           <rect x="48" y="12" width="4" height="24" fill="#1a0e05"/>
-          <rect x="8" y="12" width="40" height="24" fill="#e0b98a"/>
+          <rect id="avatar-skin" x="8" y="12" width="40" height="24" fill="#e0b98a"/>
           <!-- Eyes -->
           <rect x="12" y="20" width="8" height="4" fill="#0a0a14"/>
-          <rect x="14" y="20" width="4" height="4" fill="#22d3ee"/>
+          <g id="avatar-eyes" fill="#22d3ee">
+            <rect x="14" y="20" width="4" height="4" style="fill:inherit"/>
+            <rect x="36" y="20" width="4" height="4" style="fill:inherit"/>
+          </g>
           <rect x="14" y="21" width="2" height="2" fill="#e0f7ff"/>
           <rect x="34" y="20" width="8" height="4" fill="#0a0a14"/>
-          <rect x="36" y="20" width="4" height="4" fill="#22d3ee"/>
           <rect x="36" y="21" width="2" height="2" fill="#e0f7ff"/>
           <!-- Nose hint -->
           <rect x="26" y="24" width="4" height="2" fill="#c8996a"/>
@@ -746,20 +750,22 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
           <rect x="12" y="36" width="28" height="4" fill="#94a3b8"/>
           <rect x="20" y="36" width="12" height="4" fill="#cbd5e1"/>
           <!-- Suit top / shoulders -->
-          <rect x="0" y="40" width="56" height="4" fill="#0d0d18"/>
-          <rect x="0" y="40" width="8" height="4" fill="#6d28d9"/>
-          <rect x="48" y="40" width="8" height="4" fill="#6d28d9"/>
-          <!-- Body main -->
-          <rect x="4" y="44" width="48" height="30" fill="#0d0d18"/>
-          <!-- Suit side stripes -->
-          <rect x="4" y="44" width="4" height="30" fill="#5b21b6"/>
-          <rect x="48" y="44" width="4" height="30" fill="#5b21b6"/>
-          <!-- Chest panel -->
-          <rect x="16" y="46" width="24" height="12" fill="#111128"/>
-          <rect x="18" y="48" width="4" height="4" fill="#22d3ee"/>
-          <rect x="24" y="48" width="4" height="4" fill="#22d3ee"/>
-          <rect x="30" y="48" width="4" height="4" fill="#22d3ee"/>
-          <rect x="18" y="52" width="16" height="2" fill="#1e1e40"/>
+          <g id="avatar-suit" fill="#0d0d18">
+            <rect x="0" y="40" width="56" height="4" style="fill:inherit"/>
+            <rect x="0" y="40" width="8" height="4" fill="#6d28d9"/>
+            <rect x="48" y="40" width="8" height="4" fill="#6d28d9"/>
+            <!-- Body main -->
+            <rect x="4" y="44" width="48" height="30" style="fill:inherit"/>
+            <!-- Suit side stripes -->
+            <rect x="4" y="44" width="4" height="30" fill="#5b21b6"/>
+            <rect x="48" y="44" width="4" height="30" fill="#5b21b6"/>
+            <!-- Chest panel -->
+            <rect x="16" y="46" width="24" height="12" fill="#111128"/>
+            <rect x="18" y="48" width="4" height="4" fill="#22d3ee"/>
+            <rect x="24" y="48" width="4" height="4" fill="#22d3ee"/>
+            <rect x="30" y="48" width="4" height="4" fill="#22d3ee"/>
+            <rect x="18" y="52" width="16" height="2" fill="#1e1e40"/>
+          </g>
           <!-- Belt -->
           <rect x="8" y="70" width="40" height="4" fill="#1e2040"/>
           <rect x="24" y="70" width="8" height="4" fill="#fbbf24"/>
@@ -896,8 +902,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
       </div>
     </div>
 
+    <!-- ADAN World Conway Grid -->
+    <div class="card" id="adan-world-card">
+      <div class="card-title">ADAN WORLD · Cellular Automaton</div>
+      <canvas id="adan-world-cvs" width="600" height="200" style="width:100%;height:auto;background:var(--bg4);border:2px solid var(--border);box-shadow:inset 2px 2px 0 var(--border2);image-rendering:pixelated;"></canvas>
+    </div>
+
     <!-- Brain Log: Decisions + Reasoning -->
-    <div class="card">
       <div class="card-title">🧠 BRAIN LOG · Decisions &amp; Learning</div>
       <div id="decisions-wrap"></div>
     </div>
@@ -1437,6 +1448,9 @@ async function refresh(){
     // Avatar
     updateAvatar(d);
 
+    // ADAN World Conway
+    updateAdanWorld(d.children || []);
+
     // Neural flow + dynasty panel
     updateNeuralFlow(d);
     updateDynastyPanel(d);
@@ -1457,6 +1471,15 @@ function updateAvatar(d) {
   const stxt   = document.getElementById('av-status-txt');
   const title  = document.getElementById('av-title');
   if (!sprite || !dot || !stxt || !title) return;
+
+  if (d.config && d.config.avatar) {
+    const avatarConfig = d.config.avatar;
+    if (avatarConfig.hairColor) document.getElementById('avatar-hair').style.fill = avatarConfig.hairColor;
+    if (avatarConfig.suitColor) document.getElementById('avatar-suit').style.fill = avatarConfig.suitColor;
+    if (avatarConfig.eyeColor) document.getElementById('avatar-eyes').style.fill = avatarConfig.eyeColor;
+    if (avatarConfig.skinColor) document.getElementById('avatar-skin').style.fill = avatarConfig.skinColor;
+  }
+
   const mode = d.state?.mode;
   const xp   = d.xp;
   const pnl  = d.pnl;
@@ -1968,6 +1991,107 @@ setInterval(()=>{
     if(el2) el2.textContent = frame;
   }
 },150);
+
+// ── ADAN World Conway Grid ──────────────────────────────────────────────────
+let cw_grid = null;
+let cw_cols = 80;
+let cw_rows = 25;
+let cw_agents = [];
+
+function initAdanWorld() {
+  cw_grid = new Array(cw_rows).fill(0).map(() => new Array(cw_cols).fill(0));
+  // Random noise initially
+  for (let y = 0; y < cw_rows; y++) {
+    for (let x = 0; x < cw_cols; x++) {
+      cw_grid[y][x] = Math.random() > 0.85 ? 1 : 0;
+    }
+  }
+}
+
+function updateAdanWorld(children) {
+  if (!cw_grid) initAdanWorld();
+  // Map children to fixed coordinates
+  cw_agents = children.map((ch, i) => {
+    const space = Math.floor((cw_cols - 10) / (children.length || 1));
+    const x = 5 + space * i;
+    const y = Math.floor(cw_rows / 2) + ((i % 3) - 1)*2; // slight stagger
+    const isAlive = (ch.childPnl?.net || 0) > 0 ? 1 : 0;
+    return { x, y, alive: isAlive, name: ch.spec };
+  });
+}
+
+function stepAdanWorld() {
+  if (!cw_grid) return;
+  const next = new Array(cw_rows).fill(0).map(() => new Array(cw_cols).fill(0));
+  for (let y = 0; y < cw_rows; y++) {
+    for (let x = 0; x < cw_cols; x++) {
+      let neighbors = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          let ny = y + dy, nx = x + dx;
+          // wrap around
+          if (ny < 0) ny = cw_rows - 1; else if (ny >= cw_rows) ny = 0;
+          if (nx < 0) nx = cw_cols - 1; else if (nx >= cw_cols) nx = 0;
+          neighbors += cw_grid[ny][nx];
+        }
+      }
+      const alive = cw_grid[y][x];
+      if (alive && (neighbors === 2 || neighbors === 3)) next[y][x] = 1;
+      else if (!alive && neighbors === 3) next[y][x] = 1;
+      else next[y][x] = 0;
+    }
+  }
+  // Enforce agent cells
+  cw_agents.forEach(a => {
+    if (a.y >= 0 && a.y < cw_rows && a.x >= 0 && a.x < cw_cols) {
+      next[a.y][a.x] = a.alive;
+    }
+  });
+  cw_grid = next;
+  drawAdanWorld();
+}
+
+function drawAdanWorld() {
+  const cvs = document.getElementById('adan-world-cvs');
+  if (!cvs) return;
+  const ctx = cvs.getContext('2d');
+  const w = cvs.width, h = cvs.height;
+  const cellW = w / cw_cols, cellH = h / cw_rows;
+  
+  ctx.clearRect(0,0,w,h);
+  const style = getComputedStyle(document.body);
+  const colorAlive = style.getPropertyValue('--cyan').trim() || '#1a4a8a';
+  const colorAgentAlive = style.getPropertyValue('--purple').trim() || '#5a1a8a';
+  const colorAgentDead = style.getPropertyValue('--red').trim() || '#8a1a1a';
+  
+  for (let y = 0; y < cw_rows; y++) {
+    for (let x = 0; x < cw_cols; x++) {
+      if (cw_grid[y][x]) {
+        ctx.fillStyle = colorAlive;
+        ctx.fillRect(Math.floor(x * cellW), Math.floor(y * cellH), Math.ceil(cellW) - 1, Math.ceil(cellH) - 1);
+      }
+    }
+  }
+  
+  // Draw agents and their names
+  ctx.font = "8px 'Press Start 2P', monospace";
+  ctx.textAlign = "center";
+  cw_agents.forEach((a, i) => {
+    ctx.fillStyle = a.alive ? colorAgentAlive : colorAgentDead;
+    const px = Math.floor(a.x * cellW);
+    const py = Math.floor(a.y * cellH);
+    ctx.fillRect(px, py, Math.ceil(cellW) - 1, Math.ceil(cellH) - 1);
+    
+    // Draw crosshair or highlight around agent to make it stand out
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px - 2, py - 2, Math.ceil(cellW) + 3, Math.ceil(cellH) + 3);
+  });
+}
+
+setInterval(stepAdanWorld, 200);
+
 </script>
 </body>
 </html>`;
@@ -1991,7 +2115,7 @@ setInterval(()=>{
             const age = (Date.now() - new Date(d.ts).getTime()) / 60000;
             if (age <= 10) intel = { signal: d.signal, intelScore: d.intelScore, ts: d.ts, price: d.price, bestMarket: d.bestMarket, scoreHistory: d.scoreHistory };
           }
-        } catch {}
+        } catch { }
         // grandchildren + child EXP
         let grandChildren = [], childExp = 0, childSignals = 0;
         try {
@@ -1999,8 +2123,8 @@ setInterval(()=>{
           const gcPnlPath = path.join(childDir, 'pnl.json');
           if (fs.existsSync(gcPnlPath)) {
             const cp = JSON.parse(fs.readFileSync(gcPnlPath, 'utf8'));
-            childExp    = cp.exp || 0;
-            childSignals= cp.signals || 0;
+            childExp = cp.exp || 0;
+            childSignals = cp.signals || 0;
             grandChildren = (cp.children || []).map(gc => {
               let gcIntel = null;
               try {
@@ -2010,24 +2134,24 @@ setInterval(()=>{
                   const gd = JSON.parse(fs.readFileSync(gfp, 'utf8'));
                   if ((Date.now() - new Date(gd.ts).getTime()) / 60000 <= 10) gcIntel = { signal: gd.signal, ts: gd.ts, focus: gd.focus };
                 }
-              } catch {}
+              } catch { }
               return { ...gc, intel: gcIntel };
             });
           }
-        } catch {}
+        } catch { }
         // Read child DNA + PnL
         let dna = child.dna || null;
         let childPnl = {};
         try {
-          const specSlug = (child.spec||'').replace(/[^a-zA-Z0-9-]/g,'-');
+          const specSlug = (child.spec || '').replace(/[^a-zA-Z0-9-]/g, '-');
           const childDir = path.join(DIR, 'children', specSlug);
           const cpPath = path.join(childDir, 'pnl.json');
           if (fs.existsSync(cpPath)) {
             const cp = JSON.parse(fs.readFileSync(cpPath, 'utf8'));
-            childPnl = { trades: cp.trades||0, wins: cp.wins||0, losses: cp.losses||0, net: cp.net||0, fund: cp.fund||0 };
+            childPnl = { trades: cp.trades || 0, wins: cp.wins || 0, losses: cp.losses || 0, net: cp.net || 0, fund: cp.fund || 0 };
             if (!dna && cp.dna) dna = cp.dna;  // read DNA from child's pnl.json
           }
-        } catch {}
+        } catch { }
         return { ...child, intel, grandChildren, childExp, childSignals, dna, childPnl };
       });
 
@@ -2045,7 +2169,8 @@ setInterval(()=>{
         pnl, calib, positions: pos,
         xp: { ...xp, title: levelTitle(xp.level) },
         children: childrenWithIntel,
-        state: enrichedState
+        state: enrichedState,
+        config: loadConfig()
       }));
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -2056,7 +2181,7 @@ setInterval(()=>{
   srv.listen(PORT, '127.0.0.1', () => {
     // silently started
   });
-  srv.on('error', () => {}); // ignore port conflicts
+  srv.on('error', () => { }); // ignore port conflicts
   return srv;
 }
 
@@ -2064,251 +2189,251 @@ setInterval(()=>{
 function render(s) {
   _dashboardState = s; // expose to web dashboard
   if (s.mode === 'result') {
-    _resultAt   = Date.now();
+    _resultAt = Date.now();
     _nextScanAt = Date.now() + (s.nextScanIn || 5) * 60 * 1000;
   }
   if (s.mode !== 'thinking') _stopThinkSpin();
   cls();
-  const pnl      = s.pnl;
-  const pct      = pnl.trades>0?Math.round(pnl.wins/pnl.trades*100):0;
-  const winColor = pct>=55?G:pct>=40?Y:R;
-  const xp       = expProgress(pnl.exp||0);
-  const lvlColor = xp.level>=60?M:xp.level>=40?M:xp.level>=20?C:xp.level>=10?Y:G;
-  const fund     = pnl.fund??100;
-  const openPos  = s.positions?.open||[];
-  const slots    = Math.max(0,MAX_POSITIONS-openPos.length);
-  const net      = pnl.net||0;
-  const treasury = pnl.treasury||0;
-  const calib    = loadCalibration();
-  const prices   = s.prices||{};
+  const pnl = s.pnl;
+  const pct = pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0;
+  const winColor = pct >= 55 ? G : pct >= 40 ? Y : R;
+  const xp = expProgress(pnl.exp || 0);
+  const lvlColor = xp.level >= 60 ? M : xp.level >= 40 ? M : xp.level >= 20 ? C : xp.level >= 10 ? Y : G;
+  const fund = pnl.fund ?? 100;
+  const openPos = s.positions?.open || [];
+  const slots = Math.max(0, MAX_POSITIONS - openPos.length);
+  const net = pnl.net || 0;
+  const treasury = pnl.treasury || 0;
+  const calib = loadCalibration();
+  const prices = s.prices || {};
 
   // ── HEADER ──
-  console.log('\n'+M+BOLD+'  ╔══════════════════════════════════════════════════════════════════╗');
-  console.log(M+BOLD+'  ║  ▄▄  ██▄  ▄▄  ██▄    ██▄  ██▄  ██▄  ██▄                       ║');
-  console.log(M+BOLD+'  ║  ███ ███ ███  ███▀▄  ███  ███  ███  ███                        ║');
-  console.log(M+BOLD+'  ║  ███▀███ ███  ██▀▀█  ███  ███  ███  ███                        ║');
-  console.log(M+BOLD+'  ║  A D A N - P R E D  v2   ·   Web4 Autonomaton   ·   2026       ║');
-  console.log(M+BOLD+'  ║  Polymarket  ·  Binance  ·  Claude Sonnet 4.6  ·  by Lord      ║');
-  console.log(M+BOLD+'  ║  '+C+BOLD+'Dashboard: http://localhost:3141'+M+BOLD+'  ·  auto-refresh 5s            ║');
-  console.log(M+BOLD+'  ╚══════════════════════════════════════════════════════════════════╝'+X+'\n');
+  console.log('\n' + M + BOLD + '  ╔══════════════════════════════════════════════════════════════════╗');
+  console.log(M + BOLD + '  ║  ▄▄  ██▄  ▄▄  ██▄    ██▄  ██▄  ██▄  ██▄                       ║');
+  console.log(M + BOLD + '  ║  ███ ███ ███  ███▀▄  ███  ███  ███  ███                        ║');
+  console.log(M + BOLD + '  ║  ███▀███ ███  ██▀▀█  ███  ███  ███  ███                        ║');
+  console.log(M + BOLD + '  ║  A D A N - P R E D  v2   ·   Web4 Autonomaton   ·   2026       ║');
+  console.log(M + BOLD + '  ║  Polymarket  ·  Binance  ·  Claude Sonnet 4.6  ·  by Lord      ║');
+  console.log(M + BOLD + '  ║  ' + C + BOLD + 'Dashboard: http://localhost:3141' + M + BOLD + '  ·  auto-refresh 5s            ║');
+  console.log(M + BOLD + '  ╚══════════════════════════════════════════════════════════════════╝' + X + '\n');
 
-  const timeStr    = new Date().toLocaleTimeString();
-  const scanStatus = s.mode==='thinking'?Y+BOLD+'⬤ THINKING'+X
-    :s.mode==='result'?G+BOLD+'⬤ READY'+X:C+'⬤ '+s.status+X;
-  const nextStr    = s.lastScan?D+'  scan: '+s.lastScan+'  next: ~'+s.nextScanIn+'min  $'+(s.apiCost||0).toFixed(4)+X:'';
+  const timeStr = new Date().toLocaleTimeString();
+  const scanStatus = s.mode === 'thinking' ? Y + BOLD + '⬤ THINKING' + X
+    : s.mode === 'result' ? G + BOLD + '⬤ READY' + X : C + '⬤ ' + s.status + X;
+  const nextStr = s.lastScan ? D + '  scan: ' + s.lastScan + '  next: ~' + s.nextScanIn + 'min  $' + (s.apiCost || 0).toFixed(4) + X : '';
 
   console.log(TOP(M));
-  console.log(row('  '+BOLD+M+'ADAN'+X+'  '+D+timeStr+X+'  '+scanStatus+nextStr));
+  console.log(row('  ' + BOLD + M + 'ADAN' + X + '  ' + D + timeStr + X + '  ' + scanStatus + nextStr));
   console.log(sep(M));
 
   // ── MARKET SENTIMENT ──
-  const fg        = prices._meta?.fearGreed;
-  const fundRates = prices._meta?.fundingRates||{};
+  const fg = prices._meta?.fearGreed;
+  const fundRates = prices._meta?.fundingRates || {};
   if (fg) {
-    const fgCol = fg.value>=60?G:fg.value>=40?Y:R;
-    const fgBar = fgCol+'█'.repeat(Math.round(fg.value/10))+'░'.repeat(10-Math.round(fg.value/10))+X;
-    const fgDir = fg.direction>0?' '+G+'↑'+X:fg.direction<0?' '+R+'↓'+X:'';
-    console.log(row('  SENTIMENT  '+fgBar+'  '+fgCol+BOLD+fg.value+'/100  '+fg.label.toUpperCase()+X+fgDir));
+    const fgCol = fg.value >= 60 ? G : fg.value >= 40 ? Y : R;
+    const fgBar = fgCol + '█'.repeat(Math.round(fg.value / 10)) + '░'.repeat(10 - Math.round(fg.value / 10)) + X;
+    const fgDir = fg.direction > 0 ? ' ' + G + '↑' + X : fg.direction < 0 ? ' ' + R + '↓' + X : '';
+    console.log(row('  SENTIMENT  ' + fgBar + '  ' + fgCol + BOLD + fg.value + '/100  ' + fg.label.toUpperCase() + X + fgDir));
   }
   console.log(sep(M));
 
   // ── PRICE TICKER — clean fixed columns ──
-  console.log(row(D+'  ASSET    PRICE          CHG      TREND(1m/5m)    SIGNAL       SCORE'+X));
+  console.log(row(D + '  ASSET    PRICE          CHG      TREND(1m/5m)    SIGNAL       SCORE' + X));
   console.log(SEP(M));
 
   for (const sym of SYMBOLS) {
-    const d    = prices[sym];
-    const name = sym.replace('USDT','');
-    if (!d) { console.log(row(D+'  '+name.padEnd(5)+'  no data'+X)); continue; }
+    const d = prices[sym];
+    const name = sym.replace('USDT', '');
+    if (!d) { console.log(row(D + '  ' + name.padEnd(5) + '  no data' + X)); continue; }
 
-    const chgCol = d.chg>=0?G:R;
-    const score  = d.intelScore??50;
-    const sCol   = score>=65?G:score>=45?Y:R;
-    const spark  = sparkline(d.closes||[]);
-    const t1Col  = d.trend1m>=0?G:R;
-    const t5Col  = d.trend5m>=0?G:R;
-    const sig    = signalLabel(score);
+    const chgCol = d.chg >= 0 ? G : R;
+    const score = d.intelScore ?? 50;
+    const sCol = score >= 65 ? G : score >= 45 ? Y : R;
+    const spark = sparkline(d.closes || []);
+    const t1Col = d.trend1m >= 0 ? G : R;
+    const t5Col = d.trend5m >= 0 ? G : R;
+    const sig = signalLabel(score);
 
     // Row 1 — price line (use plain strings for padding, then colorize)
-    const priceStr  = ('$'+d.price.toLocaleString()).padEnd(14);
-    const chgStr    = ((d.chg>=0?'+':'')+d.chg.toFixed(2)+'%').padEnd(8);
-    const t1Str     = (d.trend1m>=0?'+':'')+d.trend1m.toFixed(2)+'%';
-    const t5Str     = (d.trend5m>=0?'+':'')+d.trend5m.toFixed(2)+'%';
+    const priceStr = ('$' + d.price.toLocaleString()).padEnd(14);
+    const chgStr = ((d.chg >= 0 ? '+' : '') + d.chg.toFixed(2) + '%').padEnd(8);
+    const t1Str = (d.trend1m >= 0 ? '+' : '') + d.trend1m.toFixed(2) + '%';
+    const t5Str = (d.trend5m >= 0 ? '+' : '') + d.trend5m.toFixed(2) + '%';
     console.log(row(
-      '  '+W+BOLD+name.padEnd(5)+X
-      +C+BOLD+priceStr+X
-      +chgCol+BOLD+chgStr+X
-      +D+'1m:'+X+t1Col+t1Str+X
-      +D+' 5m:'+X+t5Col+t5Str+'  '+X
-      +sig+'  '+sCol+BOLD+'['+score+']'+X
+      '  ' + W + BOLD + name.padEnd(5) + X
+      + C + BOLD + priceStr + X
+      + chgCol + BOLD + chgStr + X
+      + D + '1m:' + X + t1Col + t1Str + X
+      + D + ' 5m:' + X + t5Col + t5Str + '  ' + X
+      + sig + '  ' + sCol + BOLD + '[' + score + ']' + X
     ));
     // Row 2 — indicators line
-    const rsiCol = d.rsi>70?G:d.rsi<30?R:Y;
-    const mCol   = d.macd?.hist>0?G:R;
-    const bbCol  = d.bb?.pct>75?G:d.bb?.pct<25?R:Y;
-    const vCol   = d.vol?.trend==='rising'?G:d.vol?.trend==='falling'?R:D;
-    const funding= d.funding||fundRates[sym];
-    const fCol   = funding?.signal==='bearish'?R:funding?.signal==='bullish'?G:D;
+    const rsiCol = d.rsi > 70 ? G : d.rsi < 30 ? R : Y;
+    const mCol = d.macd?.hist > 0 ? G : R;
+    const bbCol = d.bb?.pct > 75 ? G : d.bb?.pct < 25 ? R : Y;
+    const vCol = d.vol?.trend === 'rising' ? G : d.vol?.trend === 'falling' ? R : D;
+    const funding = d.funding || fundRates[sym];
+    const fCol = funding?.signal === 'bearish' ? R : funding?.signal === 'bullish' ? G : D;
     console.log(row(
-      D+'       RSI '+X+rsiCol+BOLD+d.rsi.toFixed(0).padEnd(4)+X
-      +D+'MACD '+X+mCol+BOLD+(d.macd?.hist>0?'▲':' ▼')+'  '+X
-      +D+'BB% '+X+bbCol+(d.bb?.pct||0).toFixed(0).padStart(3)+'%  '+X
-      +D+'VOL '+X+vCol+(d.vol?.trend||'--').padEnd(8)+X
-      +(funding?D+'FUND '+X+fCol+(funding.rate||0).toFixed(3)+'%  '+X:'')
-      +D+'VOLAT '+X+(d.volatility>0.12?R:d.volatility>0.06?Y:G)+d.volatility.toFixed(3)+'%'+X
-      +'  '+spark
+      D + '       RSI ' + X + rsiCol + BOLD + d.rsi.toFixed(0).padEnd(4) + X
+      + D + 'MACD ' + X + mCol + BOLD + (d.macd?.hist > 0 ? '▲' : ' ▼') + '  ' + X
+      + D + 'BB% ' + X + bbCol + (d.bb?.pct || 0).toFixed(0).padStart(3) + '%  ' + X
+      + D + 'VOL ' + X + vCol + (d.vol?.trend || '--').padEnd(8) + X
+      + (funding ? D + 'FUND ' + X + fCol + (funding.rate || 0).toFixed(3) + '%  ' + X : '')
+      + D + 'VOLAT ' + X + (d.volatility > 0.12 ? R : d.volatility > 0.06 ? Y : G) + d.volatility.toFixed(3) + '%' + X
+      + '  ' + spark
     ));
     console.log(SEP(M));
   }
   console.log(sep(M));
 
   // ── LEVEL + PORTFOLIO ──
-  const skills    = getSkills(xp.level);
-  const unlocked  = skills.filter(s=>s.unlocked).map(s=>s.icon+s.name).join(' ');
-  const nextSkill = skills.find(s=>!s.unlocked);
-  const roiCol    = fund>=100?G:fund>=80?Y:R;
-  const sc        = TREE_RULES.spawnConditions;
-  const childCount= (pnl.children||[]).length;
-  const maxChildren = xp.level>=4 ? TREE_RULES.maxChildrenGen1 : 1;
-  const canSpawn  = xp.level>=sc.minLvl
-    && pnl.trades>=sc.minTrades
-    && (pnl.wins/Math.max(pnl.trades,1))>=sc.minWinRate
-    && childCount<maxChildren
-    && treasury>0;
-  const strat     = loadStrategy();
+  const skills = getSkills(xp.level);
+  const unlocked = skills.filter(s => s.unlocked).map(s => s.icon + s.name).join(' ');
+  const nextSkill = skills.find(s => !s.unlocked);
+  const roiCol = fund >= 100 ? G : fund >= 80 ? Y : R;
+  const sc = TREE_RULES.spawnConditions;
+  const childCount = (pnl.children || []).length;
+  const maxChildren = xp.level >= 4 ? TREE_RULES.maxChildrenGen1 : 1;
+  const canSpawn = xp.level >= sc.minLvl
+    && pnl.trades >= sc.minTrades
+    && (pnl.wins / Math.max(pnl.trades, 1)) >= sc.minWinRate
+    && childCount < maxChildren
+    && treasury > 0;
+  const strat = loadStrategy();
 
-  console.log(row('  '+lvlColor+BOLD+'LVL '+xp.level+'  '+levelTitle(xp.level)+X
-    +'  '+D+xp.bar+' '+xp.pct+'%'+X
-    +(nextSkill?D+'  → '+nextSkill.icon+nextSkill.name+' @LVL'+nextSkill.lvl+X:'')));
-  console.log(row('  '+D+'Skills: '+X+M+unlocked+X
-    +((pnl.streak||0)>=3?'  '+Y+BOLD+'🔥 STREAK '+(pnl.streak||0)+'W'+X:'')));
+  console.log(row('  ' + lvlColor + BOLD + 'LVL ' + xp.level + '  ' + levelTitle(xp.level) + X
+    + '  ' + D + xp.bar + ' ' + xp.pct + '%' + X
+    + (nextSkill ? D + '  → ' + nextSkill.icon + nextSkill.name + ' @LVL' + nextSkill.lvl + X : '')));
+  console.log(row('  ' + D + 'Skills: ' + X + M + unlocked + X
+    + ((pnl.streak || 0) >= 3 ? '  ' + Y + BOLD + '🔥 STREAK ' + (pnl.streak || 0) + 'W' + X : '')));
   console.log(SEP(M));
   console.log(row(
-    '  FUND  '+roiCol+BOLD+'$'+fund.toFixed(2)+X+D+'/$'+PAPER_BET_SIZE*100+'  '+X+
-    '  NET  '+(net>=0?G:R)+BOLD+(net>=0?'+':'')+net.toFixed(2)+X+
-    '  TRADES  '+W+pnl.trades+X+
-    '  W/L  '+G+pnl.wins+X+D+'/'+X+R+pnl.losses+X+
-    '  WR  '+winColor+BOLD+pct+'%'+X+D+'  (goal 55%)'+X
+    '  FUND  ' + roiCol + BOLD + '$' + fund.toFixed(2) + X + D + '/$' + PAPER_BET_SIZE * 100 + '  ' + X +
+    '  NET  ' + (net >= 0 ? G : R) + BOLD + (net >= 0 ? '+' : '') + net.toFixed(2) + X +
+    '  TRADES  ' + W + pnl.trades + X +
+    '  W/L  ' + G + pnl.wins + X + D + '/' + X + R + pnl.losses + X +
+    '  WR  ' + winColor + BOLD + pct + '%' + X + D + '  (goal 55%)' + X
   ));
-  const kellyOn = xp.level>=4;
+  const kellyOn = xp.level >= 4;
   console.log(row(
-    '  SLOTS  '+(slots>0?G:R)+BOLD+slots+'/'+MAX_POSITIONS+X+D+' free  '+X+
-    '  MIN EDGE  '+Y+BOLD+(strat.minEdge*100).toFixed(0)+'%'+X+
-    '  BET  '+D+(kellyOn?'📐KELLY':'$'+PAPER_BET_SIZE+' flat')+X+
-    (treasury>0?'  '+M+'💰 $'+treasury.toFixed(2)+(canSpawn?' 👶SPAWN!':'')+X:'')
+    '  SLOTS  ' + (slots > 0 ? G : R) + BOLD + slots + '/' + MAX_POSITIONS + X + D + ' free  ' + X +
+    '  MIN EDGE  ' + Y + BOLD + (strat.minEdge * 100).toFixed(0) + '%' + X +
+    '  BET  ' + D + (kellyOn ? '📐KELLY' : '$' + PAPER_BET_SIZE + ' flat') + X +
+    (treasury > 0 ? '  ' + M + '💰 $' + treasury.toFixed(2) + (canSpawn ? ' 👶SPAWN!' : '') + X : '')
   ));
   console.log(sep(M));
   // ── DYNASTY TREE ──
   renderTreePanel(pnl, prices);
 
   // ── CALIBRATION ──
-  const calibLine = Object.entries(calib).map(([asset,d])=>{
-    const acc = d.p>=3?Math.round(d.c/d.p*100):null;
-    const col = acc===null?D:acc>=60?G:acc>=50?Y:R;
-    return W+asset.toUpperCase()+X+D+':'+X+(acc===null?D+'--':col+BOLD+acc+'%')+X+D+'('+d.p+')'+X;
+  const calibLine = Object.entries(calib).map(([asset, d]) => {
+    const acc = d.p >= 3 ? Math.round(d.c / d.p * 100) : null;
+    const col = acc === null ? D : acc >= 60 ? G : acc >= 50 ? Y : R;
+    return W + asset.toUpperCase() + X + D + ':' + X + (acc === null ? D + '--' : col + BOLD + acc + '%') + X + D + '(' + d.p + ')' + X;
   }).join('   ');
-  console.log(row('  CALIBRATION  '+calibLine));
+  console.log(row('  CALIBRATION  ' + calibLine));
   console.log(sep(M));
 
   // ── OPEN POSITIONS ──
-  if (openPos.length>0) {
-    console.log(row(Y+BOLD+'  OPEN BETS ('+openPos.length+')'+X+D+'  — monitoring for resolution'+X));
-    console.log(row(D+'  MARKET                              SIDE  MY_P  MKT_P  EDGE   STAKE  CLOSES'+X));
-    openPos.forEach(p=>{
-      const title = (p.marketTitle||'???').slice(0,30).padEnd(30);
-      const side  = (p.side||'YES').padEnd(5);
-      const myP   = ((p.myProb||0)*100).toFixed(0).padStart(4)+'%';
-      const mktP  = ((p.marketPrice||0)*100).toFixed(0).padStart(5)+'%';
-      const edge  = (((p.myProb||0)-(p.marketPrice||0))*100).toFixed(1).padStart(5)+'%';
-      const eCol  = parseFloat(edge)>=MIN_EDGE*100?G:Y;
-      const stake = ('$'+p.stake).padStart(5);
-      const closes= p.closesAt?new Date(p.closesAt).toLocaleTimeString():'   n/a';
-      console.log(row('  '+W+title+X+side+Y+myP+X+mktP+eCol+BOLD+edge+X+stake+'  '+D+closes+X));
+  if (openPos.length > 0) {
+    console.log(row(Y + BOLD + '  OPEN BETS (' + openPos.length + ')' + X + D + '  — monitoring for resolution' + X));
+    console.log(row(D + '  MARKET                              SIDE  MY_P  MKT_P  EDGE   STAKE  CLOSES' + X));
+    openPos.forEach(p => {
+      const title = (p.marketTitle || '???').slice(0, 30).padEnd(30);
+      const side = (p.side || 'YES').padEnd(5);
+      const myP = ((p.myProb || 0) * 100).toFixed(0).padStart(4) + '%';
+      const mktP = ((p.marketPrice || 0) * 100).toFixed(0).padStart(5) + '%';
+      const edge = (((p.myProb || 0) - (p.marketPrice || 0)) * 100).toFixed(1).padStart(5) + '%';
+      const eCol = parseFloat(edge) >= MIN_EDGE * 100 ? G : Y;
+      const stake = ('$' + p.stake).padStart(5);
+      const closes = p.closesAt ? new Date(p.closesAt).toLocaleTimeString() : '   n/a';
+      console.log(row('  ' + W + title + X + side + Y + myP + X + mktP + eCol + BOLD + edge + X + stake + '  ' + D + closes + X));
     });
     console.log(sep(M));
   } else {
-    console.log(row(D+'  No open bets — ADAN will enter on next scan'+X));
+    console.log(row(D + '  No open bets — ADAN will enter on next scan' + X));
     console.log(sep(M));
   }
 
   // ── HISTORY ──
-  const allClosed = s.positions?.closed||[];
+  const allClosed = s.positions?.closed || [];
   const shown = allClosed.slice(-4).reverse();
-  if (shown.length>0||pnl.trades>0) {
-    console.log(row(B+BOLD+'  HISTORY'+X+D+'  '+pnl.trades+' trades  ('+G+pnl.wins+'W'+X+'/'+R+pnl.losses+'L'+X+')'+X));
-    shown.forEach(c=>{
-      const isWin=c.result==='WIN';
-      const rCol=isWin?G:R;
-      const sym=(c.marketTitle||'???').slice(0,32).padEnd(32);
-      const edge=c.edge!=null?(c.edge>=0?'+':'')+((c.edge||0)*100).toFixed(1)+'%':'?';
-      const pnlStr=rCol+(isWin?'+':'')+c.pnl+X;
-      const dt=(c.entryTime||'').slice(11,16);
-      console.log(row('  '+rCol+BOLD+(isWin?'✓ WIN':'✗ LOSS')+X+' '+W+sym+X+D+' edge:'+X+Y+edge+X+' P&L: '+pnlStr+D+' '+dt+X));
+  if (shown.length > 0 || pnl.trades > 0) {
+    console.log(row(B + BOLD + '  HISTORY' + X + D + '  ' + pnl.trades + ' trades  (' + G + pnl.wins + 'W' + X + '/' + R + pnl.losses + 'L' + X + ')' + X));
+    shown.forEach(c => {
+      const isWin = c.result === 'WIN';
+      const rCol = isWin ? G : R;
+      const sym = (c.marketTitle || '???').slice(0, 32).padEnd(32);
+      const edge = c.edge != null ? (c.edge >= 0 ? '+' : '') + ((c.edge || 0) * 100).toFixed(1) + '%' : '?';
+      const pnlStr = rCol + (isWin ? '+' : '') + c.pnl + X;
+      const dt = (c.entryTime || '').slice(11, 16);
+      console.log(row('  ' + rCol + BOLD + (isWin ? '✓ WIN' : '✗ LOSS') + X + ' ' + W + sym + X + D + ' edge:' + X + Y + edge + X + ' P&L: ' + pnlStr + D + ' ' + dt + X));
     });
     console.log(sep(M));
   }
 
   // ── LIVE MARKETS — separados por 5M / 15M / 1H ──
-  const allMkts = s.markets||[];
-  const mkts5   = allMkts.filter(m=>m.windowMin===5);
-  const mkts15  = allMkts.filter(m=>m.windowMin===15);
-  const mkts1h  = allMkts.filter(m=>m.windowMin===60||m.windowMin===240);
-  const sessionOn = allMkts.length>0;
+  const allMkts = s.markets || [];
+  const mkts5 = allMkts.filter(m => m.windowMin === 5);
+  const mkts15 = allMkts.filter(m => m.windowMin === 15);
+  const mkts1h = allMkts.filter(m => m.windowMin === 60 || m.windowMin === 240);
+  const sessionOn = allMkts.length > 0;
 
   function mktRow(m) {
-    const asst   = (m.asset||'???').toUpperCase().slice(0,3).padEnd(4);
-    const price  = ((m.yesPrice||0)*100).toFixed(0).padStart(4)+'%';
-    const edge   = m.edge!=null?((m.edge>=0?'+':'')+(m.edge*100).toFixed(1)+'%').padStart(6):'    --';
-    const eCol   = Math.abs(m.edge||0)>=MIN_EDGE?G:D;
-    const liq    = ('$'+(m.liquidity||0).toFixed(0)).padStart(7);
-    const endMs  = m.closesAt?new Date(m.closesAt).getTime():0;
-    const hoursL = endMs?(endMs-Date.now())/3600000:null;
-    const closes = hoursL!=null?(hoursL<1?R+BOLD+(hoursL*60).toFixed(0)+'min'+X:hoursL<4?Y+BOLD+hoursL.toFixed(1)+'h'+X:D+hoursL.toFixed(0)+'h'+X):D+'--'+X;
-    return '  '+W+asst+X+C+price+X+eCol+edge+X+D+liq+' '+X+closes;
+    const asst = (m.asset || '???').toUpperCase().slice(0, 3).padEnd(4);
+    const price = ((m.yesPrice || 0) * 100).toFixed(0).padStart(4) + '%';
+    const edge = m.edge != null ? ((m.edge >= 0 ? '+' : '') + (m.edge * 100).toFixed(1) + '%').padStart(6) : '    --';
+    const eCol = Math.abs(m.edge || 0) >= MIN_EDGE ? G : D;
+    const liq = ('$' + (m.liquidity || 0).toFixed(0)).padStart(7);
+    const endMs = m.closesAt ? new Date(m.closesAt).getTime() : 0;
+    const hoursL = endMs ? (endMs - Date.now()) / 3600000 : null;
+    const closes = hoursL != null ? (hoursL < 1 ? R + BOLD + (hoursL * 60).toFixed(0) + 'min' + X : hoursL < 4 ? Y + BOLD + hoursL.toFixed(1) + 'h' + X : D + hoursL.toFixed(0) + 'h' + X) : D + '--' + X;
+    return '  ' + W + asst + X + C + price + X + eCol + edge + X + D + liq + ' ' + X + closes;
   }
 
   if (sessionOn) {
-    console.log(row(G+BOLD+'  ▸ 5MIN'+X+D+'  BTC · ETH · SOL  (closes in minutes)'+X));
-    if (mkts5.length>0) {
-      console.log(row(D+'  ASSET  UP%   EDGE     LIQ       CLOSES'+X));
-      mkts5.slice(0,3).forEach(m=>console.log(row(mktRow(m))));
-    } else { console.log(row(D+'  — no 5M active right now —'+X)); }
+    console.log(row(G + BOLD + '  ▸ 5MIN' + X + D + '  BTC · ETH · SOL  (closes in minutes)' + X));
+    if (mkts5.length > 0) {
+      console.log(row(D + '  ASSET  UP%   EDGE     LIQ       CLOSES' + X));
+      mkts5.slice(0, 3).forEach(m => console.log(row(mktRow(m))));
+    } else { console.log(row(D + '  — no 5M active right now —' + X)); }
     console.log(SEP(M));
 
-    console.log(row(Y+BOLD+'  ▸ 15MIN'+X+D+'  BTC · ETH · SOL  (closes in 15 min windows)'+X));
-    if (mkts15.length>0) {
-      mkts15.slice(0,3).forEach(m=>console.log(row(mktRow(m))));
-    } else { console.log(row(D+'  — no 15M active right now —'+X)); }
+    console.log(row(Y + BOLD + '  ▸ 15MIN' + X + D + '  BTC · ETH · SOL  (closes in 15 min windows)' + X));
+    if (mkts15.length > 0) {
+      mkts15.slice(0, 3).forEach(m => console.log(row(mktRow(m))));
+    } else { console.log(row(D + '  — no 15M active right now —' + X)); }
     console.log(SEP(M));
 
-    console.log(row(C+BOLD+'  ▸ 1H / 4H'+X+D+'  BTC · ETH · SOL  (hourly/4h windows)'+X));
-    if (mkts1h.length>0) {
-      mkts1h.slice(0,3).forEach(m=>console.log(row(mktRow(m))));
-    } else { console.log(row(D+'  — no 1H active right now —'+X)); }
+    console.log(row(C + BOLD + '  ▸ 1H / 4H' + X + D + '  BTC · ETH · SOL  (hourly/4h windows)' + X));
+    if (mkts1h.length > 0) {
+      mkts1h.slice(0, 3).forEach(m => console.log(row(mktRow(m))));
+    } else { console.log(row(D + '  — no 1H active right now —' + X)); }
   } else {
-    console.log(row(D+'  Session offline. 5M/15M/1H markets open ~3PM-10PM ET daily.'+X));
-    console.log(row(D+'  Checking resolutions every 5min. New markets scan every 20min.'+X));
+    console.log(row(D + '  Session offline. 5M/15M/1H markets open ~3PM-10PM ET daily.' + X));
+    console.log(row(D + '  Checking resolutions every 5min. New markets scan every 20min.' + X));
   }
   console.log(BOT(M));
 
   // ── THOUGHT PANEL ──
-  if (s.mode==='thinking') {
-    const sp = _SPIN_F[Math.floor(Date.now()/150) % _SPIN_F.length];
-    console.log('\n'+Y+'┌'+DIV+'┐'+X);
-    console.log(trow('  '+sp+' ADAN THINKING  —  Binance loaded · Sonnet 4.6 analyzing...',BOLD+Y,Y));
-    console.log(trow('  Flow: Candles '+sp+' Trend '+sp+' Polymarket odds '+sp+' Edge calc '+sp+' BET or SKIP',D,Y));
-    console.log(Y+'└'+DIV+'┘'+X+'\n');
+  if (s.mode === 'thinking') {
+    const sp = _SPIN_F[Math.floor(Date.now() / 150) % _SPIN_F.length];
+    console.log('\n' + Y + '┌' + DIV + '┐' + X);
+    console.log(trow('  ' + sp + ' ADAN THINKING  —  Binance loaded · Sonnet 4.6 analyzing...', BOLD + Y, Y));
+    console.log(trow('  Flow: Candles ' + sp + ' Trend ' + sp + ' Polymarket odds ' + sp + ' Edge calc ' + sp + ' BET or SKIP', D, Y));
+    console.log(Y + '└' + DIV + '┘' + X + '\n');
     _startThinkSpin();
-  } else if (s.mode==='result'&&s.thought) {
-    console.log('\n'+M+'┌'+DIV+'┐'+X);
-    console.log(trow('  ◉ ADAN DECISION',BOLD+M,M));
-    console.log(M+'├'+DIV+'┤'+X);
-    s.thought.split('\n').filter(Boolean).forEach(l=>{
-      (l.match(new RegExp('.{1,'+(TW-2)+'}','g'))||[l]).forEach(chunk=>{
-        console.log(M+'│'+X+W+'  '+chunk+' '.repeat(Math.max(0,TW-chunk.length-2))+X+M+' │'+X);
+  } else if (s.mode === 'result' && s.thought) {
+    console.log('\n' + M + '┌' + DIV + '┐' + X);
+    console.log(trow('  ◉ ADAN DECISION', BOLD + M, M));
+    console.log(M + '├' + DIV + '┤' + X);
+    s.thought.split('\n').filter(Boolean).forEach(l => {
+      (l.match(new RegExp('.{1,' + (TW - 2) + '}', 'g')) || [l]).forEach(chunk => {
+        console.log(M + '│' + X + W + '  ' + chunk + ' '.repeat(Math.max(0, TW - chunk.length - 2)) + X + M + ' │' + X);
       });
     });
-    console.log(M+'└'+DIV+'┘'+X+'\n');
+    console.log(M + '└' + DIV + '┘' + X + '\n');
   }
 }
 
@@ -2317,79 +2442,79 @@ async function fetchBinancePrice(symbol) {
   try {
     const r = await fetch(`${BINANCE_API}/ticker/price?symbol=${symbol}`);
     const d = await r.json();
-    return parseFloat(d.price)||null;
+    return parseFloat(d.price) || null;
   } catch { return null; }
 }
 
-async function fetchBinanceKlines(symbol, interval='1m', limit=20) {
+async function fetchBinanceKlines(symbol, interval = '1m', limit = 20) {
   try {
     const r = await fetch(`${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
     const d = await r.json();
     if (!Array.isArray(d)) return [];
     // [openTime, open, high, low, close, volume, ...]
-    return d.map(c=>({
-      open:  parseFloat(c[1]),
-      high:  parseFloat(c[2]),
-      low:   parseFloat(c[3]),
+    return d.map(c => ({
+      open: parseFloat(c[1]),
+      high: parseFloat(c[2]),
+      low: parseFloat(c[3]),
       close: parseFloat(c[4]),
-      vol:   parseFloat(c[5]),
-      time:  c[0]
+      vol: parseFloat(c[5]),
+      time: c[0]
     }));
   } catch { return []; }
 }
 
 // ── Technical Analysis — full suite ─────────────────────────────────────────
 function calcTrend(closes) {
-  if (closes.length<3) return 0;
-  const recent=closes.slice(-Math.min(closes.length,10));
-  return (recent[recent.length-1]-recent[0])/recent[0]*100;
+  if (closes.length < 3) return 0;
+  const recent = closes.slice(-Math.min(closes.length, 10));
+  return (recent[recent.length - 1] - recent[0]) / recent[0] * 100;
 }
 
 function calcVolatility(closes) {
-  if (closes.length<3) return 0;
-  const returns=[];
-  for (let i=1;i<closes.length;i++) returns.push((closes[i]-closes[i-1])/closes[i-1]);
-  const mean=returns.reduce((a,b)=>a+b,0)/returns.length;
-  const variance=returns.reduce((a,b)=>a+(b-mean)**2,0)/returns.length;
-  return Math.sqrt(variance)*100;
+  if (closes.length < 3) return 0;
+  const returns = [];
+  for (let i = 1; i < closes.length; i++) returns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((a, b) => a + (b - mean) ** 2, 0) / returns.length;
+  return Math.sqrt(variance) * 100;
 }
 
-function calcRSI(closes, period=14) {
-  if (closes.length<period+1) return 50;
-  let gains=0, losses=0;
-  for (let i=closes.length-period;i<closes.length;i++) {
-    const diff=closes[i]-closes[i-1];
-    if (diff>0) gains+=diff; else losses+=Math.abs(diff);
+function calcRSI(closes, period = 14) {
+  if (closes.length < period + 1) return 50;
+  let gains = 0, losses = 0;
+  for (let i = closes.length - period; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff > 0) gains += diff; else losses += Math.abs(diff);
   }
-  if (losses===0) return 100;
-  return 100-(100/(1+gains/losses));
+  if (losses === 0) return 100;
+  return 100 - (100 / (1 + gains / losses));
 }
 
 function calcMACD(closes) {
   // EMA helper
-  const ema=(arr,period)=>{
-    const k=2/(period+1); let e=arr[0];
-    arr.forEach(v=>{ e=v*k+e*(1-k); });
+  const ema = (arr, period) => {
+    const k = 2 / (period + 1); let e = arr[0];
+    arr.forEach(v => { e = v * k + e * (1 - k); });
     return e;
   };
-  if (closes.length<26) return { macd:0, signal:0, hist:0 };
-  const ema12=ema(closes.slice(-26),12);
-  const ema26=ema(closes.slice(-26),26);
-  const macd=ema12-ema26;
+  if (closes.length < 26) return { macd: 0, signal: 0, hist: 0 };
+  const ema12 = ema(closes.slice(-26), 12);
+  const ema26 = ema(closes.slice(-26), 26);
+  const macd = ema12 - ema26;
   // Signal = 9-period EMA of MACD (approximated)
-  const signal=macd*0.85; // simplified
-  return { macd, signal, hist:macd-signal };
+  const signal = macd * 0.85; // simplified
+  return { macd, signal, hist: macd - signal };
 }
 
-function calcBollingerBands(closes, period=20) {
-  if (closes.length<period) return { upper:0, mid:0, lower:0, pct:50 };
-  const slice=closes.slice(-period);
-  const mid=slice.reduce((a,b)=>a+b,0)/period;
-  const std=Math.sqrt(slice.reduce((a,b)=>a+(b-mid)**2,0)/period);
-  const upper=mid+2*std, lower=mid-2*std;
-  const current=closes[closes.length-1];
-  const pct=std>0?((current-lower)/(upper-lower))*100:50;
-  return { upper, mid, lower, pct, std, width: mid>0?(upper-lower)/mid:0 };
+function calcBollingerBands(closes, period = 20) {
+  if (closes.length < period) return { upper: 0, mid: 0, lower: 0, pct: 50 };
+  const slice = closes.slice(-period);
+  const mid = slice.reduce((a, b) => a + b, 0) / period;
+  const std = Math.sqrt(slice.reduce((a, b) => a + (b - mid) ** 2, 0) / period);
+  const upper = mid + 2 * std, lower = mid - 2 * std;
+  const current = closes[closes.length - 1];
+  const pct = std > 0 ? ((current - lower) / (upper - lower)) * 100 : 50;
+  return { upper, mid, lower, pct, std, width: mid > 0 ? (upper - lower) / mid : 0 };
 }
 
 // VWAP (Volume-Weighted Average Price) — el único indicador con lag real en 5m
@@ -2414,21 +2539,21 @@ function calcVolAccel(klines) {
   const vols = klines.slice(-4).map(k => k.vol);
   let accel = 0;
   for (let i = 1; i < vols.length; i++) {
-    if (vols[i] > vols[i-1] * 1.05) accel++;
-    else if (vols[i] < vols[i-1] * 0.95) accel--;
+    if (vols[i] > vols[i - 1] * 1.05) accel++;
+    else if (vols[i] < vols[i - 1] * 0.95) accel--;
   }
   return accel; // -3 a +3; positivo = volumen acelerando
 }
 
 function calcVolumeProfile(klines) {
-  if (!klines.length) return { trend:'flat', spike:false };
-  const vols=klines.map(k=>k.vol);
-  const avg=vols.slice(0,-3).reduce((a,b)=>a+b,0)/Math.max(vols.length-3,1);
-  const last3=vols.slice(-3).reduce((a,b)=>a+b,0)/3;
+  if (!klines.length) return { trend: 'flat', spike: false };
+  const vols = klines.map(k => k.vol);
+  const avg = vols.slice(0, -3).reduce((a, b) => a + b, 0) / Math.max(vols.length - 3, 1);
+  const last3 = vols.slice(-3).reduce((a, b) => a + b, 0) / 3;
   return {
-    trend: last3>avg*1.5?'rising':last3<avg*0.6?'falling':'flat',
-    spike: last3>avg*2.5,
-    ratio: avg>0?last3/avg:1
+    trend: last3 > avg * 1.5 ? 'rising' : last3 < avg * 0.6 ? 'falling' : 'flat',
+    spike: last3 > avg * 2.5,
+    ratio: avg > 0 ? last3 / avg : 1
   };
 }
 
@@ -2438,57 +2563,57 @@ function calcIntelScore(d) {
   if (!d) return 50;
   let score = 50;
   // Trend signal
-  if (d.trend1m>0.3)       score+=8;
-  else if (d.trend1m>0.1)  score+=4;
-  else if (d.trend1m<-0.3) score-=8;
-  else if (d.trend1m<-0.1) score-=4;
+  if (d.trend1m > 0.3) score += 8;
+  else if (d.trend1m > 0.1) score += 4;
+  else if (d.trend1m < -0.3) score -= 8;
+  else if (d.trend1m < -0.1) score -= 4;
   // 5m trend alignment
-  if (d.trend5m>0&&d.trend1m>0)   score+=6;
-  if (d.trend5m<0&&d.trend1m<0)   score-=6;
+  if (d.trend5m > 0 && d.trend1m > 0) score += 6;
+  if (d.trend5m < 0 && d.trend1m < 0) score -= 6;
   // RSI signal
-  if (d.rsi<30)       score-=10; // oversold — potential bounce
-  else if (d.rsi>70)  score+=5;  // overbought — momentum
-  else if (d.rsi>55)  score+=3;
+  if (d.rsi < 30) score -= 10; // oversold — potential bounce
+  else if (d.rsi > 70) score += 5;  // overbought — momentum
+  else if (d.rsi > 55) score += 3;
   // MACD
-  if (d.macd?.hist>0) score+=5;
-  else                score-=5;
+  if (d.macd?.hist > 0) score += 5;
+  else score -= 5;
   // Bollinger %B
-  if (d.bb?.pct>80)   score+=6;  // near upper band — strong uptrend
-  else if (d.bb?.pct<20) score-=6; // near lower band
+  if (d.bb?.pct > 80) score += 6;  // near upper band — strong uptrend
+  else if (d.bb?.pct < 20) score -= 6; // near lower band
   // Volume
-  if (d.vol?.trend==='rising') score+=5;
-  if (d.vol?.spike)            score+=3;
+  if (d.vol?.trend === 'rising') score += 5;
+  if (d.vol?.spike) score += 3;
   // Volatility penalty — high vol = unpredictable
-  if (d.volatility>0.15)      score-=8;
-  else if (d.volatility>0.10) score-=4;
-  return Math.max(0,Math.min(100,Math.round(score)));
+  if (d.volatility > 0.15) score -= 8;
+  else if (d.volatility > 0.10) score -= 4;
+  return Math.max(0, Math.min(100, Math.round(score)));
 }
 
 // Interpret signal direction
 function signalLabel(score) {
-  if (score>=75) return G+BOLD+'▲▲ STRONG UP'+X;
-  if (score>=62) return G+'▲ UP'+X;
-  if (score>=55) return Y+'↗ SLIGHT UP'+X;
-  if (score>=45) return D+'→ NEUTRAL'+X;
-  if (score>=38) return Y+'↘ SLIGHT DN'+X;
-  if (score>=25) return R+'▼ DOWN'+X;
-  return R+BOLD+'▼▼ STRONG DN'+X;
+  if (score >= 75) return G + BOLD + '▲▲ STRONG UP' + X;
+  if (score >= 62) return G + '▲ UP' + X;
+  if (score >= 55) return Y + '↗ SLIGHT UP' + X;
+  if (score >= 45) return D + '→ NEUTRAL' + X;
+  if (score >= 38) return Y + '↘ SLIGHT DN' + X;
+  if (score >= 25) return R + '▼ DOWN' + X;
+  return R + BOLD + '▼▼ STRONG DN' + X;
 }
 
 // ── External Intelligence APIs ───────────────────────────────────────────────
 async function fetchFearGreed() {
   // Alternative.me Fear & Greed Index — free, no auth
   try {
-    const r=await fetch('https://api.alternative.me/fng/?limit=2');
-    const d=await r.json();
-    const cur=d?.data?.[0];
-    const prev=d?.data?.[1];
+    const r = await fetch('https://api.alternative.me/fng/?limit=2');
+    const d = await r.json();
+    const cur = d?.data?.[0];
+    const prev = d?.data?.[1];
     if (!cur) return null;
     return {
-      value:      parseInt(cur.value),
-      label:      cur.value_classification,
-      prevValue:  prev?parseInt(prev.value):null,
-      direction:  prev?(parseInt(cur.value)-parseInt(prev.value)):0
+      value: parseInt(cur.value),
+      label: cur.value_classification,
+      prevValue: prev ? parseInt(prev.value) : null,
+      direction: prev ? (parseInt(cur.value) - parseInt(prev.value)) : 0
     };
   } catch { return null; }
 }
@@ -2504,10 +2629,10 @@ async function fetchCryptoNews() {
     const bearWords = /crash|hack|ban|fraud|scam|dump|plunge|collapse|bankrupt|sec sue|arrest|exploit/i;
     const bullWords = /surge|rally|etf approv|record|breakout|adoption|bullish|soar|pump|ath|approve/i;
     return posts.map(p => ({
-      title:      p.title,
-      source:     p.source || '?',
-      sentiment:  bearWords.test(p.title) ? 'BEARISH' : bullWords.test(p.title) ? 'BULLISH' : 'NEUTRAL',
-      ts:         new Date((p.published_on||0) * 1000).toISOString(),
+      title: p.title,
+      source: p.source || '?',
+      sentiment: bearWords.test(p.title) ? 'BEARISH' : bullWords.test(p.title) ? 'BULLISH' : 'NEUTRAL',
+      ts: new Date((p.published_on || 0) * 1000).toISOString(),
       currencies: (p.categories || '').split('|').filter(c => /BTC|ETH|SOL|XRP/i.test(c)).join(',') || 'CRYPTO'
     }));
   } catch { return null; }
@@ -2515,20 +2640,20 @@ async function fetchCryptoNews() {
 
 async function fetchFundingRates() {
   // Binance futures funding rates — tells if market is over-leveraged
-  const syms=['BTCUSDT','ETHUSDT','SOLUSDT'];
-  const result={};
-  await Promise.all(syms.map(async sym=>{
+  const syms = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+  const result = {};
+  await Promise.all(syms.map(async sym => {
     try {
-      const r=await fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${sym}&limit=3`);
-      const d=await r.json();
-      if (!Array.isArray(d)||!d.length) return;
-      const latest=parseFloat(d[d.length-1].fundingRate)*100; // as percentage
-      result[sym]={
-        rate:    latest,
-        label:   latest>0.05?'LONGS PAYING (overbought)':latest<-0.05?'SHORTS PAYING (oversold)':'NEUTRAL',
-        signal:  latest>0.1?'bearish':latest<-0.05?'bullish':'neutral'
+      const r = await fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${sym}&limit=3`);
+      const d = await r.json();
+      if (!Array.isArray(d) || !d.length) return;
+      const latest = parseFloat(d[d.length - 1].fundingRate) * 100; // as percentage
+      result[sym] = {
+        rate: latest,
+        label: latest > 0.05 ? 'LONGS PAYING (overbought)' : latest < -0.05 ? 'SHORTS PAYING (oversold)' : 'NEUTRAL',
+        signal: latest > 0.1 ? 'bearish' : latest < -0.05 ? 'bullish' : 'neutral'
       };
-    } catch {}
+    } catch { }
   }));
   return result;
 }
@@ -2536,45 +2661,45 @@ async function fetchFundingRates() {
 async function fetchOrderBookWalls(symbol) {
   // Micro-structure analysis: detect walls within 0.5% of price
   try {
-    const r=await fetch(`${BINANCE_API}/depth?symbol=${symbol}&limit=20`);
-    const d=await r.json();
-    if (!d?.bids||!d?.asks) return null;
-    const bids=d.bids.map(b=>({ price:parseFloat(b[0]), qty:parseFloat(b[1]) }));
-    const asks=d.asks.map(a=>({ price:parseFloat(a[0]), qty:parseFloat(a[1]) }));
+    const r = await fetch(`${BINANCE_API}/depth?symbol=${symbol}&limit=20`);
+    const d = await r.json();
+    if (!d?.bids || !d?.asks) return null;
+    const bids = d.bids.map(b => ({ price: parseFloat(b[0]), qty: parseFloat(b[1]) }));
+    const asks = d.asks.map(a => ({ price: parseFloat(a[0]), qty: parseFloat(a[1]) }));
     const midPrice = (bids[0].price + asks[0].price) / 2;
-    const range05  = midPrice * 0.005; // 0.5% range
+    const range05 = midPrice * 0.005; // 0.5% range
 
     // Filter to walls within 0.5% of price
-    const nearBids = bids.filter(b=>midPrice-b.price <= range05);
-    const nearAsks = asks.filter(a=>a.price-midPrice <= range05);
-    const bidVol   = nearBids.reduce((s,b)=>s+b.qty*b.price,0);
-    const askVol   = nearAsks.reduce((s,a)=>s+a.qty*a.price,0);
-    const totalVol = bidVol+askVol;
+    const nearBids = bids.filter(b => midPrice - b.price <= range05);
+    const nearAsks = asks.filter(a => a.price - midPrice <= range05);
+    const bidVol = nearBids.reduce((s, b) => s + b.qty * b.price, 0);
+    const askVol = nearAsks.reduce((s, a) => s + a.qty * a.price, 0);
+    const totalVol = bidVol + askVol;
 
     // Biggest walls
-    const topBid=bids.reduce((a,b)=>b.qty>a.qty?b:a, bids[0]);
-    const topAsk=asks.reduce((a,b)=>b.qty>a.qty?b:a, asks[0]);
+    const topBid = bids.reduce((a, b) => b.qty > a.qty ? b : a, bids[0]);
+    const topAsk = asks.reduce((a, b) => b.qty > a.qty ? b : a, asks[0]);
 
     // Sell wall trap detection: sell wall within 0.5% that is 2x+ the bid volume
     const sellWallTrap = askVol > bidVol * 2 && nearAsks.length > 0;
-    const buyWallTrap  = bidVol > askVol * 2 && nearBids.length > 0;
+    const buyWallTrap = bidVol > askVol * 2 && nearBids.length > 0;
     // Distance of biggest wall from price
-    const askWallDist = topAsk.price > 0 ? ((topAsk.price - midPrice)/midPrice*100).toFixed(2) : '?';
-    const bidWallDist = topBid.price > 0 ? ((midPrice - topBid.price)/midPrice*100).toFixed(2) : '?';
+    const askWallDist = topAsk.price > 0 ? ((topAsk.price - midPrice) / midPrice * 100).toFixed(2) : '?';
+    const bidWallDist = topBid.price > 0 ? ((midPrice - topBid.price) / midPrice * 100).toFixed(2) : '?';
 
     return {
-      support:      topBid.price,
-      resistance:   topAsk.price,
-      bidWall:      topBid.qty,
-      askWall:      topAsk.qty,
-      buyPressure:  totalVol>0 ? Math.round(bidVol/totalVol*100) : 50,
-      spread:       ((asks[0].price-bids[0].price)/bids[0].price*100).toFixed(4),
+      support: topBid.price,
+      resistance: topAsk.price,
+      bidWall: topBid.qty,
+      askWall: topAsk.qty,
+      buyPressure: totalVol > 0 ? Math.round(bidVol / totalVol * 100) : 50,
+      spread: ((asks[0].price - bids[0].price) / bids[0].price * 100).toFixed(4),
       // New: micro-structure trap detection
       sellWallTrap,   // true = massive sell wall 2x bids within 0.5% → price bounces DOWN
       buyWallTrap,    // true = massive buy wall 2x asks within 0.5% → price bounces UP
-      bidVolUSD:    Math.round(bidVol),
-      askVolUSD:    Math.round(askVol),
-      ratio:        totalVol>0 ? parseFloat((bidVol/askVol).toFixed(2)) : 1,
+      bidVolUSD: Math.round(bidVol),
+      askVolUSD: Math.round(askVol),
+      ratio: totalVol > 0 ? parseFloat((bidVol / askVol).toFixed(2)) : 1,
       askWallDist,  // % distance of biggest sell wall from price
       bidWallDist   // % distance of biggest buy wall from price
     };
@@ -2591,44 +2716,44 @@ async function fetchAllPrices() {
 
   const result = { _meta: { fearGreed, fundingRates, cryptoNews } };
 
-  await Promise.all(SYMBOLS.map(async sym=>{
+  await Promise.all(SYMBOLS.map(async sym => {
     const [klines1m, klines5m, klines15m, klines1h, orderBook] = await Promise.all([
-      fetchBinanceKlines(sym,'1m',30),
-      fetchBinanceKlines(sym,'5m',30),
-      fetchBinanceKlines(sym,'15m',20),
-      fetchBinanceKlines(sym,'1h',8),   // ← macro trend (8 hourly candles)
+      fetchBinanceKlines(sym, '1m', 30),
+      fetchBinanceKlines(sym, '5m', 30),
+      fetchBinanceKlines(sym, '15m', 20),
+      fetchBinanceKlines(sym, '1h', 8),   // ← macro trend (8 hourly candles)
       fetchOrderBookWalls(sym)
     ]);
     if (!klines1m.length) return;
-    const closes1m  = klines1m.map(k=>k.close);
-    const closes5m  = klines5m.map(k=>k.close);
-    const closes15m = klines15m.map(k=>k.close);
-    const closes1h  = klines1h.map(k=>k.close);
-    const price     = closes1m[closes1m.length-1];
-    const open24    = closes5m.length>0?closes5m[0]:price;
-    const macd      = calcMACD(closes5m);
-    const bb        = calcBollingerBands(closes5m);
-    const vol       = calcVolumeProfile(klines1m);
-    const vwap5m    = calcVWAP(klines5m);
-    const volAccel  = calcVolAccel(klines5m);
-    const funding   = fundingRates[sym]||null;
+    const closes1m = klines1m.map(k => k.close);
+    const closes5m = klines5m.map(k => k.close);
+    const closes15m = klines15m.map(k => k.close);
+    const closes1h = klines1h.map(k => k.close);
+    const price = closes1m[closes1m.length - 1];
+    const open24 = closes5m.length > 0 ? closes5m[0] : price;
+    const macd = calcMACD(closes5m);
+    const bb = calcBollingerBands(closes5m);
+    const vol = calcVolumeProfile(klines1m);
+    const vwap5m = calcVWAP(klines5m);
+    const volAccel = calcVolAccel(klines5m);
+    const funding = fundingRates[sym] || null;
     // Order book imbalance: bid/ask ratio > 1.3 = buy wall dominant
     const obImbalance = orderBook ? (orderBook.buyPressure > 60 ? 'BUY_WALL' : orderBook.buyPressure < 40 ? 'SELL_WALL' : 'BALANCED') : 'UNKNOWN';
     const d = {
       price,
-      chg:       ((price-open24)/open24)*100,
-      closes:    closes1m,
+      chg: ((price - open24) / open24) * 100,
+      closes: closes1m,
       closes5m,
       closes15m,
       closes1h,
-      trend1m:   calcTrend(closes1m),
-      trend5m:   calcTrend(closes5m),
-      trend15m:  calcTrend(closes15m),
-      trend1h:   closes1h.length>=2 ? calcTrend(closes1h) : 0,
-      volatility:calcVolatility(closes1m),
-      rsi:       calcRSI(closes1m),
-      rsi5m:     calcRSI(closes5m),
-      rsi1h:     closes1h.length>=14 ? calcRSI(closes1h) : null,
+      trend1m: calcTrend(closes1m),
+      trend5m: calcTrend(closes5m),
+      trend15m: calcTrend(closes15m),
+      trend1h: closes1h.length >= 2 ? calcTrend(closes1h) : 0,
+      volatility: calcVolatility(closes1m),
+      rsi: calcRSI(closes1m),
+      rsi5m: calcRSI(closes5m),
+      rsi1h: closes1h.length >= 14 ? calcRSI(closes1h) : null,
       macd,
       bb,
       vol,
@@ -2648,7 +2773,7 @@ async function fetchAllPrices() {
 // ── Polymarket helpers ───────────────────────────────────────────────────────
 async function polyFetch(endpoint) {
   try {
-    const r = await fetch(POLYMARKET_API+endpoint, { headers:{'Accept':'application/json'} });
+    const r = await fetch(POLYMARKET_API + endpoint, { headers: { 'Accept': 'application/json' } });
     if (!r.ok) return null;
     return await r.json();
   } catch { return null; }
@@ -2659,102 +2784,102 @@ const CRYPTO_RE = /bitcoin|ethereum|solana|btc|eth|sol|xrp|ripple|crypto|above|b
 
 async function fetchPolymarkets(strat) {
   const hoursMax = strat.maxHoursToClose || 168;
-  const nowMs    = Date.now();
-  const maxMs    = nowMs + Math.max(hoursMax, 720) * 3600 * 1000;
-  const seen     = new Set();
-  const all      = [];
+  const nowMs = Date.now();
+  const maxMs = nowMs + Math.max(hoursMax, 720) * 3600 * 1000;
+  const seen = new Set();
+  const all = [];
 
   // ── Priority 1: Live 5M/15M/1H/4H "Up or Down" markets — BTC, ETH, SOL ──
   // Fetch WITHOUT ordering to get ALL active events including live ones
-  await Promise.all(['bitcoin','ethereum','solana'].map(async asset=>{
+  await Promise.all(['bitcoin', 'ethereum', 'solana'].map(async asset => {
     const data = await polyFetch(`/events?tag_slug=${asset}&limit=200&active=true&closed=false`);
-    const events = Array.isArray(data)?data:(data?.events||data?.data||[]);
+    const events = Array.isArray(data) ? data : (data?.events || data?.data || []);
     for (const ev of events) {
-      if (!/up.or.down/i.test(ev.title||'')) continue;
-      for (const m of (ev.markets||[])) {
+      if (!/up.or.down/i.test(ev.title || '')) continue;
+      for (const m of (ev.markets || [])) {
         if (seen.has(m.id)) continue;
         seen.add(m.id);
-        const endMs = m.endDate?new Date(m.endDate).getTime()
-          :ev.endDate?new Date(ev.endDate).getTime():0;
-        if (endMs<=nowMs||endMs>maxMs) continue;
+        const endMs = m.endDate ? new Date(m.endDate).getTime()
+          : ev.endDate ? new Date(ev.endDate).getTime() : 0;
+        if (endMs <= nowMs || endMs > maxMs) continue;
         if (!m.question) m.question = ev.title;
         m._isUpDown = true;
-        m._asset    = asset;
+        m._asset = asset;
         all.push(m);
       }
     }
   }));
 
   // ── Priority 2: Bulk markets sorted by volume, client-side crypto filter ──
-  await Promise.all([0,100,200,300,400].map(async offset=>{
+  await Promise.all([0, 100, 200, 300, 400].map(async offset => {
     const data = await polyFetch(`/markets?limit=100&active=true&closed=false&order=volumeNum&ascending=false&offset=${offset}`);
-    const list = Array.isArray(data)?data:(data?.markets||[]);
+    const list = Array.isArray(data) ? data : (data?.markets || []);
     for (const m of list) {
       if (seen.has(m.id)) continue;
-      const title = (m.question||m.title||'');
+      const title = (m.question || m.title || '');
       if (!CRYPTO_RE.test(title)) continue;
       seen.add(m.id);
-      const endMs = m.endDate?new Date(m.endDate).getTime():0;
-      if (endMs<=nowMs||endMs>maxMs) continue;
+      const endMs = m.endDate ? new Date(m.endDate).getTime() : 0;
+      if (endMs <= nowMs || endMs > maxMs) continue;
       all.push(m);
     }
   }));
 
   // ── Sort: 5M Up/Down first (shortest close), then by time ascending ──
-  all.sort((a,b)=>{
+  all.sort((a, b) => {
     // Up/Down markets always float to top
-    if (a._isUpDown&&!b._isUpDown) return -1;
-    if (!a._isUpDown&&b._isUpDown) return 1;
-    const aMs = a.endDate?new Date(a.endDate).getTime():maxMs;
-    const bMs = b.endDate?new Date(b.endDate).getTime():maxMs;
-    return aMs-bMs;
+    if (a._isUpDown && !b._isUpDown) return -1;
+    if (!a._isUpDown && b._isUpDown) return 1;
+    const aMs = a.endDate ? new Date(a.endDate).getTime() : maxMs;
+    const bMs = b.endDate ? new Date(b.endDate).getTime() : maxMs;
+    return aMs - bMs;
   });
 
   return all;
 }
 
-function normalizePolymarket(raw, prices={}) {
-  const id      = String(raw.id||raw.conditionId||'');
-  const title   = raw.question||raw.title||raw._eventTitle||'Unknown';
+function normalizePolymarket(raw, prices = {}) {
+  const id = String(raw.id || raw.conditionId || '');
+  const title = raw.question || raw.title || raw._eventTitle || 'Unknown';
 
   // Parse outcome prices — outcomePrices[0] = YES/UP price, [1] = NO/DOWN price
   let yesPrice = 0.5;
   try {
     if (raw.outcomePrices) {
-      const op = typeof raw.outcomePrices==='string'?JSON.parse(raw.outcomePrices):raw.outcomePrices;
-      if (Array.isArray(op)&&op.length>=2) {
+      const op = typeof raw.outcomePrices === 'string' ? JSON.parse(raw.outcomePrices) : raw.outcomePrices;
+      if (Array.isArray(op) && op.length >= 2) {
         const p0 = parseFloat(op[0]);
         const p1 = parseFloat(op[1]);
         // Use bestBid if available (more accurate live price)
-        if (raw.bestBid!=null) yesPrice = parseFloat(raw.bestBid)||0.5;
-        else yesPrice = isNaN(p0)?0.5:p0;
+        if (raw.bestBid != null) yesPrice = parseFloat(raw.bestBid) || 0.5;
+        else yesPrice = isNaN(p0) ? 0.5 : p0;
       }
-    } else if (raw.bestBid!=null) {
-      yesPrice = parseFloat(raw.bestBid)||0.5;
+    } else if (raw.bestBid != null) {
+      yesPrice = parseFloat(raw.bestBid) || 0.5;
     }
-  } catch {}
+  } catch { }
 
   // Skip markets that are already decided (price at extreme = resolved/nearly resolved)
   if (yesPrice >= 0.85 || yesPrice <= 0.15) return null;
 
-  const liquidity = parseFloat(raw.liquidityNum||raw.liquidity||raw.volume||0);
-  const closesAt  = raw.endDate||null;
+  const liquidity = parseFloat(raw.liquidityNum || raw.liquidity || raw.volume || 0);
+  const closesAt = raw.endDate || null;
 
   // Detect which asset
   const text = title.toLowerCase();
   let asset = 'other';
-  if (/btc|bitcoin/.test(text)) asset='btc';
-  else if (/eth|ethereum/.test(text)) asset='eth';
-  else if (/sol|solana/.test(text)) asset='sol';
-  else if (/xrp|ripple/.test(text)) asset='xrp';
+  if (/btc|bitcoin/.test(text)) asset = 'btc';
+  else if (/eth|ethereum/.test(text)) asset = 'eth';
+  else if (/sol|solana/.test(text)) asset = 'sol';
+  else if (/xrp|ripple/.test(text)) asset = 'xrp';
 
   // Detect window length from title (5min, 15min, 1h, 4h)
   let windowMin = null;
   const wMatch = title.match(/(\d+):(\d+)\w*[-–](\d+):(\d+)/);
   if (wMatch) {
-    const s = parseInt(wMatch[1])*60+parseInt(wMatch[2]);
-    const e = parseInt(wMatch[3])*60+parseInt(wMatch[4]);
-    windowMin = Math.abs(e-s)||5;
+    const s = parseInt(wMatch[1]) * 60 + parseInt(wMatch[2]);
+    const e = parseInt(wMatch[3]) * 60 + parseInt(wMatch[4]);
+    windowMin = Math.abs(e - s) || 5;
   } else if (/\b9PM ET\b|\b9pm ET\b/.test(title)) {
     windowMin = 60;
   } else if (/\b4:00PM-8:00PM\b|\b8:00PM-12:00AM\b/.test(title)) {
@@ -2764,21 +2889,21 @@ function normalizePolymarket(raw, prices={}) {
 
   // Extract price target from title if possible
   const targetMatch = title.match(/\$([0-9,]+)/);
-  const targetPrice = targetMatch?parseFloat(targetMatch[1].replace(/,/g,'')):null;
+  const targetPrice = targetMatch ? parseFloat(targetMatch[1].replace(/,/g, '')) : null;
 
   // Current price data for this asset
-  const symMap = { btc:'BTCUSDT', eth:'ETHUSDT', sol:'SOLUSDT', xrp:'XRPUSDT' };
-  const sym    = symMap[asset];
-  const priceData = sym?prices[sym]:null;
+  const symMap = { btc: 'BTCUSDT', eth: 'ETHUSDT', sol: 'SOLUSDT', xrp: 'XRPUSDT' };
+  const sym = symMap[asset];
+  const priceData = sym ? prices[sym] : null;
 
   // Rough edge hint
   let roughEdge = null;
-  if (targetPrice&&priceData?.price) {
-    const dist = (targetPrice-priceData.price)/priceData.price*100;
-    roughEdge = Math.abs(dist)<1?0.1:Math.abs(dist)<2?0.05:0;
+  if (targetPrice && priceData?.price) {
+    const dist = (targetPrice - priceData.price) / priceData.price * 100;
+    roughEdge = Math.abs(dist) < 1 ? 0.1 : Math.abs(dist) < 2 ? 0.05 : 0;
   }
 
-  return { id, title, yesPrice, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown:raw._isUpDown||false };
+  return { id, title, yesPrice, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2787,101 +2912,101 @@ function normalizePolymarket(raw, prices={}) {
 
 // Child specs: each specializes in one asset/timeframe
 const CHILD_SPECS = [
-  { id:'btc-5min',  asset:'BTCUSDT', assetName:'btc', windowMin:5  },
-  { id:'eth-5min',  asset:'ETHUSDT', assetName:'eth', windowMin:5  },
-  { id:'sol-5min',  asset:'SOLUSDT', assetName:'sol', windowMin:5  },
-  { id:'xrp-5min',  asset:'XRPUSDT', assetName:'xrp', windowMin:5  },
-  { id:'btc-15min', asset:'BTCUSDT', assetName:'btc', windowMin:15 },
-  { id:'eth-15min', asset:'ETHUSDT', assetName:'eth', windowMin:15 },
-  { id:'sol-15min', asset:'SOLUSDT', assetName:'sol', windowMin:15 },
-  { id:'xrp-15min', asset:'XRPUSDT', assetName:'xrp', windowMin:15 },
-  { id:'btc-1hr',   asset:'BTCUSDT', assetName:'btc', windowMin:60 },
-  { id:'eth-1hr',   asset:'ETHUSDT', assetName:'eth', windowMin:60 },
-  { id:'sol-1hr',   asset:'SOLUSDT', assetName:'sol', windowMin:60 },
-  { id:'xrp-1hr',   asset:'XRPUSDT', assetName:'xrp', windowMin:60 },
+  { id: 'btc-5min', asset: 'BTCUSDT', assetName: 'btc', windowMin: 5 },
+  { id: 'eth-5min', asset: 'ETHUSDT', assetName: 'eth', windowMin: 5 },
+  { id: 'sol-5min', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5 },
+  { id: 'xrp-5min', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 5 },
+  { id: 'btc-15min', asset: 'BTCUSDT', assetName: 'btc', windowMin: 15 },
+  { id: 'eth-15min', asset: 'ETHUSDT', assetName: 'eth', windowMin: 15 },
+  { id: 'sol-15min', asset: 'SOLUSDT', assetName: 'sol', windowMin: 15 },
+  { id: 'xrp-15min', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 15 },
+  { id: 'btc-1hr', asset: 'BTCUSDT', assetName: 'btc', windowMin: 60 },
+  { id: 'eth-1hr', asset: 'ETHUSDT', assetName: 'eth', windowMin: 60 },
+  { id: 'sol-1hr', asset: 'SOLUSDT', assetName: 'sol', windowMin: 60 },
+  { id: 'xrp-1hr', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 60 },
 ];
 
 // Simple rule-based signal from Binance data (no Claude needed)
 function childSignal(d) {
-  if (!d) return { dir:'NEUTRAL', conf:40, reason:'no data' };
+  if (!d) return { dir: 'NEUTRAL', conf: 40, reason: 'no data' };
   const bearish = [], bullish = [];
-  if (d.rsi < 35)  bullish.push('RSI oversold '+d.rsi.toFixed(0));
-  if (d.rsi > 65)  bearish.push('RSI overbought '+d.rsi.toFixed(0));
+  if (d.rsi < 35) bullish.push('RSI oversold ' + d.rsi.toFixed(0));
+  if (d.rsi > 65) bearish.push('RSI overbought ' + d.rsi.toFixed(0));
   if (d.macd?.hist < 0) bearish.push('MACD bearish');
   else if (d.macd?.hist > 0) bullish.push('MACD bullish');
-  if (d.trend5m < -0.3)  bearish.push('5m trend '+d.trend5m.toFixed(2)+'%');
-  if (d.trend5m > 0.3)   bullish.push('5m trend +'+d.trend5m.toFixed(2)+'%');
-  if (d.trend15m < -0.5) bearish.push('15m trend '+d.trend15m?.toFixed(2)+'%');
-  if (d.trend15m > 0.5)  bullish.push('15m trend +'+d.trend15m?.toFixed(2)+'%');
-  if (d.vol?.trend==='falling') bearish.push('vol falling');
-  if (d.vol?.spike)             bullish.push('vol spike');
+  if (d.trend5m < -0.3) bearish.push('5m trend ' + d.trend5m.toFixed(2) + '%');
+  if (d.trend5m > 0.3) bullish.push('5m trend +' + d.trend5m.toFixed(2) + '%');
+  if (d.trend15m < -0.5) bearish.push('15m trend ' + d.trend15m?.toFixed(2) + '%');
+  if (d.trend15m > 0.5) bullish.push('15m trend +' + d.trend15m?.toFixed(2) + '%');
+  if (d.vol?.trend === 'falling') bearish.push('vol falling');
+  if (d.vol?.spike) bullish.push('vol spike');
   const score = bullish.length - bearish.length;
-  if (score <= -2) return { dir:'DOWN', conf:Math.min(85, 55+bearish.length*8), reason:bearish.slice(0,3).join(', ') };
-  if (score >= 2)  return { dir:'UP',   conf:Math.min(85, 55+bullish.length*8), reason:bullish.slice(0,3).join(', ') };
-  return { dir:'NEUTRAL', conf:40, reason:'conflicted signals' };
+  if (score <= -2) return { dir: 'DOWN', conf: Math.min(85, 55 + bearish.length * 8), reason: bearish.slice(0, 3).join(', ') };
+  if (score >= 2) return { dir: 'UP', conf: Math.min(85, 55 + bullish.length * 8), reason: bullish.slice(0, 3).join(', ') };
+  return { dir: 'NEUTRAL', conf: 40, reason: 'conflicted signals' };
 }
 
 // Run one child scanner — fetch data, find best market, write intel
 async function runChildScanner(spec, allPrices, allMarkets) {
   try {
-    if (!fs.existsSync(INTEL_DIR)) fs.mkdirSync(INTEL_DIR, { recursive:true });
+    if (!fs.existsSync(INTEL_DIR)) fs.mkdirSync(INTEL_DIR, { recursive: true });
     const priceKey = spec.asset;
-    const d        = allPrices[priceKey];
-    const sig      = childSignal(d);
+    const d = allPrices[priceKey];
+    const sig = childSignal(d);
 
     // Find relevant markets for this child
-    const myMarkets = allMarkets.filter(m=>
-      m.asset===spec.assetName &&
+    const myMarkets = allMarkets.filter(m =>
+      m.asset === spec.assetName &&
       m._isUpDown &&
-      m.windowMin===spec.windowMin &&
+      m.windowMin === spec.windowMin &&
       m.closesAt &&
-      (new Date(m.closesAt)-Date.now()) > 2*60*1000  // >2min to close
-    ).slice(0,5);
+      (new Date(m.closesAt) - Date.now()) > 2 * 60 * 1000  // >2min to close
+    ).slice(0, 5);
 
     // Find best opportunity (market most misaligned with signal)
     let bestMarket = null, bestEdge = 0;
     for (const m of myMarkets) {
       // If signal says DOWN, betting NO. Edge = implied NO prob - 50%
-      const impliedEdge = sig.dir==='DOWN' ? (1-m.yesPrice) - 0.5
-                        : sig.dir==='UP'   ? m.yesPrice - 0.5 : 0;
+      const impliedEdge = sig.dir === 'DOWN' ? (1 - m.yesPrice) - 0.5
+        : sig.dir === 'UP' ? m.yesPrice - 0.5 : 0;
       if (impliedEdge > bestEdge) { bestEdge = impliedEdge; bestMarket = m; }
     }
 
     // Log insight if strong signal — bottom-up learning
-    if (sig.dir!=='NEUTRAL' && sig.conf>=65) {
+    if (sig.dir !== 'NEUTRAL' && sig.conf >= 65) {
       logChildInsight(spec.id, spec.assetName, sig.reason, sig.dir, 1);
     }
 
     const intel = {
-      spec:      spec.id,
-      asset:     spec.assetName,
+      spec: spec.id,
+      asset: spec.assetName,
       windowMin: spec.windowMin,
-      ts:        new Date().toISOString(),
-      price:     d?.price,
-      signal:    sig,
+      ts: new Date().toISOString(),
+      price: d?.price,
+      signal: sig,
       bestMarket: bestMarket ? {
-        id:       bestMarket.id,
-        title:    bestMarket.title,
+        id: bestMarket.id,
+        title: bestMarket.title,
         yesPrice: bestMarket.yesPrice,
-        liquidity:bestMarket.liquidity,
-        closesIn: Math.round((new Date(bestMarket.closesAt)-Date.now())/60000),
-        suggestedSide: sig.dir==='DOWN'?'NO':'YES',
+        liquidity: bestMarket.liquidity,
+        closesIn: Math.round((new Date(bestMarket.closesAt) - Date.now()) / 60000),
+        suggestedSide: sig.dir === 'DOWN' ? 'NO' : 'YES',
         impliedEdge: parseFloat(bestEdge.toFixed(3))
       } : null,
       markets: myMarkets.length,
-      intelScore: d?.intelScore||50
+      intelScore: d?.intelScore || 50
     };
 
     // Rolling scoreHistory for death-by-incompetence detection
-    const intelPath = path.join(INTEL_DIR, spec.id+'.json');
+    const intelPath = path.join(INTEL_DIR, spec.id + '.json');
     let prevHistory = [];
     if (fs.existsSync(intelPath)) {
-      try { prevHistory = JSON.parse(fs.readFileSync(intelPath,'utf8')).scoreHistory || []; } catch {}
+      try { prevHistory = JSON.parse(fs.readFileSync(intelPath, 'utf8')).scoreHistory || []; } catch { }
     }
     intel.scoreHistory = [...prevHistory, intel.intelScore].slice(-20);
-    fs.writeFileSync(intelPath, JSON.stringify(intel,null,2));
+    fs.writeFileSync(intelPath, JSON.stringify(intel, null, 2));
     return intel;
-  } catch(e) { return null; }
+  } catch (e) { return null; }
 }
 
 // ── Award EXP to a child when father wins on the asset that child reported ────
@@ -2898,7 +3023,7 @@ function awardChildExp(asset, won) {
     try {
       if (!fs.existsSync(intelPath)) continue;
       const intel = JSON.parse(fs.readFileSync(intelPath, 'utf8'));
-      const age   = (Date.now() - new Date(intel.ts).getTime()) / 60000;
+      const age = (Date.now() - new Date(intel.ts).getTime()) / 60000;
       if (age > 15) continue; // intel must be recent
       if (intel.signal?.dir === 'NEUTRAL') continue;
       // Check if signal was aligned with outcome
@@ -2912,110 +3037,110 @@ function awardChildExp(asset, won) {
       if (won) cp.correctSignals = (cp.correctSignals || 0) + 1;
       fs.writeFileSync(childPnlPath, JSON.stringify(cp, null, 2));
       changed = true;
-    } catch {}
+    } catch { }
   }
   if (changed) savePnL(pnl);
 }
 
 // ── Grandchild specs: sub-specializations per parent spec ────────────────────
 const GRANDCHILD_SPECS = {
-  'BTC-5min':  [
-    { id:'btc-1min-mom',  asset:'BTCUSDT', assetName:'btc', windowMin:5,  focus:'1min-momentum' },
-    { id:'btc-5min-vol',  asset:'BTCUSDT', assetName:'btc', windowMin:5,  focus:'volume-spike'  },
+  'BTC-5min': [
+    { id: 'btc-1min-mom', asset: 'BTCUSDT', assetName: 'btc', windowMin: 5, focus: '1min-momentum' },
+    { id: 'btc-5min-vol', asset: 'BTCUSDT', assetName: 'btc', windowMin: 5, focus: 'volume-spike' },
   ],
-  'ETH-5min':  [
-    { id:'eth-1min-mom',  asset:'ETHUSDT', assetName:'eth', windowMin:5,  focus:'1min-momentum' },
-    { id:'eth-5min-rsi',  asset:'ETHUSDT', assetName:'eth', windowMin:5,  focus:'rsi-extreme'   },
+  'ETH-5min': [
+    { id: 'eth-1min-mom', asset: 'ETHUSDT', assetName: 'eth', windowMin: 5, focus: '1min-momentum' },
+    { id: 'eth-5min-rsi', asset: 'ETHUSDT', assetName: 'eth', windowMin: 5, focus: 'rsi-extreme' },
   ],
-  'SOL-5min':  [
-    { id:'sol-1min-mom',  asset:'SOLUSDT', assetName:'sol', windowMin:5,  focus:'1min-momentum' },
-    { id:'sol-orderbook', asset:'SOLUSDT', assetName:'sol', windowMin:5,  focus:'orderbook'     },
+  'SOL-5min': [
+    { id: 'sol-1min-mom', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5, focus: '1min-momentum' },
+    { id: 'sol-orderbook', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5, focus: 'orderbook' },
   ],
-  'XRP-5min':  [
-    { id:'xrp-5min-mom',  asset:'XRPUSDT', assetName:'xrp', windowMin:5,  focus:'1min-momentum' },
-    { id:'xrp-5min-vol',  asset:'XRPUSDT', assetName:'xrp', windowMin:5,  focus:'volume-spike'  },
+  'XRP-5min': [
+    { id: 'xrp-5min-mom', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 5, focus: '1min-momentum' },
+    { id: 'xrp-5min-vol', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 5, focus: 'volume-spike' },
   ],
   'BTC-15min': [
-    { id:'btc-15min-bb',  asset:'BTCUSDT', assetName:'btc', windowMin:15, focus:'bollinger'     },
-    { id:'btc-15min-macd',asset:'BTCUSDT', assetName:'btc', windowMin:15, focus:'macd-cross'    },
+    { id: 'btc-15min-bb', asset: 'BTCUSDT', assetName: 'btc', windowMin: 15, focus: 'bollinger' },
+    { id: 'btc-15min-macd', asset: 'BTCUSDT', assetName: 'btc', windowMin: 15, focus: 'macd-cross' },
   ],
   'ETH-15min': [
-    { id:'eth-15min-bb',  asset:'ETHUSDT', assetName:'eth', windowMin:15, focus:'bollinger'     },
-    { id:'eth-15min-vol', asset:'ETHUSDT', assetName:'eth', windowMin:15, focus:'volume-profile'},
+    { id: 'eth-15min-bb', asset: 'ETHUSDT', assetName: 'eth', windowMin: 15, focus: 'bollinger' },
+    { id: 'eth-15min-vol', asset: 'ETHUSDT', assetName: 'eth', windowMin: 15, focus: 'volume-profile' },
   ],
   'SOL-15min': [
-    { id:'sol-15min-bb',  asset:'SOLUSDT', assetName:'sol', windowMin:15, focus:'bollinger'     },
-    { id:'sol-15min-macd',asset:'SOLUSDT', assetName:'sol', windowMin:15, focus:'macd-cross'    },
+    { id: 'sol-15min-bb', asset: 'SOLUSDT', assetName: 'sol', windowMin: 15, focus: 'bollinger' },
+    { id: 'sol-15min-macd', asset: 'SOLUSDT', assetName: 'sol', windowMin: 15, focus: 'macd-cross' },
   ],
   'XRP-15min': [
-    { id:'xrp-15min-bb',  asset:'XRPUSDT', assetName:'xrp', windowMin:15, focus:'bollinger'     },
-    { id:'xrp-15min-rsi', asset:'XRPUSDT', assetName:'xrp', windowMin:15, focus:'rsi-extreme'   },
+    { id: 'xrp-15min-bb', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 15, focus: 'bollinger' },
+    { id: 'xrp-15min-rsi', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 15, focus: 'rsi-extreme' },
   ],
-  'BTC-1hr':   [
-    { id:'btc-1hr-trend', asset:'BTCUSDT', assetName:'btc', windowMin:60, focus:'trend-follow'  },
-    { id:'btc-1hr-rev',   asset:'BTCUSDT', assetName:'btc', windowMin:60, focus:'mean-reversion'},
+  'BTC-1hr': [
+    { id: 'btc-1hr-trend', asset: 'BTCUSDT', assetName: 'btc', windowMin: 60, focus: 'trend-follow' },
+    { id: 'btc-1hr-rev', asset: 'BTCUSDT', assetName: 'btc', windowMin: 60, focus: 'mean-reversion' },
   ],
-  'ETH-1hr':   [
-    { id:'eth-1hr-trend', asset:'ETHUSDT', assetName:'eth', windowMin:60, focus:'trend-follow'  },
-    { id:'eth-1hr-bb',    asset:'ETHUSDT', assetName:'eth', windowMin:60, focus:'bollinger'     },
+  'ETH-1hr': [
+    { id: 'eth-1hr-trend', asset: 'ETHUSDT', assetName: 'eth', windowMin: 60, focus: 'trend-follow' },
+    { id: 'eth-1hr-bb', asset: 'ETHUSDT', assetName: 'eth', windowMin: 60, focus: 'bollinger' },
   ],
-  'SOL-1hr':   [
-    { id:'sol-1hr-trend', asset:'SOLUSDT', assetName:'sol', windowMin:60, focus:'trend-follow'  },
-    { id:'sol-1hr-vol',   asset:'SOLUSDT', assetName:'sol', windowMin:60, focus:'volume-spike'  },
+  'SOL-1hr': [
+    { id: 'sol-1hr-trend', asset: 'SOLUSDT', assetName: 'sol', windowMin: 60, focus: 'trend-follow' },
+    { id: 'sol-1hr-vol', asset: 'SOLUSDT', assetName: 'sol', windowMin: 60, focus: 'volume-spike' },
   ],
-  'XRP-1hr':   [
-    { id:'xrp-1hr-trend', asset:'XRPUSDT', assetName:'xrp', windowMin:60, focus:'trend-follow'  },
-    { id:'xrp-1hr-rsi',   asset:'XRPUSDT', assetName:'xrp', windowMin:60, focus:'rsi-extreme'   },
+  'XRP-1hr': [
+    { id: 'xrp-1hr-trend', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 60, focus: 'trend-follow' },
+    { id: 'xrp-1hr-rsi', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 60, focus: 'rsi-extreme' },
   ],
 };
 
 // Grandchild signal — same rule-based but focuses on one indicator
 function grandchildSignal(d, focus) {
-  if (!d) return { dir:'NEUTRAL', conf:40, reason:'no data' };
+  if (!d) return { dir: 'NEUTRAL', conf: 40, reason: 'no data' };
   if (focus === '1min-momentum') {
-    if (d.trend1m < -0.2) return { dir:'DOWN', conf:65, reason:'1m bearish '+d.trend1m.toFixed(2)+'%' };
-    if (d.trend1m >  0.2) return { dir:'UP',   conf:65, reason:'1m bullish +'+d.trend1m.toFixed(2)+'%' };
-    return { dir:'NEUTRAL', conf:40, reason:'1m flat' };
+    if (d.trend1m < -0.2) return { dir: 'DOWN', conf: 65, reason: '1m bearish ' + d.trend1m.toFixed(2) + '%' };
+    if (d.trend1m > 0.2) return { dir: 'UP', conf: 65, reason: '1m bullish +' + d.trend1m.toFixed(2) + '%' };
+    return { dir: 'NEUTRAL', conf: 40, reason: '1m flat' };
   }
   if (focus === 'volume-spike') {
-    if (d.vol?.spike && d.trend5m < 0) return { dir:'DOWN', conf:70, reason:'vol spike bearish' };
-    if (d.vol?.spike && d.trend5m > 0) return { dir:'UP',   conf:70, reason:'vol spike bullish' };
-    return { dir:'NEUTRAL', conf:40, reason:'no vol spike' };
+    if (d.vol?.spike && d.trend5m < 0) return { dir: 'DOWN', conf: 70, reason: 'vol spike bearish' };
+    if (d.vol?.spike && d.trend5m > 0) return { dir: 'UP', conf: 70, reason: 'vol spike bullish' };
+    return { dir: 'NEUTRAL', conf: 40, reason: 'no vol spike' };
   }
   if (focus === 'rsi-extreme') {
-    if (d.rsi < 30) return { dir:'UP',   conf:72, reason:'RSI oversold '+d.rsi.toFixed(0) };
-    if (d.rsi > 70) return { dir:'DOWN', conf:72, reason:'RSI overbought '+d.rsi.toFixed(0) };
-    return { dir:'NEUTRAL', conf:40, reason:'RSI mid '+d.rsi.toFixed(0) };
+    if (d.rsi < 30) return { dir: 'UP', conf: 72, reason: 'RSI oversold ' + d.rsi.toFixed(0) };
+    if (d.rsi > 70) return { dir: 'DOWN', conf: 72, reason: 'RSI overbought ' + d.rsi.toFixed(0) };
+    return { dir: 'NEUTRAL', conf: 40, reason: 'RSI mid ' + d.rsi.toFixed(0) };
   }
   if (focus === 'bollinger') {
-    if ((d.bb?.pct||50) < 15) return { dir:'UP',   conf:68, reason:'BB lower band touch' };
-    if ((d.bb?.pct||50) > 85) return { dir:'DOWN', conf:68, reason:'BB upper band touch' };
-    return { dir:'NEUTRAL', conf:40, reason:'BB mid '+((d.bb?.pct||50).toFixed(0))+'%' };
+    if ((d.bb?.pct || 50) < 15) return { dir: 'UP', conf: 68, reason: 'BB lower band touch' };
+    if ((d.bb?.pct || 50) > 85) return { dir: 'DOWN', conf: 68, reason: 'BB upper band touch' };
+    return { dir: 'NEUTRAL', conf: 40, reason: 'BB mid ' + ((d.bb?.pct || 50).toFixed(0)) + '%' };
   }
   if (focus === 'macd-cross') {
     const hist = d.macd?.hist || 0;
-    if (hist < -0.005) return { dir:'DOWN', conf:66, reason:'MACD bearish cross' };
-    if (hist >  0.005) return { dir:'UP',   conf:66, reason:'MACD bullish cross' };
-    return { dir:'NEUTRAL', conf:40, reason:'MACD neutral' };
+    if (hist < -0.005) return { dir: 'DOWN', conf: 66, reason: 'MACD bearish cross' };
+    if (hist > 0.005) return { dir: 'UP', conf: 66, reason: 'MACD bullish cross' };
+    return { dir: 'NEUTRAL', conf: 40, reason: 'MACD neutral' };
   }
   if (focus === 'orderbook') {
     const ob = d.orderBook;
-    if (!ob) return { dir:'NEUTRAL', conf:40, reason:'no orderbook' };
-    if (ob.buyPressure > 65) return { dir:'UP',   conf:68, reason:'buy pressure '+ob.buyPressure+'%' };
-    if (ob.buyPressure < 35) return { dir:'DOWN', conf:68, reason:'sell pressure '+(100-ob.buyPressure)+'%' };
-    return { dir:'NEUTRAL', conf:40, reason:'balanced book' };
+    if (!ob) return { dir: 'NEUTRAL', conf: 40, reason: 'no orderbook' };
+    if (ob.buyPressure > 65) return { dir: 'UP', conf: 68, reason: 'buy pressure ' + ob.buyPressure + '%' };
+    if (ob.buyPressure < 35) return { dir: 'DOWN', conf: 68, reason: 'sell pressure ' + (100 - ob.buyPressure) + '%' };
+    return { dir: 'NEUTRAL', conf: 40, reason: 'balanced book' };
   }
   if (focus === 'volume-profile') {
-    if (d.vol?.trend === 'rising' && d.trend15m > 0) return { dir:'UP',   conf:67, reason:'vol+trend rising' };
-    if (d.vol?.trend === 'rising' && d.trend15m < 0) return { dir:'DOWN', conf:67, reason:'vol rising, price down' };
-    return { dir:'NEUTRAL', conf:40, reason:'vol flat' };
+    if (d.vol?.trend === 'rising' && d.trend15m > 0) return { dir: 'UP', conf: 67, reason: 'vol+trend rising' };
+    if (d.vol?.trend === 'rising' && d.trend15m < 0) return { dir: 'DOWN', conf: 67, reason: 'vol rising, price down' };
+    return { dir: 'NEUTRAL', conf: 40, reason: 'vol flat' };
   }
   return childSignal(d);
 }
 
 // ── Spawn grandchildren when ADAN is LVL 4+ and child has enough EXP ─────────
 async function spawnGrandchildren(client) {
-  const pnl    = loadPnL();
+  const pnl = loadPnL();
   const xpData = expProgress(pnl.exp || 0);
   if (xpData.level < 4) return; // nietos solo desde LVL 4 de ADAN
 
@@ -3028,10 +3153,10 @@ async function spawnGrandchildren(client) {
     let cp;
     try { cp = JSON.parse(fs.readFileSync(childPnlPath, 'utf8')); } catch { continue; }
 
-    const childExp     = cp.exp || 0;
-    const gcList       = cp.children || [];
-    const gcSpecs      = GRANDCHILD_SPECS[child.spec] || [];
-    const maxGC        = TREE_RULES.maxChildrenGen2;
+    const childExp = cp.exp || 0;
+    const gcList = cp.children || [];
+    const gcSpecs = GRANDCHILD_SPECS[child.spec] || [];
+    const maxGC = TREE_RULES.maxChildrenGen2;
 
     // Child needs enough EXP and can still grow
     if (childExp < TREE_RULES.childExpToSpawn) continue;
@@ -3049,10 +3174,10 @@ async function spawnGrandchildren(client) {
         messages: [{ role: 'user', content: `Name a micro-scanner AI: focus=${nextGcSpec.focus}, asset=${nextGcSpec.assetName}. One short mythological name in CAPS only.` }]
       });
       gcName = resp.content[0].text.trim().replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 10) || gcName;
-    } catch {}
+    } catch { }
 
-    const gcId      = Date.now().toString();
-    const gcDir     = path.join(childDir, 'children', nextGcSpec.id);
+    const gcId = Date.now().toString();
+    const gcDir = path.join(childDir, 'children', nextGcSpec.id);
     if (!fs.existsSync(gcDir)) fs.mkdirSync(gcDir, { recursive: true });
 
     // ── CROSSOVER DE LINAJES CAMPEONES ─────────────────────────────────────
@@ -3061,30 +3186,30 @@ async function spawnGrandchildren(client) {
       try {
         const chDir = path.join(DIR, 'children', ch.id || ch.spec);
         const chPnl = JSON.parse(fs.readFileSync(path.join(chDir, 'pnl.json'), 'utf8'));
-        return { name: ch.name, dna: chPnl.dna || {}, scores: (chPnl.scoreHistory||[]) };
+        return { name: ch.name, dna: chPnl.dna || {}, scores: (chPnl.scoreHistory || []) };
       } catch { return null; }
-    }).filter(Boolean).sort((a,b) => {
-      const avgA = a.scores.length ? a.scores.reduce((s,v)=>s+v,0)/a.scores.length : 50;
-      const avgB = b.scores.length ? b.scores.reduce((s,v)=>s+v,0)/b.scores.length : 50;
+    }).filter(Boolean).sort((a, b) => {
+      const avgA = a.scores.length ? a.scores.reduce((s, v) => s + v, 0) / a.scores.length : 50;
+      const avgB = b.scores.length ? b.scores.reduce((s, v) => s + v, 0) / b.scores.length : 50;
       return avgB - avgA;
     });
     const parentA = allChildDNA[0]?.dna || cp.dna || {};
     const parentB = allChildDNA[1]?.dna || {};
     // Weighted crossover: 70% from best parent, 30% from second + mutation
-    const crossover = (a, b, mut=0.05) => {
-      const base = (a||1) * 0.7 + (b||a||1) * 0.3;
-      return parseFloat((base * (1 + (Math.random()*2-1)*mut)).toFixed(4));
+    const crossover = (a, b, mut = 0.05) => {
+      const base = (a || 1) * 0.7 + (b || a || 1) * 0.3;
+      return parseFloat((base * (1 + (Math.random() * 2 - 1) * mut)).toFixed(4));
     };
     const gcDNA = {
-      minEdge:        crossover(parentA.minEdge, parentB.minEdge, 0.08),
-      volWeight:      crossover(parentA.volWeight, parentB.volWeight, 0.06),
-      vwapWeight:     crossover(parentA.vwapWeight, parentB.vwapWeight, 0.06),
-      stakePct:       crossover(parentA.stakePct||0.08, parentB.stakePct||0.08, 0.10),
-      patience:       crossover(parentA.patience||1.0, parentB.patience||1.0, 0.08),
+      minEdge: crossover(parentA.minEdge, parentB.minEdge, 0.08),
+      volWeight: crossover(parentA.volWeight, parentB.volWeight, 0.06),
+      vwapWeight: crossover(parentA.vwapWeight, parentB.vwapWeight, 0.06),
+      stakePct: crossover(parentA.stakePct || 0.08, parentB.stakePct || 0.08, 0.10),
+      patience: crossover(parentA.patience || 1.0, parentB.patience || 1.0, 0.08),
       cognitiveStyle: parentA.cognitiveStyle || 'volume_vwap',
-      mutation:       Math.round(Math.random()*100),
-      crossoverFrom:  [allChildDNA[0]?.name||'?', allChildDNA[1]?.name||'?'],
-      isElite:        true
+      mutation: Math.round(Math.random() * 100),
+      crossoverFrom: [allChildDNA[0]?.name || '?', allChildDNA[1]?.name || '?'],
+      isElite: true
     };
 
     // Destilación de traumas: read last 5 mistakes from parent SOUL.md
@@ -3099,7 +3224,7 @@ async function spawnGrandchildren(client) {
       const rootSoulContent = loadSoul();
       const rootMistakes = rootSoulContent.split('\n').filter(l => l.includes('MISTAKE') || l.includes('DREAM_RULE')).slice(-5);
       if (rootMistakes.length) traumaRules += '\n## ROOT Trauma Rules (from ADAN):\n' + rootMistakes.join('\n') + '\n';
-    } catch {}
+    } catch { }
 
     const gcSoul = `# ${gcName} — ELITE GRANDCHILD (CROSSOVER)
 Created: ${new Date().toISOString().slice(0, 10)}
@@ -3114,7 +3239,7 @@ I never bet. I scan one indicator with precision and report up.
 
 ## DNA Manifest
 This genome combines ${gcDNA.crossoverFrom[0]}'s strength with ${gcDNA.crossoverFrom[1]}'s adaptability.
-volWeight: ${gcDNA.volWeight} | vwapWeight: ${gcDNA.vwapWeight} | stakePct: ${(gcDNA.stakePct*100).toFixed(1)}%
+volWeight: ${gcDNA.volWeight} | vwapWeight: ${gcDNA.vwapWeight} | stakePct: ${(gcDNA.stakePct * 100).toFixed(1)}%
 ${traumaRules}
 ## Rules
 1. Focus: ${nextGcSpec.focus} only
@@ -3129,8 +3254,10 @@ ${traumaRules}
       dna: gcDNA
     }, null, 2));
 
-    const gc = { id: gcId, name: gcName, spec: nextGcSpec.id, focus: nextGcSpec.focus,
-      born: new Date().toISOString(), dir: gcDir, generation: 3, dna: gcDNA, isElite: true };
+    const gc = {
+      id: gcId, name: gcName, spec: nextGcSpec.id, focus: nextGcSpec.focus,
+      born: new Date().toISOString(), dir: gcDir, generation: 3, dna: gcDNA, isElite: true
+    };
     cp.children = [...gcList, gc];
     fs.writeFileSync(childPnlPath, JSON.stringify(cp, null, 2));
 
@@ -3139,20 +3266,62 @@ ${traumaRules}
   }
 }
 
+// Run a parent agent's logic based on its role
+async function runParentScanner(parent, allPrices, allMarkets) {
+  // This is a placeholder for the specialized logic of each parent.
+  // For now, we'll create a simulated "intel" report.
+  const intel = {
+    spec: parent.id,
+    asset: parent.specialization,
+    windowMin: 0, // Parents are role-based, not time-based
+    ts: new Date().toISOString(),
+    price: null,
+    signal: {
+      dir: 'NEUTRAL',
+      conf: 100,
+      reason: `Simulated intel from ${parent.name}: ${parent.prompt}`
+    },
+    bestMarket: null,
+    intelScore: 100 // Parent intel is high-value
+  };
+
+  // Ensure the intel directory exists
+  if (!fs.existsSync(INTEL_DIR)) {
+    fs.mkdirSync(INTEL_DIR, { recursive: true });
+  }
+
+  // Write the intel file for this parent
+  const intelPath = path.join(INTEL_DIR, parent.id + '.json');
+  fs.writeFileSync(intelPath, JSON.stringify(intel, null, 2));
+
+  console.log(`${B}PARENT SCANNER:${X} ${parent.name} (${parent.role}) executed.`);
+  return intel;
+}
+
 // Run all child scanners in parallel (includes active grandchildren)
 async function runAllChildScanners(allPrices, allMarkets) {
-  const pnl    = loadPnL();
-  const xpData = expProgress(pnl.exp||0);
-  if (xpData.level < 3) return []; // solo activo desde LVL 3
+  const pnl = loadPnL();
+  const config = loadConfig();
+  const xpData = expProgress(pnl.exp || 0);
+  let results = [];
 
-  // Run parent child specs (always — these are the 6 fixed scanners)
-  const results = await Promise.all(CHILD_SPECS.map(s=>runChildScanner(s, allPrices, allMarkets)));
+  // NEW: Run Mesa Redonda Parent Scanners
+  if (config.mesaRedonda && config.mesaRedonda.parents) {
+    const parentResults = await Promise.all(
+      config.mesaRedonda.parents.map(parent => runParentScanner(parent, allPrices, allMarkets))
+    );
+    results = results.concat(parentResults);
+  } else {
+    // Fallback to old logic if Mesa Redonda is not defined
+    console.log(Y + "WARNING: Mesa Redonda config not found. Falling back to old CHILD_SPECS." + X);
+    results = await Promise.all(CHILD_SPECS.map(s => runChildScanner(s, allPrices, allMarkets)));
+  }
 
-  // Run grandchild scanners (LVL 4+, per actual spawned grandchildren)
+  // Keep existing grandchild logic for now
   if (xpData.level >= 4) {
     const children = pnl.children || [];
     for (const child of children) {
-      const childDir     = path.join(DIR, 'children', child.id || child.spec);
+      const childDir = path.join(DIR, 'children', child.id || child.spec);
       const childPnlPath = path.join(childDir, 'pnl.json');
       try {
         if (!fs.existsSync(childPnlPath)) continue;
@@ -3163,19 +3332,30 @@ async function runAllChildScanners(allPrices, allMarkets) {
           const gcSpec = gcSpecs.find(s => s.id === gc.spec);
           if (!gcSpec) continue;
           // Run grandchild scanner with its focus
-          const d   = allPrices[gcSpec.asset];
+          const d = allPrices[gcSpec.asset];
           const sig = grandchildSignal(d, gcSpec.focus);
           const intel = {
-            spec: gcSpec.id, asset: gcSpec.assetName, windowMin: gcSpec.windowMin,
-            focus: gcSpec.focus, ts: new Date().toISOString(),
-            price: d?.price, signal: sig, intelScore: d?.intelScore || 50,
+            spec: gcSpec.id,
+            asset: gcSpec.assetName,
+            windowMin: gcSpec.windowMin,
+            focus: gcSpec.focus,
+            ts: new Date().toISOString(),
+            price: d?.price,
+            signal: sig,
+            intelScore: d?.intelScore || 50,
             parentSpec: child.spec
           };
-          if (!fs.existsSync(INTEL_DIR)) fs.mkdirSync(INTEL_DIR, { recursive: true });
+          if (!fs.existsSync(INTEL_DIR)) {
+            fs.mkdirSync(INTEL_DIR, {
+              recursive: true
+            });
+          }
           fs.writeFileSync(path.join(INTEL_DIR, gcSpec.id + '.json'), JSON.stringify(intel, null, 2));
           results.push(intel);
         }
-      } catch {}
+      } catch (e) {
+        // console.error(`Error processing grandchild for child ${child.spec}:`, e);
+      }
     }
   }
 
@@ -3185,22 +3365,22 @@ async function runAllChildScanners(allPrices, allMarkets) {
 // Read all intel files and build summary for Claude
 function readIntelSummary() {
   if (!fs.existsSync(INTEL_DIR)) return '';
-  const files = fs.readdirSync(INTEL_DIR).filter(f=>f.endsWith('.json'));
+  const files = fs.readdirSync(INTEL_DIR).filter(f => f.endsWith('.json'));
   if (!files.length) return '';
   const reports = [];
   for (const f of files) {
     try {
-      const intel = JSON.parse(fs.readFileSync(path.join(INTEL_DIR,f),'utf8'));
-      const age   = Math.round((Date.now()-new Date(intel.ts).getTime())/1000);
+      const intel = JSON.parse(fs.readFileSync(path.join(INTEL_DIR, f), 'utf8'));
+      const age = Math.round((Date.now() - new Date(intel.ts).getTime()) / 1000);
       if (age > 180) continue; // ignore stale reports (>3min old)
       const sig = intel.signal;
-      const bm  = intel.bestMarket;
-      reports.push(`[CHILD ${intel.spec.toUpperCase()} @${age}s ago] `+
-        `${intel.asset.toUpperCase()} ${intel.windowMin}min: `+
-        `Signal=${sig.dir}(${sig.conf}%) "${sig.reason}" Price=$${intel.price?.toLocaleString()||'?'}`+
-        (bm ? ` | BEST MARKET: "${bm.title.slice(0,35)}" YES=${(bm.yesPrice*100).toFixed(0)}% `+
-          `${bm.suggestedSide} edge≈${(bm.impliedEdge*100).toFixed(1)}% liq=$${bm.liquidity.toFixed(0)} closes in ${bm.closesIn}min` : ' | no market found'));
-    } catch {}
+      const bm = intel.bestMarket;
+      reports.push(`[CHILD ${intel.spec.toUpperCase()} @${age}s ago] ` +
+        `${intel.asset.toUpperCase()} ${intel.windowMin}min: ` +
+        `Signal=${sig.dir}(${sig.conf}%) "${sig.reason}" Price=$${intel.price?.toLocaleString() || '?'}` +
+        (bm ? ` | BEST MARKET: "${bm.title.slice(0, 35)}" YES=${(bm.yesPrice * 100).toFixed(0)}% ` +
+          `${bm.suggestedSide} edge≈${(bm.impliedEdge * 100).toFixed(1)}% liq=$${bm.liquidity.toFixed(0)} closes in ${bm.closesIn}min` : ' | no market found'));
+    } catch { }
   }
   if (!reports.length) return '';
 
@@ -3209,68 +3389,70 @@ function readIntelSummary() {
   const assetVotes = {};
   for (const f of files) {
     try {
-      const intel = JSON.parse(fs.readFileSync(path.join(INTEL_DIR,f),'utf8'));
-      const age   = Math.round((Date.now()-new Date(intel.ts).getTime())/1000);
+      const intel = JSON.parse(fs.readFileSync(path.join(INTEL_DIR, f), 'utf8'));
+      const age = Math.round((Date.now() - new Date(intel.ts).getTime()) / 1000);
       if (age > 180) continue;
       const asset = intel.asset.toUpperCase();
-      if (!assetVotes[asset]) assetVotes[asset] = { UP:0, DOWN:0, NEUTRAL:0, total:0 };
-      assetVotes[asset][intel.signal?.dir||'NEUTRAL']++;
+      if (!assetVotes[asset]) assetVotes[asset] = { UP: 0, DOWN: 0, NEUTRAL: 0, total: 0 };
+      assetVotes[asset][intel.signal?.dir || 'NEUTRAL']++;
       assetVotes[asset].total++;
-    } catch {}
+    } catch { }
   }
-  const consensusLines = Object.entries(assetVotes).map(([asset,v])=>{
-    const dominant = v.UP>v.DOWN ? 'UP' : v.DOWN>v.UP ? 'DOWN' : 'SPLIT';
-    const strength = dominant!=='SPLIT' ? Math.round(Math.max(v.UP,v.DOWN)/v.total*100) : 0;
-    const emoji    = strength>=75 ? '🔥' : strength>=50 ? '◈' : '⚠';
+  const consensusLines = Object.entries(assetVotes).map(([asset, v]) => {
+    const dominant = v.UP > v.DOWN ? 'UP' : v.DOWN > v.UP ? 'DOWN' : 'SPLIT';
+    const strength = dominant !== 'SPLIT' ? Math.round(Math.max(v.UP, v.DOWN) / v.total * 100) : 0;
+    const emoji = strength >= 75 ? '🔥' : strength >= 50 ? '◈' : '⚠';
     return `  ${emoji} ${asset}: ${dominant} (${strength}% consensus — ${v.UP} UP / ${v.DOWN} DOWN / ${v.NEUTRAL} neutral)`;
   });
   const consensusBlock = consensusLines.length
-    ? '\n── MULTI-AGENT CONSENSUS ──\n'+consensusLines.join('\n')+'\n⚡ RULE: If consensus ≥75% on an asset, STRONGLY favor that direction. If SPLIT, increase uncertainty.\n'
+    ? '\n── MULTI-AGENT CONSENSUS ──\n' + consensusLines.join('\n') + '\n⚡ RULE: If consensus ≥75% on an asset, STRONGLY favor that direction. If SPLIT, increase uncertainty.\n'
     : '';
 
-  return '\n══ CHILD SCANNER INTEL ('+reports.length+' active children) ══\n'+reports.join('\n')+consensusBlock+'\n';
+  return '\n══ CHILD SCANNER INTEL (' + reports.length + ' active children) ══\n' + reports.join('\n') + consensusBlock + '\n';
 }
 
 // ── Episodic Memory — hypothesis log ─────────────────────────────────────────
 function logHypothesis(marketId, asset, side, myProb, marketPrice, edge, closesAt) {
-  const entry = { id:marketId, asset, side, myProb, marketPrice, edge, closesAt,
-    ts:new Date().toISOString(), resolved:false, correct:null };
-  fs.appendFileSync(HYPOTHESIS_PATH, JSON.stringify(entry)+'\n');
+  const entry = {
+    id: marketId, asset, side, myProb, marketPrice, edge, closesAt,
+    ts: new Date().toISOString(), resolved: false, correct: null
+  };
+  fs.appendFileSync(HYPOTHESIS_PATH, JSON.stringify(entry) + '\n');
 }
 
 function resolveHypothesis(marketId, won) {
   if (!fs.existsSync(HYPOTHESIS_PATH)) return;
-  const lines = fs.readFileSync(HYPOTHESIS_PATH,'utf8').trim().split('\n').filter(Boolean);
-  const updated = lines.map(l=>{
+  const lines = fs.readFileSync(HYPOTHESIS_PATH, 'utf8').trim().split('\n').filter(Boolean);
+  const updated = lines.map(l => {
     try {
       const h = JSON.parse(l);
-      if (h.id===marketId && !h.resolved) return JSON.stringify({...h, resolved:true, correct:won});
+      if (h.id === marketId && !h.resolved) return JSON.stringify({ ...h, resolved: true, correct: won });
       return l;
     } catch { return l; }
   });
-  fs.writeFileSync(HYPOTHESIS_PATH, updated.join('\n')+'\n');
+  fs.writeFileSync(HYPOTHESIS_PATH, updated.join('\n') + '\n');
 }
 
 // Read recent hypotheses accuracy for SOUL context
 function getHypothesisAccuracy() {
   if (!fs.existsSync(HYPOTHESIS_PATH)) return '';
   try {
-    const lines = fs.readFileSync(HYPOTHESIS_PATH,'utf8').trim().split('\n').filter(Boolean);
-    const resolved = lines.map(l=>{ try{return JSON.parse(l);}catch{return null;} })
-      .filter(h=>h&&h.resolved);
+    const lines = fs.readFileSync(HYPOTHESIS_PATH, 'utf8').trim().split('\n').filter(Boolean);
+    const resolved = lines.map(l => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(h => h && h.resolved);
     if (resolved.length < 3) return '';
     const recent = resolved.slice(-20);
-    const correct = recent.filter(h=>h.correct).length;
+    const correct = recent.filter(h => h.correct).length;
     const byAsset = {};
     for (const h of recent) {
-      if (!byAsset[h.asset]) byAsset[h.asset]={c:0,t:0};
+      if (!byAsset[h.asset]) byAsset[h.asset] = { c: 0, t: 0 };
       byAsset[h.asset].t++;
       if (h.correct) byAsset[h.asset].c++;
     }
     const assetStr = Object.entries(byAsset)
-      .map(([a,v])=>`${a}:${Math.round(v.c/v.t*100)}%(${v.t})`)
+      .map(([a, v]) => `${a}:${Math.round(v.c / v.t * 100)}%(${v.t})`)
       .join(' ');
-    return `EPISODIC ACCURACY last ${recent.length} predictions: ${Math.round(correct/recent.length*100)}% | by asset: ${assetStr}`;
+    return `EPISODIC ACCURACY last ${recent.length} predictions: ${Math.round(correct / recent.length * 100)}% | by asset: ${assetStr}`;
   } catch { return ''; }
 }
 
@@ -3281,16 +3463,16 @@ function getHypothesisAccuracy() {
 function getSimilarPastTrades(asset, side, currentEdge, currentRsi) {
   if (!fs.existsSync(HYPOTHESIS_PATH)) return '';
   try {
-    const lines = fs.readFileSync(HYPOTHESIS_PATH,'utf8').trim().split('\n').filter(Boolean);
-    const resolved = lines.map(l=>{try{return JSON.parse(l);}catch{return null;}})
-      .filter(h=>h&&h.resolved&&h.asset===asset&&h.side===side);
+    const lines = fs.readFileSync(HYPOTHESIS_PATH, 'utf8').trim().split('\n').filter(Boolean);
+    const resolved = lines.map(l => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(h => h && h.resolved && h.asset === asset && h.side === side);
     if (resolved.length < 2) return '';
-    const similar = resolved.filter(h=>Math.abs((h.edge||0)-(currentEdge||0))<0.05);
+    const similar = resolved.filter(h => Math.abs((h.edge || 0) - (currentEdge || 0)) < 0.05);
     if (similar.length < 2) return '';
-    const wins = similar.filter(h=>h.correct).length;
-    const wr   = Math.round(wins/similar.length*100);
-    const recent3 = similar.slice(-3).map(h=>(h.correct?'WIN':'LOSS')+'(edge:'+(h.edge*100).toFixed(0)+'%)').join(', ');
-    return `PATTERN MEMORY: In ${similar.length} similar ${asset.toUpperCase()} ${side} bets with edge ~${(currentEdge*100).toFixed(0)}% → WR=${wr}% (${wins}W/${similar.length-wins}L). Recent: ${recent3}.`;
+    const wins = similar.filter(h => h.correct).length;
+    const wr = Math.round(wins / similar.length * 100);
+    const recent3 = similar.slice(-3).map(h => (h.correct ? 'WIN' : 'LOSS') + '(edge:' + (h.edge * 100).toFixed(0) + '%)').join(', ');
+    return `PATTERN MEMORY: In ${similar.length} similar ${asset.toUpperCase()} ${side} bets with edge ~${(currentEdge * 100).toFixed(0)}% → WR=${wr}% (${wins}W/${similar.length - wins}L). Recent: ${recent3}.`;
   } catch { return ''; }
 }
 
@@ -3306,20 +3488,20 @@ const MEMORY_DB_PATH = path.join(DIR, 'memory.db');
 function buildFeatureVector(priceData) {
   if (!priceData) return null;
   return {
-    rsi:       priceData.rsi       || 50,
-    rsi5m:     priceData.rsi5m     || 50,
-    trend1m:   priceData.trend1m   || 0,
-    trend5m:   priceData.trend5m   || 0,
-    trend15m:  priceData.trend15m  || 0,
-    trend1h:   priceData.trend1h   || 0,
-    bbPct:     priceData.bb?.pct   || 50,
-    volRatio:  priceData.vol?.ratio || 1,
-    volAccel:  priceData.volAccel  || 0,
-    vwapPct:   priceData.vwap5m?.pct || 0,
+    rsi: priceData.rsi || 50,
+    rsi5m: priceData.rsi5m || 50,
+    trend1m: priceData.trend1m || 0,
+    trend5m: priceData.trend5m || 0,
+    trend15m: priceData.trend15m || 0,
+    trend1h: priceData.trend1h || 0,
+    bbPct: priceData.bb?.pct || 50,
+    volRatio: priceData.vol?.ratio || 1,
+    volAccel: priceData.volAccel || 0,
+    vwapPct: priceData.vwap5m?.pct || 0,
     buyPressure: priceData.orderBook?.buyPressure || 50,
-    obRatio:   priceData.orderBook?.ratio || 1,
+    obRatio: priceData.orderBook?.ratio || 1,
     sellWallTrap: priceData.orderBook?.sellWallTrap ? 1 : 0,
-    buyWallTrap:  priceData.orderBook?.buyWallTrap  ? 1 : 0,
+    buyWallTrap: priceData.orderBook?.buyWallTrap ? 1 : 0,
     volatility: priceData.volatility || 0
   };
 }
@@ -3343,18 +3525,18 @@ function memorizeTradeContext(position, priceData, won) {
   const vec = buildFeatureVector(priceData);
   if (!vec) return;
   const entry = {
-    ts:       new Date().toISOString(),
-    asset:    position.asset,
-    side:     position.side,
-    edge:     position.edge,
+    ts: new Date().toISOString(),
+    asset: position.asset,
+    side: position.side,
+    edge: position.edge,
     confidence: position.confidence,
-    myProb:   position.myProb,
+    myProb: position.myProb,
     marketPrice: position.marketPrice,
-    stake:    position.stake,
+    stake: position.stake,
     won,
     vec,
     // Human-readable context for Claude
-    context:  `${position.asset.toUpperCase()} ${position.side} edge:${((position.edge||0)*100).toFixed(1)}% conf:${position.confidence}% RSI:${vec.rsi.toFixed(0)} trend5m:${vec.trend5m.toFixed(2)}% vol:${vec.volRatio.toFixed(1)}x OB:${vec.buyPressure}% ${vec.sellWallTrap?'SELL_WALL_TRAP':vec.buyWallTrap?'BUY_WALL_TRAP':'balanced'}`
+    context: `${position.asset.toUpperCase()} ${position.side} edge:${((position.edge || 0) * 100).toFixed(1)}% conf:${position.confidence}% RSI:${vec.rsi.toFixed(0)} trend5m:${vec.trend5m.toFixed(2)}% vol:${vec.volRatio.toFixed(1)}x OB:${vec.buyPressure}% ${vec.sellWallTrap ? 'SELL_WALL_TRAP' : vec.buyWallTrap ? 'BUY_WALL_TRAP' : 'balanced'}`
   };
   fs.appendFileSync(MEMORY_DB_PATH, JSON.stringify(entry) + '\n');
 }
@@ -3388,8 +3570,8 @@ function recallSimilarMemories(asset, currentPriceData, topN = 3) {
     const verdict = wins >= 2
       ? `  ✅ MEMORY VERDICT: ${wins}/${scored.length} similar situations were WINS → pattern favors betting.`
       : wins === 0
-      ? `  ⚠ MEMORY VERDICT: 0/${scored.length} similar situations were wins → DANGER. Consider SKIP.`
-      : `  ◈ MEMORY VERDICT: ${wins}/${scored.length} mixed results → no strong pattern, proceed with caution.`;
+        ? `  ⚠ MEMORY VERDICT: 0/${scored.length} similar situations were wins → DANGER. Consider SKIP.`
+        : `  ◈ MEMORY VERDICT: ${wins}/${scored.length} mixed results → no strong pattern, proceed with caution.`;
 
     return header + '\n' + lines2.join('\n') + '\n' + verdict;
   } catch { return ''; }
@@ -3418,23 +3600,24 @@ async function autoEvolveSoul(client, pnl) {
   if ((pnl.trades || 0) % 5 !== 0) return; // cada 5 trades
 
   if (!fs.existsSync(HYPOTHESIS_PATH)) return;
-  const lines = fs.readFileSync(HYPOTHESIS_PATH,'utf8').trim().split('\n').filter(Boolean);
-  const resolved = lines.map(l=>{try{return JSON.parse(l);}catch{return null;}})
-    .filter(h=>h&&h.resolved).slice(-15);
+  const lines = fs.readFileSync(HYPOTHESIS_PATH, 'utf8').trim().split('\n').filter(Boolean);
+  const resolved = lines.map(l => { try { return JSON.parse(l); } catch { return null; } })
+    .filter(h => h && h.resolved).slice(-15);
   if (resolved.length < 5) return;
 
-  const summary = resolved.map(h=>
-    `${h.correct?'WIN':'LOSS'} | ${h.asset} ${h.side} | edge:${(h.edge*100).toFixed(1)}% | myProb:${(h.myProb*100).toFixed(0)}% | marketPrice:${(h.marketPrice*100).toFixed(0)}%`
+  const summary = resolved.map(h =>
+    `${h.correct ? 'WIN' : 'LOSS'} | ${h.asset} ${h.side} | edge:${(h.edge * 100).toFixed(1)}% | myProb:${(h.myProb * 100).toFixed(0)}% | marketPrice:${(h.marketPrice * 100).toFixed(0)}%`
   ).join('\n');
 
-  const currentRules = loadSoul().split('\n').filter(l=>l.startsWith('1.')||l.startsWith('2.')||l.startsWith('3.')||l.startsWith('4.')||l.startsWith('5.')).join('\n');
+  const currentRules = loadSoul().split('\n').filter(l => l.startsWith('1.') || l.startsWith('2.') || l.startsWith('3.') || l.startsWith('4.') || l.startsWith('5.')).join('\n');
 
   try {
     const resp = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 300,
-      messages: [{ role: 'user', content:
-        `You are ADAN-PRED. Analyze your last ${resolved.length} trades and extract 1-2 NEW pattern rules.
+      messages: [{
+        role: 'user', content:
+          `You are ADAN-PRED. Analyze your last ${resolved.length} trades and extract 1-2 NEW pattern rules.
 
 TRADE HISTORY:
 ${summary}
@@ -3451,7 +3634,7 @@ Be specific. If BTC NO bets with edge >10% win more, say that. If morning trades
     if (newRule && newRule.length > 20) {
       appendToSoul(`\n### AUTO-EVOLVED RULE — ${new Date().toISOString()} (${pnl.trades} trades):\n${newRule}\n`);
     }
-  } catch {}
+  } catch { }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3461,23 +3644,24 @@ Be specific. If BTC NO bets with edge >10% win more, say that. If morning trades
 // ══════════════════════════════════════════════════════════════════════════════
 async function dreamMode(client, pnl) {
   const pos = loadPositions();
-  const losses = (pos.closed||[]).filter(p=>p.result==='LOSS').slice(-5);
+  const losses = (pos.closed || []).filter(p => p.result === 'LOSS').slice(-5);
   if (losses.length < 2) return; // need at least 2 losses to reflect
 
-  const lossDetails = losses.map(l=>
-    `LOSS: "${l.marketTitle}" | ${l.asset} ${l.side} | My prob: ${(l.myProb*100).toFixed(0)}% | Market: ${(l.marketPrice*100).toFixed(0)}% | Edge: ${((l.edge||0)*100).toFixed(1)}% | Confidence: ${l.confidence||'?'}%`
+  const lossDetails = losses.map(l =>
+    `LOSS: "${l.marketTitle}" | ${l.asset} ${l.side} | My prob: ${(l.myProb * 100).toFixed(0)}% | Market: ${(l.marketPrice * 100).toFixed(0)}% | Edge: ${((l.edge || 0) * 100).toFixed(1)}% | Confidence: ${l.confidence || '?'}%`
   ).join('\n');
 
-  const soul = loadSoul().slice(0,600);
-  const wr   = pnl.trades>0 ? Math.round(pnl.wins/pnl.trades*100) : 0;
+  const soul = loadSoul().slice(0, 600);
+  const wr = pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0;
 
   try {
     const resp = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 400,
-      messages: [{ role: 'user', content:
-        `You are ADAN-PRED in DREAM MODE. You are replaying your last ${losses.length} losses during off-hours.
-Current WR: ${wr}% (${pnl.trades} trades). Fund: $${pnl.fund?.toFixed(2)||10000}.
+      messages: [{
+        role: 'user', content:
+          `You are ADAN-PRED in DREAM MODE. You are replaying your last ${losses.length} losses during off-hours.
+Current WR: ${wr}% (${pnl.trades} trades). Fund: $${pnl.fund?.toFixed(2) || 10000}.
 
 LOSSES TO ANALYZE:
 ${lossDetails}
@@ -3498,13 +3682,13 @@ Be brutally honest. This is self-reflection, not performance.` }]
     const dreamText = resp.content[0].text.trim();
     if (dreamText && dreamText.length > 30) {
       appendToSoul(`\n### 💤 DREAM SESSION — ${new Date().toISOString()} (off-hours reflection):\n${dreamText}\n`);
-      console.log('\n'+M+BOLD+'  💤 DREAM MODE — self-reflection complete'+X);
+      console.log('\n' + M + BOLD + '  💤 DREAM MODE — self-reflection complete' + X);
     }
     // Mark last dream time
     const p = loadPnL();
     p._lastDream = new Date().toISOString();
     savePnL(p);
-  } catch(e) {
+  } catch (e) {
     console.log('Dream mode error:', e.message);
   }
 }
@@ -3520,11 +3704,11 @@ function updateCorrelation(prices) {
     const btc = prices['BTCUSDT'];
     const eth = prices['ETHUSDT'];
     const sol = prices['SOLUSDT'];
-    if (!btc||!eth||!sol) return '';
+    if (!btc || !eth || !sol) return '';
 
     // Carga historial de correlación (últimas 20 lecturas)
     let hist = [];
-    try { hist = JSON.parse(fs.readFileSync(CORRELATION_PATH,'utf8')); } catch {}
+    try { hist = JSON.parse(fs.readFileSync(CORRELATION_PATH, 'utf8')); } catch { }
     hist.push({
       ts: Date.now(),
       btc1m: btc.trend1m, btc5m: btc.trend5m,
@@ -3543,156 +3727,156 @@ function updateCorrelation(prices) {
     const ethLag = btc.trend1m > 0 ? eth.trend1m < btc.trend1m * 0.5 : eth.trend1m > btc.trend1m * 0.5;
     const solLag = btc.trend1m > 0 ? sol.trend1m < btc.trend1m * 0.5 : sol.trend1m > btc.trend1m * 0.5;
 
-    const lagging = [ethLag?'ETH':null, solLag?'SOL':null].filter(Boolean);
+    const lagging = [ethLag ? 'ETH' : null, solLag ? 'SOL' : null].filter(Boolean);
     if (lagging.length === 0) return '';
 
-    return `🔗 CASCADE SIGNAL: BTC moved ${btc.trend1m>0?'+':''}${btc.trend1m.toFixed(2)}% in 1m → ${lagging.join('+')} lagging behind (${dir} expected to follow in ~2-5min). Consider ${dir==='UP'?'YES':'NO'} on ${lagging.join('/')} markets.`;
+    return `🔗 CASCADE SIGNAL: BTC moved ${btc.trend1m > 0 ? '+' : ''}${btc.trend1m.toFixed(2)}% in 1m → ${lagging.join('+')} lagging behind (${dir} expected to follow in ~2-5min). Consider ${dir === 'UP' ? 'YES' : 'NO'} on ${lagging.join('/')} markets.`;
   } catch { return ''; }
 }
 
 // ── Shadow Mode — Binance-only training when Polymarket offline ───────────────
 function logShadowPrediction(asset, direction, price, targetMinutes) {
   const entry = {
-    type:'shadow', asset, direction, price,
-    targetTime: new Date(Date.now()+targetMinutes*60000).toISOString(),
-    ts: new Date().toISOString(), resolved:false, correct:null
+    type: 'shadow', asset, direction, price,
+    targetTime: new Date(Date.now() + targetMinutes * 60000).toISOString(),
+    ts: new Date().toISOString(), resolved: false, correct: null
   };
-  fs.appendFileSync(HYPOTHESIS_PATH, JSON.stringify(entry)+'\n');
+  fs.appendFileSync(HYPOTHESIS_PATH, JSON.stringify(entry) + '\n');
 }
 
 function checkShadowResolutions(prices) {
   if (!fs.existsSync(HYPOTHESIS_PATH)) return;
-  const lines = fs.readFileSync(HYPOTHESIS_PATH,'utf8').trim().split('\n').filter(Boolean);
+  const lines = fs.readFileSync(HYPOTHESIS_PATH, 'utf8').trim().split('\n').filter(Boolean);
   let changed = false;
-  const updated = lines.map(l=>{
+  const updated = lines.map(l => {
     try {
       const h = JSON.parse(l);
-      if (h.type!=='shadow'||h.resolved) return l;
-      if (new Date(h.targetTime)>new Date()) return l;
-      const sym  = h.asset.toUpperCase()+'USDT';
-      const now  = prices[sym]?.price;
+      if (h.type !== 'shadow' || h.resolved) return l;
+      if (new Date(h.targetTime) > new Date()) return l;
+      const sym = h.asset.toUpperCase() + 'USDT';
+      const now = prices[sym]?.price;
       if (!now) return l;
-      const correct = h.direction==='DOWN' ? now < h.price : now > h.price;
+      const correct = h.direction === 'DOWN' ? now < h.price : now > h.price;
       changed = true;
-      return JSON.stringify({...h, resolved:true, correct, resolvedPrice:now});
+      return JSON.stringify({ ...h, resolved: true, correct, resolvedPrice: now });
     } catch { return l; }
   });
-  if (changed) fs.writeFileSync(HYPOTHESIS_PATH, updated.join('\n')+'\n');
+  if (changed) fs.writeFileSync(HYPOTHESIS_PATH, updated.join('\n') + '\n');
 }
 
 // ── Think — Claude Sonnet 4.6 ────────────────────────────────────────────────
 async function think(client, markets, prices, pnl, openPos, soul) {
-  const strat    = loadStrategy();
-  const openIds  = new Set(openPos.map(p=>p.marketId));
+  const strat = loadStrategy();
+  const openIds = new Set(openPos.map(p => p.marketId));
   const candidates = markets
-    .filter(m=>m.liquidity>=(strat.minLiquidity||500)&&!openIds.has(m.id))
-    .slice(0,strat.maxMarketsCheck);
+    .filter(m => m.liquidity >= (strat.minLiquidity || 500) && !openIds.has(m.id))
+    .slice(0, strat.maxMarketsCheck);
 
-  if (candidates.length===0) {
-    return { thought:'No crypto markets found meeting liquidity threshold. Waiting for next scan.', action:'SKIP' };
+  if (candidates.length === 0) {
+    return { thought: 'No crypto markets found meeting liquidity threshold. Waiting for next scan.', action: 'SKIP' };
   }
 
   // Build price context for Claude
   // ── Build full intelligence context for Claude ──
   const hourData = pnl.hourStats?.[new Date().getUTCHours().toString()];
   const fg = prices._meta?.fearGreed;
-  const fgContext = fg?`Fear & Greed: ${fg.value} (${fg.label}) — direction: ${fg.direction>0?'improving':'worsening'}`:'Fear & Greed: unavailable';
+  const fgContext = fg ? `Fear & Greed: ${fg.value} (${fg.label}) — direction: ${fg.direction > 0 ? 'improving' : 'worsening'}` : 'Fear & Greed: unavailable';
 
   // CryptoPanic news flash — detect black swans
   const news = prices._meta?.cryptoNews;
   const newsContext = news && news.length > 0
     ? '\n⚡ FLASH NEWS (CryptoPanic — read BEFORE technical analysis):\n' +
-      news.map(n => `  ${n.sentiment==='BULLISH'?'🟢':n.sentiment==='BEARISH'?'🔴':'⚪'} [${n.currencies||'CRYPTO'}] "${n.title}" (${n.source}) sentiment: ${n.sentiment}`).join('\n') +
-      '\n  ⚠ If any news is a BLACK SWAN (hack, regulation, ETF, bankruptcy) → override technical analysis completely.\n'
+    news.map(n => `  ${n.sentiment === 'BULLISH' ? '🟢' : n.sentiment === 'BEARISH' ? '🔴' : '⚪'} [${n.currencies || 'CRYPTO'}] "${n.title}" (${n.source}) sentiment: ${n.sentiment}`).join('\n') +
+    '\n  ⚠ If any news is a BLACK SWAN (hack, regulation, ETF, bankruptcy) → override technical analysis completely.\n'
     : '';
 
   // BTC macro context for correlation rule
   const btcData = prices['BTCUSDT'];
   const btcMacro1h = btcData?.trend1h ?? 0;
   const btcMicro5m = btcData?.trend5m ?? 0;
-  const btcObImb   = btcData?.obImbalance || 'UNKNOWN';
+  const btcObImb = btcData?.obImbalance || 'UNKNOWN';
   const btcMacroDir = btcMacro1h > 0.3 ? 'BULLISH' : btcMacro1h < -0.3 ? 'BEARISH' : 'NEUTRAL';
   const btcCorrelationRule = btcData
-    ? `BTC MACRO (1h): ${btcMacroDir} (${btcMacro1h>=0?'+':''}${btcMacro1h.toFixed(2)}%) | BTC micro (5m): ${btcMicro5m>=0?'+':''}${btcMicro5m.toFixed(2)}% | OB: ${btcObImb}
-⚡ CORRELATION RULE: If BTC macro=${btcMacroDir} & BTC 5m is ${btcMicro5m<-0.2?'FALLING ← PROHIBIT YES on ETH/SOL':'stable/rising → ETH/SOL YES allowed'}`
+    ? `BTC MACRO (1h): ${btcMacroDir} (${btcMacro1h >= 0 ? '+' : ''}${btcMacro1h.toFixed(2)}%) | BTC micro (5m): ${btcMicro5m >= 0 ? '+' : ''}${btcMicro5m.toFixed(2)}% | OB: ${btcObImb}
+⚡ CORRELATION RULE: If BTC macro=${btcMacroDir} & BTC 5m is ${btcMicro5m < -0.2 ? 'FALLING ← PROHIBIT YES on ETH/SOL' : 'stable/rising → ETH/SOL YES allowed'}`
     : '';
 
   const priceContext = (btcCorrelationRule ? btcCorrelationRule + '\n\n' : '') +
-    Object.entries(prices).filter(([k])=>k!=='_meta').map(([sym,d])=>{
-    if (!d) return '';
-    const name = sym.replace('USDT','');
-    const funding = d.funding;
-    const ob      = d.orderBook;
-    const bb      = d.bb;
-    const macd    = d.macd;
-    const macro1h = d.trend1h ?? 0;
-    const macroDir= macro1h > 0.3 ? '▲ MACRO UP' : macro1h < -0.3 ? '▼ MACRO DOWN' : '━ MACRO FLAT';
-    const wallBase = ob ? (ob.buyPressure > 60 ? `BUY WALL (${ob.buyPressure}% bids) — support $${ob.support.toLocaleString()}` : ob.buyPressure < 40 ? `SELL WALL (${100-ob.buyPressure}% asks) — resist $${ob.resistance.toLocaleString()}` : `BALANCED (${ob.buyPressure}% bids)`) : '---';
-    const trapAlert = ob?.sellWallTrap ? ` ⚠ SELL WALL TRAP: asks ${ob.ratio<1?(1/ob.ratio).toFixed(1):ob.ratio.toFixed(1)}x bids within 0.5% — price will bounce DOWN. BET NO on 5min.` : ob?.buyWallTrap ? ` ⚠ BUY WALL TRAP: bids ${ob.ratio.toFixed(1)}x asks within 0.5% — floor support. BET YES safer.` : '';
-    const wallInfo = wallBase + trapAlert + (ob ? ` | Bid$${(ob.bidVolUSD/1000).toFixed(0)}k vs Ask$${(ob.askVolUSD/1000).toFixed(0)}k | wall dist: sell@${ob.askWallDist}% buy@${ob.bidWallDist}%` : '');
-    return `━━ ${name} ━━
-  Price: $${d.price.toLocaleString()} | Change: ${d.chg>=0?'+':''}${d.chg.toFixed(2)}%
-  MACRO 1h: ${macroDir} (${macro1h>=0?'+':''}${macro1h.toFixed(2)}%) | RSI1h: ${d.rsi1h!=null?d.rsi1h.toFixed(0):'--'}  ← macro trend dictates direction
+    Object.entries(prices).filter(([k]) => k !== '_meta').map(([sym, d]) => {
+      if (!d) return '';
+      const name = sym.replace('USDT', '');
+      const funding = d.funding;
+      const ob = d.orderBook;
+      const bb = d.bb;
+      const macd = d.macd;
+      const macro1h = d.trend1h ?? 0;
+      const macroDir = macro1h > 0.3 ? '▲ MACRO UP' : macro1h < -0.3 ? '▼ MACRO DOWN' : '━ MACRO FLAT';
+      const wallBase = ob ? (ob.buyPressure > 60 ? `BUY WALL (${ob.buyPressure}% bids) — support $${ob.support.toLocaleString()}` : ob.buyPressure < 40 ? `SELL WALL (${100 - ob.buyPressure}% asks) — resist $${ob.resistance.toLocaleString()}` : `BALANCED (${ob.buyPressure}% bids)`) : '---';
+      const trapAlert = ob?.sellWallTrap ? ` ⚠ SELL WALL TRAP: asks ${ob.ratio < 1 ? (1 / ob.ratio).toFixed(1) : ob.ratio.toFixed(1)}x bids within 0.5% — price will bounce DOWN. BET NO on 5min.` : ob?.buyWallTrap ? ` ⚠ BUY WALL TRAP: bids ${ob.ratio.toFixed(1)}x asks within 0.5% — floor support. BET YES safer.` : '';
+      const wallInfo = wallBase + trapAlert + (ob ? ` | Bid$${(ob.bidVolUSD / 1000).toFixed(0)}k vs Ask$${(ob.askVolUSD / 1000).toFixed(0)}k | wall dist: sell@${ob.askWallDist}% buy@${ob.bidWallDist}%` : '');
+      return `━━ ${name} ━━
+  Price: $${d.price.toLocaleString()} | Change: ${d.chg >= 0 ? '+' : ''}${d.chg.toFixed(2)}%
+  MACRO 1h: ${macroDir} (${macro1h >= 0 ? '+' : ''}${macro1h.toFixed(2)}%) | RSI1h: ${d.rsi1h != null ? d.rsi1h.toFixed(0) : '--'}  ← macro trend dictates direction
   MICRO 5m: ${d.trend5m.toFixed(2)}% | 1m: ${d.trend1m.toFixed(2)}%  ← micro is the trigger
-  RSI:    1m=${d.rsi.toFixed(0)}  5m=${d.rsi5m?.toFixed(0)||'?'}  (>70=overbought <30=oversold)
-  BB:     %B=${bb?.pct.toFixed(0)||'?'}%  std=$${bb?.std?.toFixed(0)||'?'}  (>80=strong up <20=strong dn)
-  VOL:    trend=${d.vol?.trend||'?'}  spike=${d.vol?.spike?'YES':'no'}  ratio=${d.vol?.ratio?.toFixed(1)||'?'}x avg  accel=${d.volAccel>0?'+'+d.volAccel:d.volAccel??'?'} (${d.volAccel>=2?'ACCELERATING':d.volAccel<=-2?'DYING':'flat'})
-  VWAP5m: $${d.vwap5m?.vwap?.toFixed(2)||'?'} | price ${d.vwap5m?.pct!=null?(d.vwap5m.pct>=0?'+':'')+d.vwap5m.pct.toFixed(2)+'%':'?'} ${d.vwap5m?.above?'ABOVE VWAP ▲':'BELOW VWAP ▼'}
+  RSI:    1m=${d.rsi.toFixed(0)}  5m=${d.rsi5m?.toFixed(0) || '?'}  (>70=overbought <30=oversold)
+  BB:     %B=${bb?.pct.toFixed(0) || '?'}%  std=$${bb?.std?.toFixed(0) || '?'}  (>80=strong up <20=strong dn)
+  VOL:    trend=${d.vol?.trend || '?'}  spike=${d.vol?.spike ? 'YES' : 'no'}  ratio=${d.vol?.ratio?.toFixed(1) || '?'}x avg  accel=${d.volAccel > 0 ? '+' + d.volAccel : d.volAccel ?? '?'} (${d.volAccel >= 2 ? 'ACCELERATING' : d.volAccel <= -2 ? 'DYING' : 'flat'})
+  VWAP5m: $${d.vwap5m?.vwap?.toFixed(2) || '?'} | price ${d.vwap5m?.pct != null ? (d.vwap5m.pct >= 0 ? '+' : '') + d.vwap5m.pct.toFixed(2) + '%' : '?'} ${d.vwap5m?.above ? 'ABOVE VWAP ▲' : 'BELOW VWAP ▼'}
   ORDER BOOK WALLS: ${wallInfo}
   VOLATILITY: ${d.volatility.toFixed(4)}% per candle
-  INTEL SCORE: ${d.intelScore}/100 — ${d.intelScore>=65?'BULLISH SIGNAL':d.intelScore>=45?'NEUTRAL':d.intelScore>=35?'BEARISH':'STRONG BEAR'}
-  ${funding?`FUNDING: ${funding.rate.toFixed(4)}% — ${funding.label} ${Math.abs(funding.rate)>0.01?'⚠ EXTREME — correction imminent':''}${funding.rate>0.005?' (longs overleveraged → SHORT squeeze risk)':funding.rate<-0.005?' (shorts overleveraged → LONG squeeze risk)':''}`:''}
-  HOUR FILTER: UTC ${new Date().getUTCHours()}h — ${hourData?`WR: ${Math.round((hourData.wins/(hourData.wins+hourData.losses)||0)*100)}% over ${hourData.wins+hourData.losses} trades`:'no history'}
-  Last 6 closes (1m): ${d.closes.slice(-6).map(c=>'$'+c.toLocaleString()).join(' → ')}`;
-  }).filter(Boolean).join('\n\n');
+  INTEL SCORE: ${d.intelScore}/100 — ${d.intelScore >= 65 ? 'BULLISH SIGNAL' : d.intelScore >= 45 ? 'NEUTRAL' : d.intelScore >= 35 ? 'BEARISH' : 'STRONG BEAR'}
+  ${funding ? `FUNDING: ${funding.rate.toFixed(4)}% — ${funding.label} ${Math.abs(funding.rate) > 0.01 ? '⚠ EXTREME — correction imminent' : ''}${funding.rate > 0.005 ? ' (longs overleveraged → SHORT squeeze risk)' : funding.rate < -0.005 ? ' (shorts overleveraged → LONG squeeze risk)' : ''}` : ''}
+  HOUR FILTER: UTC ${new Date().getUTCHours()}h — ${hourData ? `WR: ${Math.round((hourData.wins / (hourData.wins + hourData.losses) || 0) * 100)}% over ${hourData.wins + hourData.losses} trades` : 'no history'}
+  Last 6 closes (1m): ${d.closes.slice(-6).map(c => '$' + c.toLocaleString()).join(' → ')}`;
+    }).filter(Boolean).join('\n\n');
 
-  const marketsText = candidates.map((m,i)=>{
-    const closes   = m.closesAt?new Date(m.closesAt).toLocaleString():'unknown';
-    const timeLeft = m.closesAt?Math.round((new Date(m.closesAt)-Date.now())/60000)+' min':'?';
-    const symData  = m.priceData;
-    const distStr  = m.targetPrice&&symData?
-      `dist from target: ${((m.targetPrice-symData.price)/symData.price*100).toFixed(2)}% (${symData.price>m.targetPrice?'ABOVE target — NO favored':'BELOW target — YES favored'})`:'';
-    return `[${i+1}] "${m.title}"
-  YES price: ${(m.yesPrice*100).toFixed(1)}% | Liquidity: $${m.liquidity.toFixed(0)} | Closes in: ${timeLeft}
-  Asset: ${m.asset.toUpperCase()} | Target: ${m.targetPrice?'$'+m.targetPrice.toLocaleString():'unspecified'}
+  const marketsText = candidates.map((m, i) => {
+    const closes = m.closesAt ? new Date(m.closesAt).toLocaleString() : 'unknown';
+    const timeLeft = m.closesAt ? Math.round((new Date(m.closesAt) - Date.now()) / 60000) + ' min' : '?';
+    const symData = m.priceData;
+    const distStr = m.targetPrice && symData ?
+      `dist from target: ${((m.targetPrice - symData.price) / symData.price * 100).toFixed(2)}% (${symData.price > m.targetPrice ? 'ABOVE target — NO favored' : 'BELOW target — YES favored'})` : '';
+    return `[${i + 1}] "${m.title}"
+  YES price: ${(m.yesPrice * 100).toFixed(1)}% | Liquidity: $${m.liquidity.toFixed(0)} | Closes in: ${timeLeft}
+  Asset: ${m.asset.toUpperCase()} | Target: ${m.targetPrice ? '$' + m.targetPrice.toLocaleString() : 'unspecified'}
   ${distStr}`;
   }).join('\n\n');
 
   // Build active skills context for Claude
-  const xpNow    = expProgress(pnl.exp||0);
-  const lvlNow   = xpNow.level;
+  const xpNow = expProgress(pnl.exp || 0);
+  const lvlNow = xpNow.level;
   const activeSkills = [];
-  if (lvlNow>=6)  activeSkills.push('🕯️ CANDLE PATTERN: flag hammer/engulfing/doji reversals in your analysis');
-  if (lvlNow>=9)  activeSkills.push('⏱️ TIMING: note if market is in first half (more predictable) or near close');
-  if (lvlNow>=12) activeSkills.push('😱 FEAR EXPLOIT: Fear & Greed < 20 → market OVERprices downside, bias toward NO pays more than expected');
-  if (lvlNow>=18) activeSkills.push('🔗 CORRELATION: if BTC strong signal → check SOL/ETH follow-through for cascade bet');
-  if (lvlNow>=30) activeSkills.push('🧠 SONIC MIND: analyze all 12 last closes for micro patterns, look for 3+ candle sequences');
-  const skillsBlock = activeSkills.length>0
-    ? `\nACTIVE SKILLS — use these in your analysis:\n${activeSkills.map(s=>'• '+s).join('\n')}\n`
+  if (lvlNow >= 6) activeSkills.push('🕯️ CANDLE PATTERN: flag hammer/engulfing/doji reversals in your analysis');
+  if (lvlNow >= 9) activeSkills.push('⏱️ TIMING: note if market is in first half (more predictable) or near close');
+  if (lvlNow >= 12) activeSkills.push('😱 FEAR EXPLOIT: Fear & Greed < 20 → market OVERprices downside, bias toward NO pays more than expected');
+  if (lvlNow >= 18) activeSkills.push('🔗 CORRELATION: if BTC strong signal → check SOL/ETH follow-through for cascade bet');
+  if (lvlNow >= 30) activeSkills.push('🧠 SONIC MIND: analyze all 12 last closes for micro patterns, look for 3+ candle sequences');
+  const skillsBlock = activeSkills.length > 0
+    ? `\nACTIVE SKILLS — use these in your analysis:\n${activeSkills.map(s => '• ' + s).join('\n')}\n`
     : '';
 
-  const intelSummary    = readIntelSummary();
-  const episodicAccuracy= getHypothesisAccuracy();
-  const metaCalibCtx    = getMetaCalibContext();
-  const cascadeSignal   = updateCorrelation(prices);
-  const dynW            = loadDynWeights();
+  const intelSummary = readIntelSummary();
+  const episodicAccuracy = getHypothesisAccuracy();
+  const metaCalibCtx = getMetaCalibContext();
+  const cascadeSignal = updateCorrelation(prices);
+  const dynW = loadDynWeights();
 
   // AGI Layer 1: legacy pattern memory
-  const patternMemory = candidates.map((m,i)=> {
-    const pm = getSimilarPastTrades(m.asset, 'NO', m.roughEdge||0.07, prices[m.asset?.toUpperCase()+'USDT']?.rsi||50);
-    return pm ? `[${i+1}] ${pm}` : '';
+  const patternMemory = candidates.map((m, i) => {
+    const pm = getSimilarPastTrades(m.asset, 'NO', m.roughEdge || 0.07, prices[m.asset?.toUpperCase() + 'USDT']?.rsi || 50);
+    return pm ? `[${i + 1}] ${pm}` : '';
   }).filter(Boolean).join('\n');
 
   // AGI Layer 10: CORTEX MEMORY — semantic vector recall
   const cortexRecall = recallAllMemories(candidates, prices);
 
   const prompt = `You are ADAN-PRED — autonomous prediction markets agent with real-time market intelligence.
-Mission: find Polymarket crypto markets where YOUR probability estimate differs from market price by >${(strat.minEdge*100).toFixed(0)}%.${skillsBlock}${intelSummary?'\n'+intelSummary:''}${episodicAccuracy?'\nYOUR CALIBRATION HISTORY: '+episodicAccuracy+'\n':''}${metaCalibCtx?'\n'+metaCalibCtx+'\n':''}${cascadeSignal?'\n'+cascadeSignal+'\n':''}${patternMemory?'\nPATTERN MEMORY (similar past bets):\n'+patternMemory+'\n':''}${cortexRecall?'\n'+cortexRecall+'\n':''}
+Mission: find Polymarket crypto markets where YOUR probability estimate differs from market price by >${(strat.minEdge * 100).toFixed(0)}%.${skillsBlock}${intelSummary ? '\n' + intelSummary : ''}${episodicAccuracy ? '\nYOUR CALIBRATION HISTORY: ' + episodicAccuracy + '\n' : ''}${metaCalibCtx ? '\n' + metaCalibCtx + '\n' : ''}${cascadeSignal ? '\n' + cascadeSignal + '\n' : ''}${patternMemory ? '\nPATTERN MEMORY (similar past bets):\n' + patternMemory + '\n' : ''}${cortexRecall ? '\n' + cortexRecall + '\n' : ''}
 
 ══════════════════════════════════════════
 MARKET CONTEXT — ${new Date().toISOString()}
 ══════════════════════════════════════════
-${fgContext}${dynW.fearGreedBias!==0?`\nFEAR-GREED BIAS ACTIVE: ${dynW.fearGreedBias>0?'Lean NO on UP bets (fear premium)':'Lean YES on UP bets (greed momentum)'}`:''}
+${fgContext}${dynW.fearGreedBias !== 0 ? `\nFEAR-GREED BIAS ACTIVE: ${dynW.fearGreedBias > 0 ? 'Lean NO on UP bets (fear premium)' : 'Lean YES on UP bets (greed momentum)'}` : ''}
 ${newsContext}
 REAL-TIME BINANCE INTELLIGENCE:
 ${priceContext}
@@ -3700,10 +3884,10 @@ ${priceContext}
 ══════════════════════════════════════════
 YOUR MEMORY (SOUL — learned patterns + auto-evolved rules):
 ══════════════════════════════════════════
-${soul.slice(0,800)}
+${soul.slice(0, 800)}
 
 ══════════════════════════════════════════
-STATUS: Fund=$${pnl.fund?.toFixed(2)||100} | WR=${pnl.trades>0?Math.round(pnl.wins/pnl.trades*100):0}% (${pnl.trades} trades) | Open=${openPos.length}/${MAX_POSITIONS}
+STATUS: Fund=$${pnl.fund?.toFixed(2) || 100} | WR=${pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0}% (${pnl.trades} trades) | Open=${openPos.length}/${MAX_POSITIONS}
 ══════════════════════════════════════════
 
 POLYMARKET CANDIDATES (${candidates.length} crypto markets):
@@ -3747,7 +3931,7 @@ YOUR 7-STEP ANALYSIS (INSTITUTIONAL GRADE):
    - Funding < -0.005%: shorts overleveraged → LONG/YES squeeze opportunity
    - Funding > +0.01% or < -0.01%: EXTREME → imminent correction, bet AGAINST the crowd
 
-8. EDGE vs MARKET: Only bet if YOUR probability vs market price diverges by >${(strat.minEdge*100).toFixed(0)}%+.
+8. EDGE vs MARKET: Only bet if YOUR probability vs market price diverges by >${(strat.minEdge * 100).toFixed(0)}%+.
    Also weight CHILD CONSENSUS — if ≥75% of children agree, add +3% to your edge estimate in that direction.
 
 DECISION FORMAT — copy exactly:
@@ -3762,32 +3946,32 @@ REASONING: 2-3 sentences max
 Or if no edge: state SKIP and why in one sentence.`;
 
   const resp = await client.messages.create({
-    model:      'claude-sonnet-4-6',
+    model: 'claude-sonnet-4-6',
     max_tokens: 1200,
-    messages:   [{ role:'user', content:prompt }]
+    messages: [{ role: 'user', content: prompt }]
   });
 
   const text = resp.content[0].text;
-  fs.appendFileSync(THOUGHTS_PATH, JSON.stringify({ ts:new Date().toISOString(), thought:text })+'\n');
+  fs.appendFileSync(THOUGHTS_PATH, JSON.stringify({ ts: new Date().toISOString(), thought: text }) + '\n');
 
   // Parse decision
-  const betMatch   = text.match(/MARKET_ID[:\s]+\[?(\d+)\]?/i);
-  const sideMatch  = text.match(/SIDE[:\s]+(YES|NO)/i);
-  const myProbM    = text.match(/MY_PROB[:\s]+([\d.]+)/i);
-  const confMatch  = text.match(/CONFIDENCE[:\s]+(\d+)/i);
-  const edgeMatch  = text.match(/EDGE[:\s]+([+-]?[\d.]+)/i);
+  const betMatch = text.match(/MARKET_ID[:\s]+\[?(\d+)\]?/i);
+  const sideMatch = text.match(/SIDE[:\s]+(YES|NO)/i);
+  const myProbM = text.match(/MY_PROB[:\s]+([\d.]+)/i);
+  const confMatch = text.match(/CONFIDENCE[:\s]+(\d+)/i);
+  const edgeMatch = text.match(/EDGE[:\s]+([+-]?[\d.]+)/i);
 
-  const hasBet    = betMatch&&sideMatch&&myProbM;
-  const mktIdx    = hasBet?parseInt(betMatch[1])-1:-1;
-  const chosen    = (mktIdx>=0&&mktIdx<candidates.length)?candidates[mktIdx]:null;
-  const myProb    = myProbM?parseFloat(myProbM[1]):0;
-  const conf      = confMatch?parseInt(confMatch[1]):60;
-  const side      = sideMatch?sideMatch[1]:'YES';
-  let   edge      = edgeMatch?parseFloat(edgeMatch[1]):chosen?(myProb-chosen.yesPrice):0;
+  const hasBet = betMatch && sideMatch && myProbM;
+  const mktIdx = hasBet ? parseInt(betMatch[1]) - 1 : -1;
+  const chosen = (mktIdx >= 0 && mktIdx < candidates.length) ? candidates[mktIdx] : null;
+  const myProb = myProbM ? parseFloat(myProbM[1]) : 0;
+  const conf = confMatch ? parseInt(confMatch[1]) : 60;
+  const side = sideMatch ? sideMatch[1] : 'YES';
+  let edge = edgeMatch ? parseFloat(edgeMatch[1]) : chosen ? (myProb - chosen.yesPrice) : 0;
   // Normalize: Claude often returns edge as percentage (e.g. 15.5 or -12.0) not decimal (0.155)
   if (Math.abs(edge) > 1) edge = edge / 100;
 
-  let shouldBet = hasBet&&chosen&&Math.abs(edge)>=strat.minEdge&&conf>=strat.minConfidence;
+  let shouldBet = hasBet && chosen && Math.abs(edge) >= strat.minEdge && conf >= strat.minConfidence;
 
   // ── DUAL AI CONSULTATION — second opinion on medium confidence bets ────────
   // If confidence is 50-65%, ask Haiku for counter-opinion. Both must agree.
@@ -3797,218 +3981,219 @@ Or if no edge: state SKIP and why in one sentence.`;
       const dualResp = await client.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 200,
-        messages: [{ role: 'user', content:
-          `Quick verdict: "${chosen.title}" — should I bet ${side} at ${(chosen.yesPrice*100).toFixed(0)}% market price? My analysis says ${side} with ${conf}% confidence, edge ${(edge*100).toFixed(1)}%.
-Asset trend 5m: ${chosen.priceData?.trend5m?.toFixed(2)||'?'}%, RSI: ${chosen.priceData?.rsi?.toFixed(0)||'?'}, volume ratio: ${chosen.priceData?.vol?.ratio?.toFixed(1)||'?'}x.
+        messages: [{
+          role: 'user', content:
+            `Quick verdict: "${chosen.title}" — should I bet ${side} at ${(chosen.yesPrice * 100).toFixed(0)}% market price? My analysis says ${side} with ${conf}% confidence, edge ${(edge * 100).toFixed(1)}%.
+Asset trend 5m: ${chosen.priceData?.trend5m?.toFixed(2) || '?'}%, RSI: ${chosen.priceData?.rsi?.toFixed(0) || '?'}, volume ratio: ${chosen.priceData?.vol?.ratio?.toFixed(1) || '?'}x.
 Reply ONLY: AGREE or DISAGREE, then 1 sentence why.` }]
       });
       const dualText = dualResp.content[0].text.trim();
       const agrees = /AGREE/i.test(dualText) && !/DISAGREE/i.test(dualText);
-      dualNote = `\n🤖 DUAL AI: ${agrees?'CONFIRMED':'VETOED'} — ${dualText.slice(0,120)}`;
+      dualNote = `\n🤖 DUAL AI: ${agrees ? 'CONFIRMED' : 'VETOED'} — ${dualText.slice(0, 120)}`;
       if (!agrees) {
         shouldBet = false; // Haiku disagreed → SKIP
         dualNote += '\n⚠ BET CANCELLED by second opinion — confidence too low for disagreement.';
       }
-    } catch {}
+    } catch { }
   }
 
   return {
-    thought:   text + dualNote,
-    action:    shouldBet?'BET':'SKIP',
-    market:    chosen,
-    side, myProb, edge, confidence:conf,
-    apiTokens: (resp.usage?.input_tokens||0)+(resp.usage?.output_tokens||0)
+    thought: text + dualNote,
+    action: shouldBet ? 'BET' : 'SKIP',
+    market: chosen,
+    side, myProb, edge, confidence: conf,
+    apiTokens: (resp.usage?.input_tokens || 0) + (resp.usage?.output_tokens || 0)
   };
 }
 
 // ── Enter position ───────────────────────────────────────────────────────────
 // ── Kelly Criterion bet sizing (LVL 4+) ─────────────────────────────────────
 function kellyStake(pnl, side, myProb, marketYesPrice, edge) {
-  const xpData = expProgress(pnl.exp||0);
+  const xpData = expProgress(pnl.exp || 0);
   if (xpData.level < 4) return PAPER_BET_SIZE;
-  const p    = side==='YES' ? myProb : 1 - myProb;
-  const q    = 1 - p;
-  const odds = side==='YES'
-    ? (1/Math.max(marketYesPrice, 0.01) - 1)
-    : (1/Math.max(1-marketYesPrice, 0.01) - 1);
-  const kelly     = Math.max(0, (p * odds - q) / odds);
+  const p = side === 'YES' ? myProb : 1 - myProb;
+  const q = 1 - p;
+  const odds = side === 'YES'
+    ? (1 / Math.max(marketYesPrice, 0.01) - 1)
+    : (1 / Math.max(1 - marketYesPrice, 0.01) - 1);
+  const kelly = Math.max(0, (p * odds - q) / odds);
   const halfKelly = kelly / 2;  // half-Kelly = safer
-  const fund      = pnl.fund || 10000;
-  const raw       = fund * halfKelly;
+  const fund = pnl.fund || 10000;
+  const raw = fund * halfKelly;
   // Dynamic max based on WR — protect capital when losing
   const wr = pnl.trades > 0 ? pnl.wins / pnl.trades : 0.5;
   const maxStake = wr >= 0.60 ? 400    // 60%+ WR → aggressive, up to $400
-                 : wr >= 0.50 ? 250    // 50-59% WR → moderate, up to $250
-                 : wr >= 0.40 ? 150    // 40-49% WR → conservative, up to $150
-                 :               75;   // <40% WR → survival mode, max $75
+    : wr >= 0.50 ? 250    // 50-59% WR → moderate, up to $250
+      : wr >= 0.40 ? 150    // 40-49% WR → conservative, up to $150
+        : 75;   // <40% WR → survival mode, max $75
   // Round to nearest $25, clamp $50-maxStake
   return Math.round(Math.min(Math.max(raw, 50), maxStake) / 25) * 25;
 }
 
 async function enterPosition(decision) {
   const { market, side, myProb, edge, confidence, thought } = decision;
-  const pnlNow  = loadPnL();
-  const stake   = kellyStake(pnlNow, side, myProb, market.yesPrice, edge);
-  const xpData  = expProgress(pnlNow.exp||0);
+  const pnlNow = loadPnL();
+  const stake = kellyStake(pnlNow, side, myProb, market.yesPrice, edge);
+  const xpData = expProgress(pnlNow.exp || 0);
   const kellyOn = xpData.level >= 4;
 
   cls();
-  console.log(M+BOLD+'  ╔══════════════════════════════════════════════════════════════╗');
-  console.log(M+BOLD+'  ║  ADAN  ·  PAPER BET  ·  '+new Date().toLocaleTimeString().padEnd(35)+'║');
-  console.log(M+BOLD+'  ╠══════════════════════════════════════════════════════════════╣');
-  console.log(M+BOLD+'  ║  Market: '+W+BOLD+(market.title||'').slice(0,52).padEnd(52)+M+BOLD+' ║');
-  console.log(M+BOLD+'  ║  Side: '+W+BOLD+side.padEnd(5)+X+M+BOLD+'  My prob: '+Y+BOLD+(myProb*100).toFixed(1)+'%'+M+BOLD+'  Market: '+W+(market.yesPrice*100).toFixed(1)+'%'+M+BOLD+'  Edge: '+G+BOLD+(edge*100).toFixed(1)+'%'+M+BOLD+'  ║');
-  console.log(M+BOLD+'  ║  Confidence: '+Y+BOLD+confidence+'%'+M+BOLD+'  Stake: '+G+BOLD+'$'+stake+(kellyOn?' 📐KELLY':' flat')+M+BOLD+'  Liq: $'+(market.liquidity||0).toFixed(0).padEnd(8)+'║');
-  console.log(M+BOLD+'  ║  PAPER BET — no real money moved                             ║');
-  console.log(M+BOLD+'  ╚══════════════════════════════════════════════════════════════╝'+X);
-  await new Promise(r=>setTimeout(r,2000));
+  console.log(M + BOLD + '  ╔══════════════════════════════════════════════════════════════╗');
+  console.log(M + BOLD + '  ║  ADAN  ·  PAPER BET  ·  ' + new Date().toLocaleTimeString().padEnd(35) + '║');
+  console.log(M + BOLD + '  ╠══════════════════════════════════════════════════════════════╣');
+  console.log(M + BOLD + '  ║  Market: ' + W + BOLD + (market.title || '').slice(0, 52).padEnd(52) + M + BOLD + ' ║');
+  console.log(M + BOLD + '  ║  Side: ' + W + BOLD + side.padEnd(5) + X + M + BOLD + '  My prob: ' + Y + BOLD + (myProb * 100).toFixed(1) + '%' + M + BOLD + '  Market: ' + W + (market.yesPrice * 100).toFixed(1) + '%' + M + BOLD + '  Edge: ' + G + BOLD + (edge * 100).toFixed(1) + '%' + M + BOLD + '  ║');
+  console.log(M + BOLD + '  ║  Confidence: ' + Y + BOLD + confidence + '%' + M + BOLD + '  Stake: ' + G + BOLD + '$' + stake + (kellyOn ? ' 📐KELLY' : ' flat') + M + BOLD + '  Liq: $' + (market.liquidity || 0).toFixed(0).padEnd(8) + '║');
+  console.log(M + BOLD + '  ║  PAPER BET — no real money moved                             ║');
+  console.log(M + BOLD + '  ╚══════════════════════════════════════════════════════════════╝' + X);
+  await new Promise(r => setTimeout(r, 2000));
 
   // Build feature vector for cortex memory at entry time
   const entryVec = buildFeatureVector(market.priceData || {});
 
   const pos = loadPositions();
   pos.open.push({
-    id:          Date.now().toString(),
-    marketId:    market.id,
+    id: Date.now().toString(),
+    marketId: market.id,
     marketTitle: market.title,
-    asset:       market.asset||'other',
+    asset: market.asset || 'other',
     side, myProb,
     marketPrice: market.yesPrice,
     edge, confidence,
     stake,
-    entryTime:   new Date().toISOString(),
-    closesAt:    market.closesAt||null,
-    resolved:    false, won:null, pnl:null,
-    entryThought:thought?thought.slice(0,300):'',
+    entryTime: new Date().toISOString(),
+    closesAt: market.closesAt || null,
+    resolved: false, won: null, pnl: null,
+    entryThought: thought ? thought.slice(0, 300) : '',
     entryVec     // saved for cortex memory on resolution
   });
   savePositions(pos);
 
-  const pnl=loadPnL();
-  pnl.fund=parseFloat(((pnl.fund||100)-stake).toFixed(2));
+  const pnl = loadPnL();
+  pnl.fund = parseFloat(((pnl.fund || 100) - stake).toFixed(2));
   savePnL(pnl);
   awardExp(20);
   // Log hypothesis for episodic memory
-  logHypothesis(market.id, market.asset||'other', side, myProb, market.yesPrice, edge, market.closesAt);
+  logHypothesis(market.id, market.asset || 'other', side, myProb, market.yesPrice, edge, market.closesAt);
 }
 
 // ── Confidence meta-learning ──────────────────────────────────────────────────
 const METACALIB_PATH = path.join(DIR, 'metacalib.json');
 function loadMetaCalib() {
-  const def = { buckets:{ '60':{ pred:0,correct:0 }, '70':{ pred:0,correct:0 }, '80':{ pred:0,correct:0 }, '90':{ pred:0,correct:0 } }, multiplier:1.0 };
-  try { return fs.existsSync(METACALIB_PATH)?{...def,...JSON.parse(fs.readFileSync(METACALIB_PATH,'utf8'))}:def; } catch { return def; }
+  const def = { buckets: { '60': { pred: 0, correct: 0 }, '70': { pred: 0, correct: 0 }, '80': { pred: 0, correct: 0 }, '90': { pred: 0, correct: 0 } }, multiplier: 1.0 };
+  try { return fs.existsSync(METACALIB_PATH) ? { ...def, ...JSON.parse(fs.readFileSync(METACALIB_PATH, 'utf8')) } : def; } catch { return def; }
 }
 function updateMetaCalib(confidence, won) {
-  const mc  = loadMetaCalib();
-  const key = confidence>=90?'90':confidence>=80?'80':confidence>=70?'70':'60';
-  if (!mc.buckets[key]) mc.buckets[key]={pred:0,correct:0};
+  const mc = loadMetaCalib();
+  const key = confidence >= 90 ? '90' : confidence >= 80 ? '80' : confidence >= 70 ? '70' : '60';
+  if (!mc.buckets[key]) mc.buckets[key] = { pred: 0, correct: 0 };
   mc.buckets[key].pred++;
   if (won) mc.buckets[key].correct++;
   // Recalculate multiplier: if Claude says 70% conf but only 55% correct → multiplier = 0.55/0.70 = 0.78
-  const totPred = Object.values(mc.buckets).reduce((s,b)=>s+b.pred,0);
+  const totPred = Object.values(mc.buckets).reduce((s, b) => s + b.pred, 0);
   if (totPred >= 10) {
-    const totCorrect = Object.values(mc.buckets).reduce((s,b)=>s+b.correct,0);
-    const actualAcc = totCorrect/totPred;
-    const avgConf   = Object.entries(mc.buckets).reduce((s,[k,b])=>s+(parseInt(k)/100)*b.pred,0)/totPred;
-    mc.multiplier = parseFloat(Math.min(1.3, Math.max(0.5, actualAcc/avgConf)).toFixed(3));
+    const totCorrect = Object.values(mc.buckets).reduce((s, b) => s + b.correct, 0);
+    const actualAcc = totCorrect / totPred;
+    const avgConf = Object.entries(mc.buckets).reduce((s, [k, b]) => s + (parseInt(k) / 100) * b.pred, 0) / totPred;
+    mc.multiplier = parseFloat(Math.min(1.3, Math.max(0.5, actualAcc / avgConf)).toFixed(3));
   }
-  fs.writeFileSync(METACALIB_PATH, JSON.stringify(mc,null,2));
+  fs.writeFileSync(METACALIB_PATH, JSON.stringify(mc, null, 2));
   return mc;
 }
 function getMetaCalibContext() {
   const mc = loadMetaCalib();
-  const tot = Object.values(mc.buckets).reduce((s,b)=>s+b.pred,0);
+  const tot = Object.values(mc.buckets).reduce((s, b) => s + b.pred, 0);
   if (tot < 5) return '';
-  const cor = Object.values(mc.buckets).reduce((s,b)=>s+b.correct,0);
-  return `META-CALIBRATION: Your stated confidence is ${mc.multiplier<0.9?'OVERCONFIDENT':'well-calibrated'} (multiplier=${mc.multiplier}). `+
-    `Actual accuracy ${Math.round(cor/tot*100)}% on ${tot} predictions. `+
-    (mc.multiplier<0.85?'Reduce confidence estimates by ~'+Math.round((1-mc.multiplier)*100)+'%.':'');
+  const cor = Object.values(mc.buckets).reduce((s, b) => s + b.correct, 0);
+  return `META-CALIBRATION: Your stated confidence is ${mc.multiplier < 0.9 ? 'OVERCONFIDENT' : 'well-calibrated'} (multiplier=${mc.multiplier}). ` +
+    `Actual accuracy ${Math.round(cor / tot * 100)}% on ${tot} predictions. ` +
+    (mc.multiplier < 0.85 ? 'Reduce confidence estimates by ~' + Math.round((1 - mc.multiplier) * 100) + '%.' : '');
 }
 
 // ── Bottom-up knowledge: child insights → parent SOUL ────────────────────────
 const INSIGHTS_PATH = path.join(DIR, 'insights.jsonl');
 function logChildInsight(spec, asset, pattern, direction, occurrences) {
-  const entry = { spec, asset, pattern, direction, occurrences, ts:new Date().toISOString(), promoted:false };
-  fs.appendFileSync(INSIGHTS_PATH, JSON.stringify(entry)+'\n');
+  const entry = { spec, asset, pattern, direction, occurrences, ts: new Date().toISOString(), promoted: false };
+  fs.appendFileSync(INSIGHTS_PATH, JSON.stringify(entry) + '\n');
 }
 function promoteInsightsToSoul() {
   if (!fs.existsSync(INSIGHTS_PATH)) return;
-  const lines = fs.readFileSync(INSIGHTS_PATH,'utf8').trim().split('\n').filter(Boolean);
-  const insights = lines.map(l=>{try{return JSON.parse(l);}catch{return null;}}).filter(Boolean);
+  const lines = fs.readFileSync(INSIGHTS_PATH, 'utf8').trim().split('\n').filter(Boolean);
+  const insights = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
   // Group by pattern
   const grouped = {};
   for (const ins of insights) {
-    const k = ins.asset+'|'+ins.pattern;
-    if (!grouped[k]) grouped[k]={...ins, count:0};
+    const k = ins.asset + '|' + ins.pattern;
+    if (!grouped[k]) grouped[k] = { ...ins, count: 0 };
     grouped[k].count++;
   }
   // Promote patterns seen 3+ times and not yet promoted
-  const toPromote = Object.values(grouped).filter(g=>g.count>=3&&!g.promoted);
+  const toPromote = Object.values(grouped).filter(g => g.count >= 3 && !g.promoted);
   for (const p of toPromote) {
-    appendToSoul(`\n### CHILD INSIGHT PROMOTED — ${new Date().toISOString()}:\n`+
+    appendToSoul(`\n### CHILD INSIGHT PROMOTED — ${new Date().toISOString()}:\n` +
       `[${p.spec}] Pattern: ${p.pattern} → ${p.direction} (confirmed ${p.count}x)\n`);
     // Mark as promoted
-    const updated = lines.map(l=>{
-      try { const h=JSON.parse(l); return (h.asset===p.asset&&h.pattern===p.pattern)?JSON.stringify({...h,promoted:true}):l; }
+    const updated = lines.map(l => {
+      try { const h = JSON.parse(l); return (h.asset === p.asset && h.pattern === p.pattern) ? JSON.stringify({ ...h, promoted: true }) : l; }
       catch { return l; }
     });
-    fs.writeFileSync(INSIGHTS_PATH, updated.join('\n')+'\n');
+    fs.writeFileSync(INSIGHTS_PATH, updated.join('\n') + '\n');
   }
 }
 
 // ── Claude naming for children ────────────────────────────────────────────────
 const CHILD_NAMES = {
-  'BTC-5min':'HERMES','ETH-5min':'ATHENA','SOL-5min':'HELIOS',
-  'BTC-15min':'KRONOS','ETH-15min':'DAEDALUS','SOL-15min':'APOLLO',
-  'ALT-coins':'PROTEUS','1H-windows':'TITAN','BTC/ETH/SOL-15min':'ARES'
+  'BTC-5min': 'HERMES', 'ETH-5min': 'ATHENA', 'SOL-5min': 'HELIOS',
+  'BTC-15min': 'KRONOS', 'ETH-15min': 'DAEDALUS', 'SOL-15min': 'APOLLO',
+  'ALT-coins': 'PROTEUS', '1H-windows': 'TITAN', 'BTC/ETH/SOL-15min': 'ARES'
 };
 async function nameChild(client, spec, signal) {
   // Try predefined first — fast + free
   if (CHILD_NAMES[spec]) return CHILD_NAMES[spec];
   try {
     const resp = await client.messages.create({
-      model:'claude-haiku-4-5-20251001', max_tokens:20,
-      messages:[{ role:'user', content:`Name a trading AI agent: specialization=${spec}, signal=${signal||'neutral'}. One mythological name only (Greek/Roman/Norse). Reply with just the name in CAPS.` }]
+      model: 'claude-haiku-4-5-20251001', max_tokens: 20,
+      messages: [{ role: 'user', content: `Name a trading AI agent: specialization=${spec}, signal=${signal || 'neutral'}. One mythological name only (Greek/Roman/Norse). Reply with just the name in CAPS.` }]
     });
-    return resp.content[0].text.trim().replace(/[^A-Za-z]/g,'').toUpperCase().slice(0,10)||CHILD_NAMES[spec]||'UNNAMED';
-  } catch { return CHILD_NAMES[spec]||'UNNAMED'; }
+    return resp.content[0].text.trim().replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 10) || CHILD_NAMES[spec] || 'UNNAMED';
+  } catch { return CHILD_NAMES[spec] || 'UNNAMED'; }
 }
 
 // ── Spawn child agent ─────────────────────────────────────────────────────────
 async function spawnChild(client, pnl, specialization) {
-  const xpData   = expProgress(pnl.exp||0);
-  const sc       = TREE_RULES.spawnConditions;
-  const children = pnl.children||[];
+  const xpData = expProgress(pnl.exp || 0);
+  const sc = TREE_RULES.spawnConditions;
+  const children = pnl.children || [];
   // LVL 3 → 1 hijo máximo. LVL 4+ → hasta 6 hijos. Hijos SOLO informan, NUNCA apuestan.
-  const maxC     = xpData.level>=4 ? TREE_RULES.maxChildrenGen1 : TREE_RULES.maxChildrenAtLvl3;
+  const maxC = xpData.level >= 4 ? TREE_RULES.maxChildrenGen1 : TREE_RULES.maxChildrenAtLvl3;
   if (xpData.level < sc.minLvl) return null;
-  if (children.length >= maxC)  return null;
+  if (children.length >= maxC) return null;
   if (pnl.trades < sc.minTrades) return null;
-  if ((pnl.wins/Math.max(pnl.trades,1)) < sc.minWinRate) return null;
-  if ((pnl.treasury||0) <= 0)   return null;
+  if ((pnl.wins / Math.max(pnl.trades, 1)) < sc.minWinRate) return null;
+  if ((pnl.treasury || 0) <= 0) return null;
 
-  const SPECS = ['BTC-5min','ETH-5min','SOL-5min','BTC-15min','ETH-15min','SOL-15min'];
-  const taken  = children.map(c=>c.spec);
-  const nextSpec = specialization || SPECS.find(s=>!taken.includes(s)) || 'BTC-5min';
+  const SPECS = ['BTC-5min', 'ETH-5min', 'SOL-5min', 'BTC-15min', 'ETH-15min', 'SOL-15min'];
+  const taken = children.map(c => c.spec);
+  const nextSpec = specialization || SPECS.find(s => !taken.includes(s)) || 'BTC-5min';
 
   // Name the child using Claude (Haiku — cheap)
   const childName = await nameChild(client, nextSpec, null);
 
   // Inherit relevant SOUL sections
   const parentSoul = loadSoul();
-  const relevantAsset = nextSpec.replace(/-.*/,'').toLowerCase();
-  const inheritedLines = parentSoul.split('\n').filter(l=>
-    l.includes('## Rules')||l.includes('## Identity')||
-    l.includes(relevantAsset.toUpperCase())||l.includes('MISTAKE')||
-    l.includes('PATTERNS')||l.includes('REGLA')
-  ).slice(0,30);
+  const relevantAsset = nextSpec.replace(/-.*/, '').toLowerCase();
+  const inheritedLines = parentSoul.split('\n').filter(l =>
+    l.includes('## Rules') || l.includes('## Identity') ||
+    l.includes(relevantAsset.toUpperCase()) || l.includes('MISTAKE') ||
+    l.includes('PATTERNS') || l.includes('REGLA')
+  ).slice(0, 30);
 
-  const childDir  = path.join(HOME, `.adan-pred/children/${nextSpec.replace(/\//g,'-')}`);
-  if (!fs.existsSync(childDir)) fs.mkdirSync(childDir, { recursive:true });
+  const childDir = path.join(HOME, `.adan-pred/children/${nextSpec.replace(/\//g, '-')}`);
+  if (!fs.existsSync(childDir)) fs.mkdirSync(childDir, { recursive: true });
 
   const childSoul = `# ${childName} — ADAN-PRED CHILD
-Created: ${new Date().toISOString().slice(0,10)}
-Name: ${childName} | Spec: ${nextSpec} | Gen: ${(pnl.generation||1)+1}
+Created: ${new Date().toISOString().slice(0, 10)}
+Name: ${childName} | Spec: ${nextSpec} | Gen: ${(pnl.generation || 1) + 1}
 
 ## Identity
 I am ${childName}. Child of ADAN. I specialize in ${nextSpec} markets.
@@ -4026,47 +4211,47 @@ ${inheritedLines.join('\n')}
 5. I accumulate EXP from father's wins. At 100 EXP I may spawn up to 2 grandchildren (when ADAN is LVL 4+).
 `;
 
-  const childId   = Date.now().toString();
-  const capital   = Math.min(pnl.treasury * 0.3, 500);
+  const childId = Date.now().toString();
+  const capital = Math.min(pnl.treasury * 0.3, 500);
 
   // ── MUTACIÓN GENÉTICA — presión evolutiva ─────────────────────────────────
   // Gen 1 (Riesgo): minEdge ±10%, Gen 2 (Stake): 5-15% capital, Gen 3 (Paciencia): ±20%
   // Gen C (Cognitivo): estilo de análisis (A=volume/vwap, B=bollinger/vol, C=rsi/reversal)
-  const mutate = (base, pct=0.08) => parseFloat((base * (1 + (Math.random()*2-1)*pct)).toFixed(4));
+  const mutate = (base, pct = 0.08) => parseFloat((base * (1 + (Math.random() * 2 - 1) * pct)).toFixed(4));
   const parentStrat = loadStrategy();
   // Cognitive style: read from parent's best child or random
   const cognitiveStyles = ['volume_vwap', 'bollinger_vol', 'rsi_reversal'];
-  const cognitiveStyle = cognitiveStyles[Math.floor(Math.random()*3)];
+  const cognitiveStyle = cognitiveStyles[Math.floor(Math.random() * 3)];
   // Stake: 5%-15% of available fund (vs fixed $100 in parent)
-  const stakePct = parseFloat((0.05 + Math.random()*0.10).toFixed(3)); // 5-15%
+  const stakePct = parseFloat((0.05 + Math.random() * 0.10).toFixed(3)); // 5-15%
   // Market patience: minutes before skipping a market (shorter = more selective)
-  const patience  = parseFloat((0.8 + Math.random()*0.8).toFixed(2)); // 0.8-1.6x
+  const patience = parseFloat((0.8 + Math.random() * 0.8).toFixed(2)); // 0.8-1.6x
   const dna = {
-    minEdge:       mutate(parentStrat.minEdge    || 0.05, 0.10), // Gen 1: risk aversion ±10%
-    volWeight:     mutate(1.0,                             0.08), // peso volumen
-    vwapWeight:    mutate(1.0,                             0.08), // peso VWAP
-    boredBBMin:    mutate(0.006,                           0.10), // umbral aburrimiento
+    minEdge: mutate(parentStrat.minEdge || 0.05, 0.10), // Gen 1: risk aversion ±10%
+    volWeight: mutate(1.0, 0.08), // peso volumen
+    vwapWeight: mutate(1.0, 0.08), // peso VWAP
+    boredBBMin: mutate(0.006, 0.10), // umbral aburrimiento
     stakePct,                                                      // Gen 2: stake 5-15% capital
     patience,                                                      // Gen 3: market patience factor
     cognitiveStyle,                                                // Estilo cognitivo A/B/C
-    mutation:      Math.round(Math.random()*100)                   // seed trazabilidad
+    mutation: Math.round(Math.random() * 100)                   // seed trazabilidad
   };
   // ─────────────────────────────────────────────────────────────────────────
 
-  fs.writeFileSync(path.join(childDir,'SOUL.md'), childSoul);
-  fs.writeFileSync(path.join(childDir,'pnl.json'), JSON.stringify({
-    trades:0, wins:0, losses:0, net:0, exp:0,
+  fs.writeFileSync(path.join(childDir, 'SOUL.md'), childSoul);
+  fs.writeFileSync(path.join(childDir, 'pnl.json'), JSON.stringify({
+    trades: 0, wins: 0, losses: 0, net: 0, exp: 0,
     fund: parseFloat(capital.toFixed(2)),
-    treasury:0, children:[], generation:(pnl.generation||1)+1, streak:0, hourStats:{},
-    parentId: pnl.id||'root', spec:nextSpec, name:childName,
+    treasury: 0, children: [], generation: (pnl.generation || 1) + 1, streak: 0, hourStats: {},
+    parentId: pnl.id || 'root', spec: nextSpec, name: childName,
     // Child observes first 5 trades before sending signals (signal quality gate)
-    signalActiveTrades: 5, status:'observing',
+    signalActiveTrades: 5, status: 'observing',
     dna  // mutación genética hereditaria
-  },null,2));
+  }, null, 2));
 
-  const child = { id:childId, name:childName, spec:nextSpec, born:new Date().toISOString(), capital, dir:childDir, generation:(pnl.generation||1)+1, status:'observing', dna };
+  const child = { id: childId, name: childName, spec: nextSpec, born: new Date().toISOString(), capital, dir: childDir, generation: (pnl.generation || 1) + 1, status: 'observing', dna };
   pnl.children = [...children, child];
-  pnl.treasury = parseFloat(((pnl.treasury||0) - capital).toFixed(2));
+  pnl.treasury = parseFloat(((pnl.treasury || 0) - capital).toFixed(2));
   savePnL(pnl);
 
   appendToSoul(`\n### CHILD SPAWNED — ${new Date().toISOString()}:\n${childName} (${nextSpec}) born with $${capital.toFixed(2)} capital. Gen ${child.generation}. Children: ${pnl.children.length}.\n`);
@@ -4079,84 +4264,84 @@ async function checkResolutions() {
   if (!pos.open.length) return;
   let changed = false;
 
-  for (let i=pos.open.length-1;i>=0;i--) {
+  for (let i = pos.open.length - 1; i >= 0; i--) {
     const p = pos.open[i];
-    if (p.resolved||!p.closesAt) continue;
+    if (p.resolved || !p.closesAt) continue;
     const endMs = new Date(p.closesAt).getTime();
-    if (Date.now()<endMs) continue; // not yet closed
+    if (Date.now() < endMs) continue; // not yet closed
 
     // Fetch market result from Polymarket
-    const data = await polyFetch('/markets/'+p.marketId);
+    const data = await polyFetch('/markets/' + p.marketId);
     if (!data) continue;
-    const closed = data.closed||data.archived||data.active===false;
+    const closed = data.closed || data.archived || data.active === false;
     if (!closed) continue;
 
     // Determine winner
     let outcomePrices;
-    try { outcomePrices = typeof data.outcomePrices==='string'?JSON.parse(data.outcomePrices):data.outcomePrices; }
-    catch { outcomePrices = [0.5,0.5]; }
+    try { outcomePrices = typeof data.outcomePrices === 'string' ? JSON.parse(data.outcomePrices) : data.outcomePrices; }
+    catch { outcomePrices = [0.5, 0.5]; }
     // If YES resolved to 1.0 → YES won
-    const yesWon = Array.isArray(outcomePrices)&&parseFloat(outcomePrices[0])>=0.99;
-    const won    = (p.side==='YES'&&yesWon)||(p.side==='NO'&&!yesWon);
+    const yesWon = Array.isArray(outcomePrices) && parseFloat(outcomePrices[0]) >= 0.99;
+    const won = (p.side === 'YES' && yesWon) || (p.side === 'NO' && !yesWon);
 
     // Slippage simulation: 0.2% deducted on entry + exit = realistic paper trading
     const SLIPPAGE = 0.002; // 0.2% per side
     const slippageCost = parseFloat((p.stake * SLIPPAGE * 2).toFixed(2)); // entry + exit
     let pnlVal;
     if (won) {
-      const mult = p.side==='YES'?1/Math.max(p.marketPrice,0.01):1/Math.max(1-p.marketPrice,0.01);
-      pnlVal = parseFloat((p.stake*(mult-1) - slippageCost).toFixed(2));
+      const mult = p.side === 'YES' ? 1 / Math.max(p.marketPrice, 0.01) : 1 / Math.max(1 - p.marketPrice, 0.01);
+      pnlVal = parseFloat((p.stake * (mult - 1) - slippageCost).toFixed(2));
     } else {
       pnlVal = parseFloat((-p.stake - slippageCost).toFixed(2));
     }
 
-    p.resolved=true; p.won=won; p.pnl=pnlVal; p.result=won?'WIN':'LOSS';
-    p.resolvedAt=new Date().toISOString();
-    pos.closed.push({...p});
-    pos.open.splice(i,1);
-    changed=true;
+    p.resolved = true; p.won = won; p.pnl = pnlVal; p.result = won ? 'WIN' : 'LOSS';
+    p.resolvedAt = new Date().toISOString();
+    pos.closed.push({ ...p });
+    pos.open.splice(i, 1);
+    changed = true;
     resolveHypothesis(p.marketId, won);
-    updateMetaCalib(p.confidence||65, won);
+    updateMetaCalib(p.confidence || 65, won);
     promoteInsightsToSoul();
     // Cortex Memory: store trade with its entry feature vector
     if (p.entryVec) {
       memorizeTradeContext(p, { orderBook: { buyPressure: p.entryVec.buyPressure, ratio: p.entryVec.obRatio, sellWallTrap: p.entryVec.sellWallTrap, buyWallTrap: p.entryVec.buyWallTrap }, rsi: p.entryVec.rsi, rsi5m: p.entryVec.rsi5m, trend1m: p.entryVec.trend1m, trend5m: p.entryVec.trend5m, trend15m: p.entryVec.trend15m, trend1h: p.entryVec.trend1h, bb: { pct: p.entryVec.bbPct }, vol: { ratio: p.entryVec.volRatio }, volAccel: p.entryVec.volAccel, vwap5m: { pct: p.entryVec.vwapPct }, volatility: p.entryVec.volatility }, won);
     }
-    awardChildExp(p.asset||'btc', won); // hijos ganan EXP cuando el padre gana en su asset
+    awardChildExp(p.asset || 'btc', won); // hijos ganan EXP cuando el padre gana en su asset
 
-    const pnl2=loadPnL();
-    pnl2.trades=(pnl2.trades||0)+1;
+    const pnl2 = loadPnL();
+    pnl2.trades = (pnl2.trades || 0) + 1;
     if (won) {
-      pnl2.wins=(pnl2.wins||0)+1; pnl2.streak=(pnl2.streak||0)+1;
-      pnl2.fund=parseFloat(((pnl2.fund||100)+p.stake+pnlVal).toFixed(2));
-      pnl2.net=parseFloat(((pnl2.net||0)+pnlVal).toFixed(2));
-      pnl2.treasury=parseFloat(((pnl2.treasury||0)+pnlVal*TREE_RULES.treasuryPct).toFixed(2));
-      awardExp(calcWinExp(p.confidence,Math.abs(p.edge||0),pnl2.streak));
+      pnl2.wins = (pnl2.wins || 0) + 1; pnl2.streak = (pnl2.streak || 0) + 1;
+      pnl2.fund = parseFloat(((pnl2.fund || 100) + p.stake + pnlVal).toFixed(2));
+      pnl2.net = parseFloat(((pnl2.net || 0) + pnlVal).toFixed(2));
+      pnl2.treasury = parseFloat(((pnl2.treasury || 0) + pnlVal * TREE_RULES.treasuryPct).toFixed(2));
+      awardExp(calcWinExp(p.confidence, Math.abs(p.edge || 0), pnl2.streak));
       updateCalibration(p.asset, true);
-      if (pnl2.trades%5===0) {
-        const rec=pos.closed.slice(-5);
-        appendToSoul(`\n### PATTERNS — ${new Date().toISOString()} (${pnl2.trades} trades):\nWR: ${Math.round(pnl2.wins/pnl2.trades*100)}%. Recent: ${rec.map(c=>c.result+'['+c.asset+']').join(', ')}.\n`);
+      if (pnl2.trades % 5 === 0) {
+        const rec = pos.closed.slice(-5);
+        appendToSoul(`\n### PATTERNS — ${new Date().toISOString()} (${pnl2.trades} trades):\nWR: ${Math.round(pnl2.wins / pnl2.trades * 100)}%. Recent: ${rec.map(c => c.result + '[' + c.asset + ']').join(', ')}.\n`);
       }
     } else {
-      pnl2.losses=(pnl2.losses||0)+1; pnl2.streak=0;
-      pnl2.net=parseFloat(((pnl2.net||0)+pnlVal).toFixed(2));
+      pnl2.losses = (pnl2.losses || 0) + 1; pnl2.streak = 0;
+      pnl2.net = parseFloat(((pnl2.net || 0) + pnlVal).toFixed(2));
       awardExp(30);
       updateCalibration(p.asset, false);
-      appendToSoul(`\n### MISTAKE — ${new Date().toISOString()}:\nLOSS on "${p.marketTitle}" (${p.asset}). My: ${(p.myProb*100).toFixed(0)}% vs market: ${(p.marketPrice*100).toFixed(0)}%. Edge was ${(p.edge*100).toFixed(1)}%.\n`);
+      appendToSoul(`\n### MISTAKE — ${new Date().toISOString()}:\nLOSS on "${p.marketTitle}" (${p.asset}). My: ${(p.myProb * 100).toFixed(0)}% vs market: ${(p.marketPrice * 100).toFixed(0)}%. Edge was ${(p.edge * 100).toFixed(1)}%.\n`);
     }
-    const h=new Date().getHours().toString();
-    if (!pnl2.hourStats) pnl2.hourStats={};
-    if (!pnl2.hourStats[h]) pnl2.hourStats[h]={wins:0,losses:0};
-    won?pnl2.hourStats[h].wins++:pnl2.hourStats[h].losses++;
+    const h = new Date().getHours().toString();
+    if (!pnl2.hourStats) pnl2.hourStats = {};
+    if (!pnl2.hourStats[h]) pnl2.hourStats[h] = { wins: 0, losses: 0 };
+    won ? pnl2.hourStats[h].wins++ : pnl2.hourStats[h].losses++;
     savePnL(pnl2);
-    console.log('\n'+(won?G:R)+BOLD+'  ► '+(won?'WIN':'LOSS')+' resolved: '+p.marketTitle+' → $'+(pnlVal>=0?'+':'')+pnlVal+X+'\n');
-    await new Promise(r=>setTimeout(r,1000));
+    console.log('\n' + (won ? G : R) + BOLD + '  ► ' + (won ? 'WIN' : 'LOSS') + ' resolved: ' + p.marketTitle + ' → $' + (pnlVal >= 0 ? '+' : '') + pnlVal + X + '\n');
+    await new Promise(r => setTimeout(r, 1000));
   }
   if (changed) {
     savePositions(pos);
     const pnlFinal = loadPnL();
     // AGI Layer 2: auto-evolve SOUL every 5 trades (async, silent)
-    if (_agiClient) autoEvolveSoul(_agiClient, pnlFinal).catch(()=>{});
+    if (_agiClient) autoEvolveSoul(_agiClient, pnlFinal).catch(() => { });
     // AGI Layer 3: absorb elite child genome if any child outperforms parent
     absorbEliteGenome(pnlFinal);
     // AGI Layer 4: prune dead children (capital = 0 OR incompetence → natural death)
@@ -4180,13 +4365,13 @@ function absorbEliteGenome(pnl) {
   const children = pnl.children || [];
   if (!children.length) return;
 
-  let bestChild  = null;
-  let bestScore  = -Infinity;
+  let bestChild = null;
+  let bestScore = -Infinity;
   const parentWR = pnl.trades > 0 ? pnl.wins / pnl.trades : 0.40;
 
   for (const ch of children) {
     const childDir = ch.dir || path.join(DIR, 'children', ch.id || ch.spec);
-    const cpPath   = path.join(childDir, 'pnl.json');
+    const cpPath = path.join(childDir, 'pnl.json');
     if (!fs.existsSync(cpPath)) continue;
     let cp;
     try { cp = JSON.parse(fs.readFileSync(cpPath, 'utf8')); } catch { continue; }
@@ -4199,8 +4384,8 @@ function absorbEliteGenome(pnl) {
     // Score compuesto: win rate + número de trades (más trades = más confianza)
     const score = childWR * 100 + Math.log(cp.trades + 1) * 5;
     if (score > bestScore) {
-      bestScore  = score;
-      bestChild  = { ...ch, cp };
+      bestScore = score;
+      bestChild = { ...ch, cp };
     }
   }
 
@@ -4214,29 +4399,29 @@ function absorbEliteGenome(pnl) {
   const lerp = (a, b, t) => parseFloat((a + (b - a) * t).toFixed(4));
   const T = 0.20; // tasa de absorción: 20% del camino hacia el genoma del hijo
   const absorbed = {
-    volumeWeight:  lerp(curr.volumeWeight,  dna.volWeight  || 1.0, T),
-    vwapWeight:    lerp(curr.vwapWeight,    dna.vwapWeight || 1.0, T),
+    volumeWeight: lerp(curr.volumeWeight, dna.volWeight || 1.0, T),
+    vwapWeight: lerp(curr.vwapWeight, dna.vwapWeight || 1.0, T),
     _lastAbsorbed: new Date().toISOString(),
     _absorbedFrom: bestChild.name || bestChild.spec,
-    _childWR:      Math.round(bestChild.cp.wins / bestChild.cp.trades * 100) + '%',
-    _parentWR:     Math.round(parentWR * 100) + '%',
-    _note:         curr._note
+    _childWR: Math.round(bestChild.cp.wins / bestChild.cp.trades * 100) + '%',
+    _parentWR: Math.round(parentWR * 100) + '%',
+    _note: curr._note
   };
 
   // Solo escribe si hay cambio real
   const changed = Math.abs(absorbed.volumeWeight - curr.volumeWeight) > 0.001
-               || Math.abs(absorbed.vwapWeight   - curr.vwapWeight)   > 0.001;
+    || Math.abs(absorbed.vwapWeight - curr.vwapWeight) > 0.001;
   if (!changed) return;
 
   fs.writeFileSync(DYN_WEIGHTS_PATH, JSON.stringify({ ...curr, ...absorbed }, null, 2));
 
   const msg = `\n### ABSORCIÓN GENÉTICA — ${new Date().toISOString()}:\n`
-    + `Hijo élite: ${bestChild.name||bestChild.spec} | WR: ${absorbed._childWR} (padre: ${absorbed._parentWR})\n`
+    + `Hijo élite: ${bestChild.name || bestChild.spec} | WR: ${absorbed._childWR} (padre: ${absorbed._parentWR})\n`
     + `DNA absorbido: volWeight=${dna.volWeight} → ${absorbed.volumeWeight}, vwapWeight=${dna.vwapWeight} → ${absorbed.vwapWeight}\n`
     + `Tasa de absorción: 20% del delta. ADAN evoluciona gradualmente hacia el genoma ganador.\n`;
   appendToSoul(msg);
 
-  console.log(C+BOLD+'\n  ◈ DNA ABSORBED from '+bestChild.name+' → ADAN evolves'+X);
+  console.log(C + BOLD + '\n  ◈ DNA ABSORBED from ' + bestChild.name + ' → ADAN evolves' + X);
 }
 
 // ── MUERTE NATURAL DE HIJOS ───────────────────────────────────────────────────
@@ -4246,11 +4431,11 @@ function absorbEliteGenome(pnl) {
 function pruneDeadChildren(pnl) {
   const children = pnl.children || [];
   const alive = [];
-  const dead  = [];
+  const dead = [];
 
   for (const ch of children) {
     const childDir = ch.dir || path.join(DIR, 'children', ch.id || ch.spec);
-    const cpPath   = path.join(childDir, 'pnl.json');
+    const cpPath = path.join(childDir, 'pnl.json');
     if (!fs.existsSync(cpPath)) { alive.push(ch); continue; }
     let cp;
     try { cp = JSON.parse(fs.readFileSync(cpPath, 'utf8')); } catch { alive.push(ch); continue; }
@@ -4258,24 +4443,24 @@ function pruneDeadChildren(pnl) {
     const fund = cp.fund || 0;
     // Death 1: capital exhausted
     if (fund <= 0 && (cp.trades || 0) >= 5) {
-      dead.push({ ...ch, deathReason:'capital', finalWR: cp.trades > 0 ? Math.round(cp.wins/cp.trades*100) : 0, finalTrades: cp.trades });
+      dead.push({ ...ch, deathReason: 'capital', finalWR: cp.trades > 0 ? Math.round(cp.wins / cp.trades * 100) : 0, finalTrades: cp.trades });
       continue;
     }
     // Death 2: consistently low intel score (incompetence)
-    const slug2 = ch.spec.replace(/[^a-z0-9]/gi,'-').toLowerCase();
-    const intelPath2 = path.join(INTEL_DIR, slug2+'.json');
+    const slug2 = ch.spec.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const intelPath2 = path.join(INTEL_DIR, slug2 + '.json');
     if (fs.existsSync(intelPath2)) {
       try {
-        const intel2 = JSON.parse(fs.readFileSync(intelPath2,'utf8'));
+        const intel2 = JSON.parse(fs.readFileSync(intelPath2, 'utf8'));
         const hist2 = intel2.scoreHistory || [];
         if (hist2.length >= 15) {
-          const avgScore = hist2.reduce((a,b)=>a+b,0)/hist2.length;
+          const avgScore = hist2.reduce((a, b) => a + b, 0) / hist2.length;
           if (avgScore < 40) {
-            dead.push({ ...ch, deathReason:'incompetence', avgScore: avgScore.toFixed(0), finalTrades: cp.trades||0 });
+            dead.push({ ...ch, deathReason: 'incompetence', avgScore: avgScore.toFixed(0), finalTrades: cp.trades || 0 });
             continue;
           }
         }
-      } catch {}
+      } catch { }
     }
     alive.push(ch);
   }
@@ -4288,12 +4473,12 @@ function pruneDeadChildren(pnl) {
       ? `Avg intel score: ${d.avgScore}/100 over 15 cycles — consistently weak signal.`
       : `Capital agotado. WR final: ${d.finalWR}% en ${d.finalTrades} trades.`;
     const msg = `\n### CHILD DIED — ${new Date().toISOString()}:\n`
-      + `${d.name||d.spec} (${d.spec}) ha muerto por ${d.deathReason||'capital'}.\n`
-      + `${reason} DNA: ${JSON.stringify(d.dna||{})}\n`
+      + `${d.name || d.spec} (${d.spec}) ha muerto por ${d.deathReason || 'capital'}.\n`
+      + `${reason} DNA: ${JSON.stringify(d.dna || {})}\n`
       + `Selección natural ha hablado. Este genoma no sobrevivió.\n`;
     appendToSoul(msg);
-    const cause = d.deathReason==='incompetence' ? 'incompetent (score avg '+d.avgScore+')' : 'capital exhausted';
-    console.log(R+BOLD+'\n  ✗ CHILD DIED: '+(d.name||d.spec)+' ('+d.spec+') — '+cause+X);
+    const cause = d.deathReason === 'incompetence' ? 'incompetent (score avg ' + d.avgScore + ')' : 'capital exhausted';
+    console.log(R + BOLD + '\n  ✗ CHILD DIED: ' + (d.name || d.spec) + ' (' + d.spec + ') — ' + cause + X);
   }
 
   // Actualiza el árbol del padre
@@ -4313,13 +4498,13 @@ function runTournamentOfDeath(pnl) {
   // Leer PnL de cada hijo
   const withStats = children.map(ch => {
     const childDir = ch.dir || path.join(DIR, 'children', ch.id || ch.spec);
-    const cpPath   = path.join(childDir, 'pnl.json');
-    if (!fs.existsSync(cpPath)) return { ...ch, wr:0, fund:0 };
+    const cpPath = path.join(childDir, 'pnl.json');
+    if (!fs.existsSync(cpPath)) return { ...ch, wr: 0, fund: 0 };
     try {
       const cp = JSON.parse(fs.readFileSync(cpPath, 'utf8'));
       const wr = cp.trades > 0 ? cp.wins / cp.trades : 0;
       return { ...ch, wr, fund: cp.fund || 0, trades: cp.trades || 0 };
-    } catch { return { ...ch, wr:0, fund:0 }; }
+    } catch { return { ...ch, wr: 0, fund: 0 }; }
   });
 
   // Solo si suficientes hijos tienen trades para comparar
@@ -4327,10 +4512,10 @@ function runTournamentOfDeath(pnl) {
   if (active.length < 2) return;
 
   // Ordenar por WR (mejor primero)
-  active.sort((a,b) => b.wr - a.wr);
-  const cutoff   = Math.ceil(active.length / 2);
-  const survivors= active.slice(0, cutoff);
-  const losers   = active.slice(cutoff);
+  active.sort((a, b) => b.wr - a.wr);
+  const cutoff = Math.ceil(active.length / 2);
+  const survivors = active.slice(0, cutoff);
+  const losers = active.slice(cutoff);
 
   if (losers.length === 0) { pnl._tournamentDone = true; savePnL(pnl); return; }
 
@@ -4338,32 +4523,32 @@ function runTournamentOfDeath(pnl) {
   for (const loser of losers) {
     recoveredCapital += loser.fund || 0;
     const childDir = loser.dir || path.join(DIR, 'children', loser.id || loser.spec);
-    const cpPath   = path.join(childDir, 'pnl.json');
+    const cpPath = path.join(childDir, 'pnl.json');
     // Zero out capital — death
     try {
       const cp = JSON.parse(fs.readFileSync(cpPath, 'utf8'));
       cp.fund = 0;
       fs.writeFileSync(cpPath, JSON.stringify(cp, null, 2));
-    } catch {}
+    } catch { }
     const msg = `\n### TOURNAMENT DEATH — ${new Date().toISOString()}:\n`
-      + `${loser.name||loser.spec} eliminado en Torneo de la Muerte (trade ${pnl.trades}).\n`
-      + `WR: ${Math.round(loser.wr*100)}% — perdió el corte. Capital recuperado: $${(loser.fund||0).toFixed(2)}.\n`;
+      + `${loser.name || loser.spec} eliminado en Torneo de la Muerte (trade ${pnl.trades}).\n`
+      + `WR: ${Math.round(loser.wr * 100)}% — perdió el corte. Capital recuperado: $${(loser.fund || 0).toFixed(2)}.\n`;
     appendToSoul(msg);
-    console.log(R+BOLD+'\n  ✗ TOURNAMENT KILL: '+(loser.name||loser.spec)+' WR '+Math.round(loser.wr*100)+'%'+X);
+    console.log(R + BOLD + '\n  ✗ TOURNAMENT KILL: ' + (loser.name || loser.spec) + ' WR ' + Math.round(loser.wr * 100) + '%' + X);
   }
 
   // Capital redistribuído al tesoro
-  pnl.treasury = parseFloat(((pnl.treasury||0) + recoveredCapital).toFixed(2));
+  pnl.treasury = parseFloat(((pnl.treasury || 0) + recoveredCapital).toFixed(2));
   pnl._tournamentDone = true;
 
   // Mantener solo survivors + children sin suficientes trades
   const survivorIds = new Set(survivors.map(s => s.id));
-  const noTrades    = withStats.filter(c => !active.find(a=>a.id===c.id));
+  const noTrades = withStats.filter(c => !active.find(a => a.id === c.id));
   pnl.children = [...survivors, ...noTrades];
   savePnL(pnl);
 
-  appendToSoul(`\n### TOURNAMENT RESULT — ${new Date().toISOString()}:\nSurvivors: ${survivors.map(s=>(s.name||s.spec)+' WR:'+Math.round(s.wr*100)+'%').join(', ')}.\nCapital recovered: $${recoveredCapital.toFixed(2)} → treasury.\n`);
-  console.log(M+BOLD+'\n  ◈ TOURNAMENT DONE: '+survivors.length+' survivors, $'+recoveredCapital.toFixed(2)+' recovered'+X);
+  appendToSoul(`\n### TOURNAMENT RESULT — ${new Date().toISOString()}:\nSurvivors: ${survivors.map(s => (s.name || s.spec) + ' WR:' + Math.round(s.wr * 100) + '%').join(', ')}.\nCapital recovered: $${recoveredCapital.toFixed(2)} → treasury.\n`);
+  console.log(M + BOLD + '\n  ◈ TOURNAMENT DONE: ' + survivors.length + ' survivors, $' + recoveredCapital.toFixed(2) + ' recovered' + X);
 }
 
 // ── PROMOCIÓN DE NIETOS: si nieto supera al hijo padre, el hijo muere y el nieto sube ──
@@ -4383,7 +4568,7 @@ function promoteEliteGrandchild(pnl) {
     let childPnl;
     try { childPnl = JSON.parse(fs.readFileSync(childPnlPath, 'utf8')); } catch { continue; }
 
-    const childWR = (childPnl.trades||0) >= 10 ? (childPnl.wins||0) / childPnl.trades : null;
+    const childWR = (childPnl.trades || 0) >= 10 ? (childPnl.wins || 0) / childPnl.trades : null;
     const grandChildren = childPnl.children || [];
     if (!grandChildren.length) continue;
 
@@ -4395,22 +4580,22 @@ function promoteEliteGrandchild(pnl) {
       let gcPnl;
       try { gcPnl = JSON.parse(fs.readFileSync(gcPnlPath, 'utf8')); } catch { continue; }
 
-      const gcWR = (gcPnl.trades||0) >= 10 ? (gcPnl.wins||0) / gcPnl.trades : null;
+      const gcWR = (gcPnl.trades || 0) >= 10 ? (gcPnl.wins || 0) / gcPnl.trades : null;
       if (childWR === null || gcWR === null) continue;
       if (gcWR <= childWR + 0.12) continue; // nieto debe superar al padre por >12%
 
       // PROMOCIÓN: nieto elimina al padre y sube a Gen 2
       const msg = `\n### GRANDCHILD PROMOTION — ${new Date().toISOString()}:\n`
-        + `${gc.name||gc.spec} (GC·WR:${Math.round(gcWR*100)}%) eliminó a ${child.name||child.spec} (WR:${Math.round(childWR*100)}%)\n`
-        + `${gc.name||gc.spec} promovido a Gen 2 — hijo directo de ADAN. El mejor genoma sobrevive.\n`
-        + `DNA del nieto: ${JSON.stringify(gc.dna||{})}\n`;
+        + `${gc.name || gc.spec} (GC·WR:${Math.round(gcWR * 100)}%) eliminó a ${child.name || child.spec} (WR:${Math.round(childWR * 100)}%)\n`
+        + `${gc.name || gc.spec} promovido a Gen 2 — hijo directo de ADAN. El mejor genoma sobrevive.\n`
+        + `DNA del nieto: ${JSON.stringify(gc.dna || {})}\n`;
       appendToSoul(msg);
-      console.log(C+BOLD+'\n  ◈ PROMOTION: '+(gc.name||gc.spec)+' → Gen2 (eliminated parent '+(child.name||child.spec)+')'+X);
+      console.log(C + BOLD + '\n  ◈ PROMOTION: ' + (gc.name || gc.spec) + ' → Gen2 (eliminated parent ' + (child.name || child.spec) + ')' + X);
 
       // Nieto pasa a ser hijo directo de ADAN
       const promoted = {
         ...gc,
-        generation: (pnl.generation||1) + 1,
+        generation: (pnl.generation || 1) + 1,
         dir: gcDir,
         status: 'observing',
         promotedFrom: child.name || child.spec,
@@ -4435,7 +4620,7 @@ function applySurvivalMode(pnl) {
   const strat = loadStrategy();
   let mode = 'normal';
   let minEdge = 0.05;
-  let maxPos  = 9;
+  let maxPos = 9;
   let soulNote = null;
 
   // Paper trade $10k: trade freely to learn — survival only near death
@@ -4470,145 +4655,145 @@ function applySurvivalMode(pnl) {
 
 // ── Main scan ────────────────────────────────────────────────────────────────
 async function doScan(client, state) {
-  let pnl      = loadPnL();
+  let pnl = loadPnL();
   const survival = applySurvivalMode(pnl);
   state.survivalMode = survival.mode;
-  const openPos= loadPositions().open;
-  const strat  = loadStrategy();
-  const soul   = loadSoul();
+  const openPos = loadPositions().open;
+  const strat = loadStrategy();
+  const soul = loadSoul();
 
   // Auto-spawn check
-  const xpCheck   = expProgress(pnl.exp||0);
-  const sc        = TREE_RULES.spawnConditions;
-  const childCount= (pnl.children||[]).length;
-  const maxC      = xpCheck.level>=4 ? TREE_RULES.maxChildrenGen1 : TREE_RULES.maxChildrenAtLvl3;
-  const spawnReady= xpCheck.level>=sc.minLvl
-    && pnl.trades>=sc.minTrades
-    && (pnl.wins/Math.max(pnl.trades,1))>=sc.minWinRate
-    && childCount<maxC
-    && (pnl.treasury||0)>0;
+  const xpCheck = expProgress(pnl.exp || 0);
+  const sc = TREE_RULES.spawnConditions;
+  const childCount = (pnl.children || []).length;
+  const maxC = xpCheck.level >= 4 ? TREE_RULES.maxChildrenGen1 : TREE_RULES.maxChildrenAtLvl3;
+  const spawnReady = xpCheck.level >= sc.minLvl
+    && pnl.trades >= sc.minTrades
+    && (pnl.wins / Math.max(pnl.trades, 1)) >= sc.minWinRate
+    && childCount < maxC
+    && (pnl.treasury || 0) > 0;
   if (spawnReady) {
     const newChild = await spawnChild(client, pnl, null);
     if (newChild) {
       pnl = loadPnL();
       cls();
-      console.log('\n'+C+BOLD+'  ╔══════════════════════════════════════════════════════════════╗');
-      console.log(C+BOLD+'  ║  👶 CHILD BORN!  '+Y+BOLD+(newChild.name||newChild.spec).padEnd(12)+C+BOLD+'  spec: '+newChild.spec.padEnd(14)+'Gen '+newChild.generation+' ║');
-      console.log(C+BOLD+'  ║  Capital: $'+newChild.capital.toFixed(2)+'  Specialization: '+newChild.spec.padEnd(20)+'      ║');
-      console.log(C+BOLD+'  ║  "I am '+(newChild.name||'UNNAMED')+'. I serve ADAN. I scan. I learn. I report."          ║');
-      console.log(C+BOLD+'  ╚══════════════════════════════════════════════════════════════╝'+X+'\n');
-      await new Promise(r=>setTimeout(r,4000));
+      console.log('\n' + C + BOLD + '  ╔══════════════════════════════════════════════════════════════╗');
+      console.log(C + BOLD + '  ║  👶 CHILD BORN!  ' + Y + BOLD + (newChild.name || newChild.spec).padEnd(12) + C + BOLD + '  spec: ' + newChild.spec.padEnd(14) + 'Gen ' + newChild.generation + ' ║');
+      console.log(C + BOLD + '  ║  Capital: $' + newChild.capital.toFixed(2) + '  Specialization: ' + newChild.spec.padEnd(20) + '      ║');
+      console.log(C + BOLD + '  ║  "I am ' + (newChild.name || 'UNNAMED') + '. I serve ADAN. I scan. I learn. I report."          ║');
+      console.log(C + BOLD + '  ╚══════════════════════════════════════════════════════════════╝' + X + '\n');
+      await new Promise(r => setTimeout(r, 4000));
     }
   }
 
   // Check grandchildren spawning (LVL 4+ only, silently in background)
-  if (xpCheck.level >= 4) spawnGrandchildren(client).catch(() => {});
+  if (xpCheck.level >= 4) spawnGrandchildren(client).catch(() => { });
 
-  if (openPos.length>=MAX_POSITIONS) {
-    state.thought='All '+MAX_POSITIONS+' slots full. Monitoring for resolutions.';
-    state.mode='result'; render(state); return;
+  if (openPos.length >= MAX_POSITIONS) {
+    state.thought = 'All ' + MAX_POSITIONS + ' slots full. Monitoring for resolutions.';
+    state.mode = 'result'; render(state); return;
   }
 
   // 1. Fetch Binance prices
-  state.status='Fetching Binance prices...'; render(state);
+  state.status = 'Fetching Binance prices...'; render(state);
   const prices = await fetchAllPrices();
   state.prices = prices;
 
   // 2. Fetch Polymarket markets
-  state.status='Fetching Polymarket markets...'; render(state);
+  state.status = 'Fetching Polymarket markets...'; render(state);
   const rawMkts = await fetchPolymarkets(strat);
-  const allMarkets = rawMkts.map(m=>normalizePolymarket(m,prices)).filter(m=>m&&m.id&&m.title);
+  const allMarkets = rawMkts.map(m => normalizePolymarket(m, prices)).filter(m => m && m.id && m.title);
 
   // Separate: ACTIVE NOW (close <4h) vs FUTURE (close >4h)
-  const nowMs2   = Date.now();
-  const activeNow = allMarkets.filter(m=>m.closesAt&&(new Date(m.closesAt)-nowMs2)<4*3600*1000);
-  const future    = allMarkets.filter(m=>!m.closesAt||(new Date(m.closesAt)-nowMs2)>=4*3600*1000);
+  const nowMs2 = Date.now();
+  const activeNow = allMarkets.filter(m => m.closesAt && (new Date(m.closesAt) - nowMs2) < 4 * 3600 * 1000);
+  const future = allMarkets.filter(m => !m.closesAt || (new Date(m.closesAt) - nowMs2) >= 4 * 3600 * 1000);
 
   // Show display: active first, then future
-  const markets = activeNow.length>0 ? activeNow : future;
+  const markets = activeNow.length > 0 ? activeNow : future;
 
   // Rough edge sort (display only)
-  markets.forEach(m=>{ if (m.edge==null) m.edge=Math.abs(m.yesPrice-0.5)*0.4; });
-  markets.sort((a,b)=>{
+  markets.forEach(m => { if (m.edge == null) m.edge = Math.abs(m.yesPrice - 0.5) * 0.4; });
+  markets.sort((a, b) => {
     // Up/Down always first
-    if (a._isUpDown&&!b._isUpDown) return -1;
-    if (!a._isUpDown&&b._isUpDown) return 1;
-    return (new Date(a.closesAt||0))-(new Date(b.closesAt||0));
+    if (a._isUpDown && !b._isUpDown) return -1;
+    if (!a._isUpDown && b._isUpDown) return 1;
+    return (new Date(a.closesAt || 0)) - (new Date(b.closesAt || 0));
   });
-  state.markets = markets.slice(0,8);
+  state.markets = markets.slice(0, 8);
 
   // Sleep mode: if no active markets right now → skip Claude call, just show status
-  if (activeNow.length===0) {
+  if (activeNow.length === 0) {
     // Polymarket session runs roughly 8AM-midnight ET = UTC 13:00-05:00
     const utcHour = new Date().getUTCHours();
-    const sessionLikely = utcHour>=13||utcHour<5; // ET 8AM-midnight
+    const sessionLikely = utcHour >= 13 || utcHour < 5; // ET 8AM-midnight
     const sleepMin = sessionLikely ? 5 : 20; // check every 5min if session might be live
     const nextOpen = sessionLikely
       ? 'Session may be opening — checking every 5min'
       : '5M session opens ~8AM ET. Checking every 20min.';
     // Shadow mode: use offline time to practice Binance-only predictions (LVL 25+)
-    const xpShadow = expProgress(pnl.exp||0);
+    const xpShadow = expProgress(pnl.exp || 0);
     if (xpShadow.level >= 25 && prices) {
       for (const [sym, d] of Object.entries(prices)) {
-        if (!d||sym==='_meta') continue;
-        const asset = sym.replace('USDT','').toLowerCase();
-        const sig   = childSignal(d);
-        if (sig.dir!=='NEUTRAL' && sig.conf>=60) {
-          logShadowPrediction(asset, sig.dir==='UP'?'UP':'DOWN', d.price, 5);
+        if (!d || sym === '_meta') continue;
+        const asset = sym.replace('USDT', '').toLowerCase();
+        const sig = childSignal(d);
+        if (sig.dir !== 'NEUTRAL' && sig.conf >= 60) {
+          logShadowPrediction(asset, sig.dir === 'UP' ? 'UP' : 'DOWN', d.price, 5);
         }
       }
     }
     checkShadowResolutions(prices);
-    runAllChildScanners(prices, allMarkets).catch(()=>{});
+    runAllChildScanners(prices, allMarkets).catch(() => { });
 
     // ── DREAM MODE — off-hours self-reflection (AGI Layer 6) ─────────────
     // ADAN replays recent losses with Claude and generates new insights for SOUL.md
-    if (client && !pnl._lastDream || (Date.now() - new Date(pnl._lastDream||0).getTime()) > 3600000) {
-      dreamMode(client, pnl).catch(()=>{});
+    if (client && !pnl._lastDream || (Date.now() - new Date(pnl._lastDream || 0).getTime()) > 3600000) {
+      dreamMode(client, pnl).catch(() => { });
     }
 
-    state.thought = `No active markets closing within 4h. ${nextOpen}\nDisplaying ${future.length} upcoming markets for reference.\nPreserving $${pnl.fund?.toFixed(2)||10000}. Will bet automatically when session opens.${pnl._lastDream ? '\n💤 Last dream session: '+new Date(pnl._lastDream).toLocaleTimeString() : ''}`;
-    state.mode='result'; state.lastScan=new Date().toLocaleTimeString();
+    state.thought = `No active markets closing within 4h. ${nextOpen}\nDisplaying ${future.length} upcoming markets for reference.\nPreserving $${pnl.fund?.toFixed(2) || 10000}. Will bet automatically when session opens.${pnl._lastDream ? '\n💤 Last dream session: ' + new Date(pnl._lastDream).toLocaleTimeString() : ''}`;
+    state.mode = 'result'; state.lastScan = new Date().toLocaleTimeString();
     state.nextScanIn = sleepMin;
     render(state);
     return;
   }
 
-  if (markets.length===0) {
+  if (markets.length === 0) {
     // Last resort: fetch any active markets and show top crypto ones regardless of close time
     const fallback = await polyFetch('/markets?limit=200&active=true&closed=false&order=volumeNum&ascending=false');
-    const fbList   = Array.isArray(fallback)?fallback:(fallback?.markets||[]);
-    const fbCrypto = fbList.filter(m=>CRYPTO_RE.test(m.question||m.title||'')).slice(0,8);
-    if (fbCrypto.length>0) {
-      state.markets = fbCrypto.map(m=>normalizePolymarket(m,prices));
-      state.thought = `Found ${fbCrypto.length} crypto markets (no recent close constraint). Monitoring for best entry. ADAN will bet when edge > ${(strat.minEdge*100).toFixed(0)}%.`;
+    const fbList = Array.isArray(fallback) ? fallback : (fallback?.markets || []);
+    const fbCrypto = fbList.filter(m => CRYPTO_RE.test(m.question || m.title || '')).slice(0, 8);
+    if (fbCrypto.length > 0) {
+      state.markets = fbCrypto.map(m => normalizePolymarket(m, prices));
+      state.thought = `Found ${fbCrypto.length} crypto markets (no recent close constraint). Monitoring for best entry. ADAN will bet when edge > ${(strat.minEdge * 100).toFixed(0)}%.`;
     } else {
-      state.thought='No crypto markets found on Polymarket. API may be down or all markets closed. Retrying in '+Math.round(SCAN_INTERVAL_MS/60000)+'min.';
+      state.thought = 'No crypto markets found on Polymarket. API may be down or all markets closed. Retrying in ' + Math.round(SCAN_INTERVAL_MS / 60000) + 'min.';
     }
-    state.mode='result'; state.lastScan=new Date().toLocaleTimeString();
-    state.nextScanIn=Math.round(SCAN_INTERVAL_MS/60000);
+    state.mode = 'result'; state.lastScan = new Date().toLocaleTimeString();
+    state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
     render(state); return;
   }
 
   // 2.5 Run child scanners in background (LVL 3+) — no Claude, just data
-  runAllChildScanners(prices, allMarkets).catch(()=>{});
+  runAllChildScanners(prices, allMarkets).catch(() => { });
   checkShadowResolutions(prices);
 
   // 2.6 BOREDOM FILTER — skip Claude call if market is asleep (low BB width + low volume)
   // Saves API tokens and prevents ADAN from over-trading in flat markets
-  const BOREDOM_BB_MIN  = 0.006; // BB width < 0.6% = market compressed = chop zone
+  const BOREDOM_BB_MIN = 0.006; // BB width < 0.6% = market compressed = chop zone
   const BOREDOM_VOL_MIN = 0.75;  // volume ratio < 0.75x avg = nobody trading
-  const activeSyms = Object.entries(prices).filter(([k,v])=>v&&k!=='_meta');
-  const anyActive  = activeSyms.some(([,d]) =>
+  const activeSyms = Object.entries(prices).filter(([k, v]) => v && k !== '_meta');
+  const anyActive = activeSyms.some(([, d]) =>
     (d.bb?.width || 0) >= BOREDOM_BB_MIN || (d.vol?.ratio || 1) >= BOREDOM_VOL_MIN
   );
   if (!anyActive && activeSyms.length > 0) {
-    const bbAvg = (activeSyms.reduce((s,[,d])=>s+(d.bb?.width||0),0)/activeSyms.length*100).toFixed(2);
-    const volAvg= (activeSyms.reduce((s,[,d])=>s+(d.vol?.ratio||1),0)/activeSyms.length).toFixed(2);
-    state.thought = `⏸ AUTO-SKIP — Market dormant (BB width avg: ${bbAvg}% < 0.6%, vol ratio avg: ${volAvg}x < 0.75x).\nNo conviction in Binance. Polymarket prices have nothing real to lag. Preserving tokens + capital.\nNext check in ${Math.round(SCAN_INTERVAL_MS/60000)}min.`;
+    const bbAvg = (activeSyms.reduce((s, [, d]) => s + (d.bb?.width || 0), 0) / activeSyms.length * 100).toFixed(2);
+    const volAvg = (activeSyms.reduce((s, [, d]) => s + (d.vol?.ratio || 1), 0) / activeSyms.length).toFixed(2);
+    state.thought = `⏸ AUTO-SKIP — Market dormant (BB width avg: ${bbAvg}% < 0.6%, vol ratio avg: ${volAvg}x < 0.75x).\nNo conviction in Binance. Polymarket prices have nothing real to lag. Preserving tokens + capital.\nNext check in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
     state.mode = 'result';
     state.lastScan = new Date().toLocaleTimeString();
-    state.nextScanIn = Math.round(SCAN_INTERVAL_MS/60000);
+    state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
     render(state); return;
   }
 
@@ -4616,33 +4801,33 @@ async function doScan(client, state) {
   const curHour = new Date().getUTCHours().toString();
   const hourData = pnl.hourStats?.[curHour];
   if (hourData) {
-    const hourTotal = (hourData.wins||0)+(hourData.losses||0);
-    const hourWR    = hourTotal>0 ? (hourData.wins||0)/hourTotal : 0.5;
+    const hourTotal = (hourData.wins || 0) + (hourData.losses || 0);
+    const hourWR = hourTotal > 0 ? (hourData.wins || 0) / hourTotal : 0.5;
     if (hourTotal >= 3 && hourWR < 0.30) {
-      state.thought = `⏸ HOUR FILTER — UTC hour ${curHour} has ${Math.round(hourWR*100)}% WR over ${hourTotal} trades (< 30% threshold).\nHistorically a losing hour. Skipping to protect capital. Better to wait for a high-WR window.\nNext scan in ${Math.round(SCAN_INTERVAL_MS/60000)}min.`;
+      state.thought = `⏸ HOUR FILTER — UTC hour ${curHour} has ${Math.round(hourWR * 100)}% WR over ${hourTotal} trades (< 30% threshold).\nHistorically a losing hour. Skipping to protect capital. Better to wait for a high-WR window.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
       state.mode = 'result';
       state.lastScan = new Date().toLocaleTimeString();
-      state.nextScanIn = Math.round(SCAN_INTERVAL_MS/60000);
+      state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
       render(state); return;
     }
   }
 
   // 3. Think
-  state.mode='thinking'; render(state);
+  state.mode = 'thinking'; render(state);
   let decision;
   try {
     decision = await think(client, markets, prices, pnl, openPos, soul);
-    state.apiCost=parseFloat(((state.apiCost||0)+(decision.apiTokens||2000)/1e6*9).toFixed(5));
-  } catch(e) {
-    state.thought='Claude error: '+e.message; state.mode='result'; render(state); return;
+    state.apiCost = parseFloat(((state.apiCost || 0) + (decision.apiTokens || 2000) / 1e6 * 9).toFixed(5));
+  } catch (e) {
+    state.thought = 'Claude error: ' + e.message; state.mode = 'result'; render(state); return;
   }
 
-  state.thought    = decision.thought;
-  state.mode       = 'result';
-  state.lastScan   = new Date().toLocaleTimeString();
-  state.nextScanIn = Math.round(SCAN_INTERVAL_MS/60000);
+  state.thought = decision.thought;
+  state.mode = 'result';
+  state.lastScan = new Date().toLocaleTimeString();
+  state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
 
-  if (decision.action==='BET'&&decision.market) await enterPosition(decision);
+  if (decision.action === 'BET' && decision.market) await enterPosition(decision);
 
   render(state);
 }
@@ -4651,7 +4836,7 @@ async function doScan(client, state) {
 async function setup() {
   const { createInterface } = await import('readline');
   cls();
-  console.log('\n'+M+BOLD);
+  console.log('\n' + M + BOLD);
   console.log('  ╔══════════════════════════════════════════════════════════════════╗');
   console.log('  ║                                                                  ║');
   console.log('  ║    ▄▄▄  ▄▄▄  ▄▄  ▄  ▄▄▄  ▄▄▄  ▄▄▄  ▄▄▄                        ║');
@@ -4676,70 +4861,70 @@ async function setup() {
   console.log('  ║   console.anthropic.com/settings/keys                           ║');
   console.log('  ║                                                                  ║');
   console.log('  ╚══════════════════════════════════════════════════════════════════╝');
-  console.log(X+'\n');
+  console.log(X + '\n');
 
-  const key = await new Promise(resolve=>{
-    const rl=createInterface({ input:process.stdin, output:process.stdout });
+  const key = await new Promise(resolve => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
     process.stdout.write('  > Paste Anthropic API key and press ENTER: ');
-    rl.once('line', ans=>{ rl.close(); resolve(ans); });
+    rl.once('line', ans => { rl.close(); resolve(ans); });
   });
 
   const trimmed = key.trim();
-  if (!trimmed||trimmed.length<20) {
+  if (!trimmed || trimmed.length < 20) {
     console.log('\n  ✗ No key entered. Run again.\n');
     process.exit(1);
   }
 
-  const config={ anthropicKey:trimmed, mode:'paper', createdAt:new Date().toISOString() };
+  const config = { anthropicKey: trimmed, mode: 'paper', createdAt: new Date().toISOString() };
   saveConfig(config);
   cls();
-  console.log('\n'+G+BOLD);
+  console.log('\n' + G + BOLD);
   console.log('  ╔══════════════════════════════════════════════════════════════════╗');
   console.log('  ║   ✓  API KEY SAVED                                               ║');
   console.log('  ║   ✓  BINANCE CONNECTION: FREE — NO KEY NEEDED                   ║');
   console.log('  ║   ✓  POLYMARKET CONNECTION: FREE — NO KEY NEEDED                ║');
   console.log('  ║   ✓  PAPER TRADING MODE ACTIVE — $100 VIRTUAL FUND              ║');
   console.log('  ║   ✓  ADAN IS WAKING UP...                                        ║');
-  console.log('  ╚══════════════════════════════════════════════════════════════════╝'+X+'\n');
-  await new Promise(r=>setTimeout(r,2000));
+  console.log('  ╚══════════════════════════════════════════════════════════════════╝' + X + '\n');
+  await new Promise(r => setTimeout(r, 2000));
   return config;
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
   ensureDir();
-  let config=loadConfig();
-  if (!config?.anthropicKey) config=await setup();
-  const client=new Anthropic({ apiKey:config.anthropicKey });
+  let config = loadConfig();
+  if (!config?.anthropicKey) config = await setup();
+  const client = new Anthropic({ apiKey: config.anthropicKey });
   _agiClient = client; // AGI layers use this reference
   loadSoul();
   startDashboard();
 
-  const state={
-    status:'Starting...',mode:'idle',thought:null,
-    pnl:loadPnL(), positions:loadPositions(),
-    markets:[], prices:{},
-    lastScan:null, nextScanIn:5, apiCost:0
+  const state = {
+    status: 'Starting...', mode: 'idle', thought: null,
+    pnl: loadPnL(), positions: loadPositions(),
+    markets: [], prices: {},
+    lastScan: null, nextScanIn: 5, apiCost: 0
   };
 
   render(state);
   await checkResolutions();
 
-  const loop=async()=>{
+  const loop = async () => {
     try {
-      state.pnl=loadPnL();
-      state.positions=loadPositions();
+      state.pnl = loadPnL();
+      state.positions = loadPositions();
       await checkResolutions();
-      await doScan(client,state);
-      state.pnl=loadPnL();
-      state.positions=loadPositions();
+      await doScan(client, state);
+      state.pnl = loadPnL();
+      state.positions = loadPositions();
       render(state);
-    } catch(e) { console.error(R+'Loop error: '+e.message+X); }
-    setTimeout(loop,SCAN_INTERVAL_MS);
+    } catch (e) { console.error(R + 'Loop error: ' + e.message + X); }
+    setTimeout(loop, SCAN_INTERVAL_MS);
   };
 
-  setTimeout(loop,2000);
-  setInterval(()=>{ state.pnl=loadPnL(); state.positions=loadPositions(); if(state.mode==='idle') render(state); },30000);
+  setTimeout(loop, 2000);
+  setInterval(() => { state.pnl = loadPnL(); state.positions = loadPositions(); if (state.mode === 'idle') render(state); }, 30000);
 }
 
-main().catch(e=>{ console.error(e); process.exit(1); });
+main().catch(e => { console.error(e); process.exit(1); });
