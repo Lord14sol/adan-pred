@@ -3094,7 +3094,6 @@ function getSimilarPastTrades(asset, side, currentEdge, currentRsi) {
     const resolved = lines.map(l=>{try{return JSON.parse(l);}catch{return null;}})
       .filter(h=>h&&h.resolved&&h.asset===asset&&h.side===side);
     if (resolved.length < 2) return '';
-    // Encuentra trades con edge similar (±5%)
     const similar = resolved.filter(h=>Math.abs((h.edge||0)-(currentEdge||0))<0.05);
     if (similar.length < 2) return '';
     const wins = similar.filter(h=>h.correct).length;
@@ -3102,6 +3101,119 @@ function getSimilarPastTrades(asset, side, currentEdge, currentRsi) {
     const recent3 = similar.slice(-3).map(h=>(h.correct?'WIN':'LOSS')+'(edge:'+(h.edge*100).toFixed(0)+'%)').join(', ');
     return `PATTERN MEMORY: In ${similar.length} similar ${asset.toUpperCase()} ${side} bets with edge ~${(currentEdge*100).toFixed(0)}% → WR=${wr}% (${wins}W/${similar.length-wins}L). Recent: ${recent3}.`;
   } catch { return ''; }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── CORTEZA CEREBRAL — Vector Memory System (Capa 2 + 3) ─────────────────────
+// Capa 1: SOUL.md (El Corazón — moral rules)
+// Capa 2: memory.db (La Memoria — trade context vectors stored as JSONL)
+// Capa 3: Semantic Retrieval (cosine similarity search before each bet)
+// ══════════════════════════════════════════════════════════════════════════════
+const MEMORY_DB_PATH = path.join(DIR, 'memory.db');
+
+// Feature vector: numeric snapshot of market state at trade time
+function buildFeatureVector(priceData) {
+  if (!priceData) return null;
+  return {
+    rsi:       priceData.rsi       || 50,
+    rsi5m:     priceData.rsi5m     || 50,
+    trend1m:   priceData.trend1m   || 0,
+    trend5m:   priceData.trend5m   || 0,
+    trend15m:  priceData.trend15m  || 0,
+    trend1h:   priceData.trend1h   || 0,
+    bbPct:     priceData.bb?.pct   || 50,
+    volRatio:  priceData.vol?.ratio || 1,
+    volAccel:  priceData.volAccel  || 0,
+    vwapPct:   priceData.vwap5m?.pct || 0,
+    buyPressure: priceData.orderBook?.buyPressure || 50,
+    obRatio:   priceData.orderBook?.ratio || 1,
+    sellWallTrap: priceData.orderBook?.sellWallTrap ? 1 : 0,
+    buyWallTrap:  priceData.orderBook?.buyWallTrap  ? 1 : 0,
+    volatility: priceData.volatility || 0
+  };
+}
+
+// Cosine similarity between two feature vectors
+function cosineSimilarity(a, b) {
+  const keys = Object.keys(a);
+  let dot = 0, magA = 0, magB = 0;
+  for (const k of keys) {
+    const va = a[k] || 0, vb = b[k] || 0;
+    dot += va * vb;
+    magA += va * va;
+    magB += vb * vb;
+  }
+  if (magA === 0 || magB === 0) return 0;
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
+
+// Store a trade in memory.db with its full technical context
+function memorizeTradeContext(position, priceData, won) {
+  const vec = buildFeatureVector(priceData);
+  if (!vec) return;
+  const entry = {
+    ts:       new Date().toISOString(),
+    asset:    position.asset,
+    side:     position.side,
+    edge:     position.edge,
+    confidence: position.confidence,
+    myProb:   position.myProb,
+    marketPrice: position.marketPrice,
+    stake:    position.stake,
+    won,
+    vec,
+    // Human-readable context for Claude
+    context:  `${position.asset.toUpperCase()} ${position.side} edge:${((position.edge||0)*100).toFixed(1)}% conf:${position.confidence}% RSI:${vec.rsi.toFixed(0)} trend5m:${vec.trend5m.toFixed(2)}% vol:${vec.volRatio.toFixed(1)}x OB:${vec.buyPressure}% ${vec.sellWallTrap?'SELL_WALL_TRAP':vec.buyWallTrap?'BUY_WALL_TRAP':'balanced'}`
+  };
+  fs.appendFileSync(MEMORY_DB_PATH, JSON.stringify(entry) + '\n');
+}
+
+// Semantic retrieval: find top N most similar past trades by cosine similarity
+function recallSimilarMemories(asset, currentPriceData, topN = 3) {
+  if (!fs.existsSync(MEMORY_DB_PATH)) return '';
+  const currentVec = buildFeatureVector(currentPriceData);
+  if (!currentVec) return '';
+
+  try {
+    const lines = fs.readFileSync(MEMORY_DB_PATH, 'utf8').trim().split('\n').filter(Boolean);
+    const memories = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    if (memories.length < 3) return '';
+
+    // Score each memory by cosine similarity to current market state
+    const scored = memories
+      .filter(m => m.vec && m.asset === asset)
+      .map(m => ({ ...m, similarity: cosineSimilarity(currentVec, m.vec) }))
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, topN);
+
+    if (scored.length === 0) return '';
+
+    const wins = scored.filter(m => m.won).length;
+    const totalMemories = memories.filter(m => m.asset === asset).length;
+    const header = `🧠 CORTEX RECALL — ${scored.length} similar ${asset.toUpperCase()} situations found (${totalMemories} total memories):`;
+    const lines2 = scored.map((m, i) =>
+      `  [${(m.similarity * 100).toFixed(0)}% match] ${m.won ? 'WIN' : 'LOSS'} — ${m.context} (${new Date(m.ts).toLocaleDateString()})`
+    );
+    const verdict = wins >= 2
+      ? `  ✅ MEMORY VERDICT: ${wins}/${scored.length} similar situations were WINS → pattern favors betting.`
+      : wins === 0
+      ? `  ⚠ MEMORY VERDICT: 0/${scored.length} similar situations were wins → DANGER. Consider SKIP.`
+      : `  ◈ MEMORY VERDICT: ${wins}/${scored.length} mixed results → no strong pattern, proceed with caution.`;
+
+    return header + '\n' + lines2.join('\n') + '\n' + verdict;
+  } catch { return ''; }
+}
+
+// Recall memories for ALL candidate assets (multi-asset context)
+function recallAllMemories(candidates, prices) {
+  const recalls = candidates.map((m, i) => {
+    const sym = (m.asset || '').toUpperCase() + 'USDT';
+    const pd = prices[sym];
+    if (!pd) return '';
+    const recall = recallSimilarMemories(m.asset, pd);
+    return recall ? `[Market ${i + 1}] ${recall}` : '';
+  }).filter(Boolean);
+  return recalls.length ? '\n══ CORTEX MEMORY (semantic recall from past trades) ══\n' + recalls.join('\n\n') + '\n' : '';
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3374,14 +3486,17 @@ async function think(client, markets, prices, pnl, openPos, soul) {
   const cascadeSignal   = updateCorrelation(prices);
   const dynW            = loadDynWeights();
 
-  // AGI Layer 1: pattern memory per candidate
+  // AGI Layer 1: legacy pattern memory
   const patternMemory = candidates.map((m,i)=> {
     const pm = getSimilarPastTrades(m.asset, 'NO', m.roughEdge||0.07, prices[m.asset?.toUpperCase()+'USDT']?.rsi||50);
     return pm ? `[${i+1}] ${pm}` : '';
   }).filter(Boolean).join('\n');
 
+  // AGI Layer 10: CORTEX MEMORY — semantic vector recall
+  const cortexRecall = recallAllMemories(candidates, prices);
+
   const prompt = `You are ADAN-PRED — autonomous prediction markets agent with real-time market intelligence.
-Mission: find Polymarket crypto markets where YOUR probability estimate differs from market price by >${(strat.minEdge*100).toFixed(0)}%.${skillsBlock}${intelSummary?'\n'+intelSummary:''}${episodicAccuracy?'\nYOUR CALIBRATION HISTORY: '+episodicAccuracy+'\n':''}${metaCalibCtx?'\n'+metaCalibCtx+'\n':''}${cascadeSignal?'\n'+cascadeSignal+'\n':''}${patternMemory?'\nPATTERN MEMORY (similar past bets):\n'+patternMemory+'\n':''}
+Mission: find Polymarket crypto markets where YOUR probability estimate differs from market price by >${(strat.minEdge*100).toFixed(0)}%.${skillsBlock}${intelSummary?'\n'+intelSummary:''}${episodicAccuracy?'\nYOUR CALIBRATION HISTORY: '+episodicAccuracy+'\n':''}${metaCalibCtx?'\n'+metaCalibCtx+'\n':''}${cascadeSignal?'\n'+cascadeSignal+'\n':''}${patternMemory?'\nPATTERN MEMORY (similar past bets):\n'+patternMemory+'\n':''}${cortexRecall?'\n'+cortexRecall+'\n':''}
 
 ══════════════════════════════════════════
 MARKET CONTEXT — ${new Date().toISOString()}
@@ -3557,6 +3672,9 @@ async function enterPosition(decision) {
   console.log(M+BOLD+'  ╚══════════════════════════════════════════════════════════════╝'+X);
   await new Promise(r=>setTimeout(r,2000));
 
+  // Build feature vector for cortex memory at entry time
+  const entryVec = buildFeatureVector(market.priceData || {});
+
   const pos = loadPositions();
   pos.open.push({
     id:          Date.now().toString(),
@@ -3570,7 +3688,8 @@ async function enterPosition(decision) {
     entryTime:   new Date().toISOString(),
     closesAt:    market.closesAt||null,
     resolved:    false, won:null, pnl:null,
-    entryThought:thought?thought.slice(0,300):''
+    entryThought:thought?thought.slice(0,300):'',
+    entryVec     // saved for cortex memory on resolution
   });
   savePositions(pos);
 
@@ -3808,6 +3927,10 @@ async function checkResolutions() {
     resolveHypothesis(p.marketId, won);
     updateMetaCalib(p.confidence||65, won);
     promoteInsightsToSoul();
+    // Cortex Memory: store trade with its entry feature vector
+    if (p.entryVec) {
+      memorizeTradeContext(p, { orderBook: { buyPressure: p.entryVec.buyPressure, ratio: p.entryVec.obRatio, sellWallTrap: p.entryVec.sellWallTrap, buyWallTrap: p.entryVec.buyWallTrap }, rsi: p.entryVec.rsi, rsi5m: p.entryVec.rsi5m, trend1m: p.entryVec.trend1m, trend5m: p.entryVec.trend5m, trend15m: p.entryVec.trend15m, trend1h: p.entryVec.trend1h, bb: { pct: p.entryVec.bbPct }, vol: { ratio: p.entryVec.volRatio }, volAccel: p.entryVec.volAccel, vwap5m: { pct: p.entryVec.vwapPct }, volatility: p.entryVec.volatility }, won);
+    }
     awardChildExp(p.asset||'btc', won); // hijos ganan EXP cuando el padre gana en su asset
 
     const pnl2=loadPnL();
