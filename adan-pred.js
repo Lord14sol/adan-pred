@@ -574,8 +574,52 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 .cmd-sub::before{content:'■';color:var(--purple);font-size:7px}
 .cmd-sub.thinking::before{color:var(--cyan);animation:pulse .4s infinite}
 @media(max-width:900px){.cmd-grid{grid-template-columns:1fr}}
+/* ── Command Center topbar ────────────────────────────────────── */
+.cmd-topbar{display:flex;align-items:center;gap:8px;padding:8px 10px 4px;border-bottom:2px solid var(--border2)}
+.cmd-live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;flex-shrink:0}
+.cmd-live-dot.thinking{background:var(--cyan);animation:pulse .4s infinite}
+.cmd-live-dot.idle{background:var(--grey)}
+.cmd-live-txt{font-family:var(--pixel);font-size:7px;color:var(--text2);letter-spacing:1px}
+.cmd-scan-eta{font-family:var(--mono);font-size:11px;color:var(--dim);margin-left:auto}
+.cmd-scan-bar-wrap{height:3px;background:var(--bg2);width:100%}
+.cmd-scan-bar{height:3px;background:var(--cyan);transition:width .5s linear;width:0%}
 /* ── Neural Flow Visualization ────────────────────────────────── */
 .nf-wrap{overflow-x:auto;padding:4px 0}
+/* ── Dynasty Panel ────────────────────────────────────────────── */
+.dynasty-panel{padding:10px;border-top:2px dashed var(--border2)}
+.dyn-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.dyn-title{font-family:var(--pixel);font-size:7px;color:var(--text);letter-spacing:.5px}
+.dyn-badge{font-family:var(--pixel);font-size:6px;padding:2px 6px;border:1.5px solid;display:inline-block}
+.dyn-badge-ready{border-color:var(--green);color:var(--green)}
+.dyn-badge-soon{border-color:var(--yellow);color:var(--yellow)}
+.dyn-badge-wait{border-color:var(--grey);color:var(--grey)}
+.dyn-badge-active{border-color:var(--cyan);color:var(--cyan)}
+/* Requirements to spawn */
+.dyn-req-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
+.dyn-req{padding:8px;border:2px solid var(--border2);background:var(--bg2)}
+.dyn-req.done{border-color:var(--green)}
+.dyn-req-label{font-family:var(--pixel);font-size:6px;color:var(--dim);margin-bottom:4px;letter-spacing:.5px}
+.dyn-req-val{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text);margin-bottom:5px}
+.dyn-req.done .dyn-req-val{color:var(--green)}
+.dyn-req-track{height:6px;background:var(--bg);border:1.5px solid var(--border2)}
+.dyn-req-fill{height:100%;background:var(--cyan);transition:width .6s}
+.dyn-req.done .dyn-req-fill{background:var(--green)}
+.dyn-note{font-family:var(--font);font-size:13px;color:var(--dim);line-height:1.4;padding:6px;border-left:3px solid var(--border2)}
+/* Children cards */
+.dyn-children-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.dyn-child-card{padding:8px;border:2px solid var(--border2);background:var(--bg2);position:relative}
+.dyn-child-card.bull{border-color:var(--green)}
+.dyn-child-card.bear{border-color:var(--red)}
+.dyn-child-name{font-family:var(--pixel);font-size:7px;color:var(--purple);margin-bottom:5px;letter-spacing:.5px}
+.dyn-child-stats{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:5px}
+.dyn-stat{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.dyn-sig{font-family:var(--pixel);font-size:6px;padding:1px 4px;border:1.5px solid;margin-left:auto}
+.dyn-sig.bull{border-color:var(--green);color:var(--green)}
+.dyn-sig.bear{border-color:var(--red);color:var(--red)}
+.dyn-sig.idle{border-color:var(--grey);color:var(--grey)}
+.dyn-exp-track{height:5px;background:var(--bg);border:1.5px solid var(--border2);margin-bottom:3px}
+.dyn-exp-fill{height:100%;background:var(--purple)}
+.dyn-child-meta{font-family:var(--mono);font-size:10px;color:var(--dim)}
 @keyframes nfPulse{0%,100%{opacity:.3;r:16}50%{opacity:.8;r:24}}
 @keyframes nfFlow{to{stroke-dashoffset:-24}}
 @keyframes nfFlowSlow{to{stroke-dashoffset:-12}}
@@ -754,11 +798,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
       <div class="price-grid" id="price-grid"></div>
     </div>
 
-    <!-- Command Center: Unified Dynasty + Neural Flow -->
+    <!-- Command Center: Neural Pipeline + Dynasty -->
     <div class="card" id="cmd-card">
-      <div class="card-title" id="nf-sub-title">◈ COMMAND CENTER · DYNASTY &amp; NEURAL PIPELINE</div>
+      <div class="cmd-topbar">
+        <span class="card-title" id="nf-sub-title" style="margin:0;border:none;padding:0">◈ NEURAL PIPELINE</span>
+        <span class="cmd-live-dot" id="cmd-live-dot"></span>
+        <span class="cmd-live-txt" id="cmd-live-txt">INITIALIZING</span>
+        <span class="cmd-scan-eta" id="cmd-scan-eta"></span>
+      </div>
+      <div class="cmd-scan-bar-wrap"><div class="cmd-scan-bar" id="cmd-scan-bar"></div></div>
       <div class="nf-wrap" id="nf-wrap"></div>
-      <div style="display:none" id="tree-wrap"></div>
+      <div class="dynasty-panel" id="dynasty-panel"></div>
     </div>
 
     <!-- Brain Log: Decisions + Reasoning -->
@@ -1063,10 +1113,9 @@ async function refresh(){
     // Avatar
     updateAvatar(d);
 
-    // Neural flow + sub-title state
-    const subEl = document.getElementById('nf-sub-title');
-    if (subEl) subEl.className = 'cmd-sub' + (d.state?.mode==='thinking' ? ' thinking' : '');
+    // Neural flow + dynasty panel
     updateNeuralFlow(d);
+    updateDynastyPanel(d);
     updateDecisionsLog(d);
     updateHourHeatmap(d);
 
@@ -1178,7 +1227,7 @@ function updateDecisionsLog(d) {
   }).join('');
 }
 
-// ── Neural Flow + Dynasty Visualization ───────────────────────────────────────
+// ── Neural Pipeline Visualization (pipeline only — dynasty rendered as HTML below) ──
 function updateNeuralFlow(d) {
   const wrap = document.getElementById('nf-wrap');
   if (!wrap) return;
@@ -1186,177 +1235,203 @@ function updateNeuralFlow(d) {
   const isDone     = d.state?.mode === 'result';
   const isIdle     = !isThinking && !isDone;
 
-  const prices   = d.state?.prices || {};
-  const markets  = (d.state?.markets || []).slice(0, 5);
-  const children = d.children || [];
-  const btc = prices['BTCUSDT'];
-  const eth = prices['ETHUSDT'];
-  const sol = prices['SOLUSDT'];
+  const prices  = d.state?.prices || {};
+  const markets = (d.state?.markets || []).slice(0,5);
+  const btc = prices['BTCUSDT'], eth = prices['ETHUSDT'], sol = prices['SOLUSDT'];
   const hasPrices = !!btc;
-  const pnl = d.pnl || {};
-  const xp  = d.xp  || {};
 
   const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
-  const frame  = frames[Math.floor(Date.now() / 150) % frames.length];
-  const fmt    = (v, dp=2) => v != null ? v.toFixed(dp) : '--';
-  const chgTxt = (p) => p ? (p.chg >= 0 ? '+' : '') + fmt(p.chg, 1) + '%' : '--';
+  const frame  = frames[Math.floor(Date.now()/150) % frames.length];
+  const fmt    = (v,dp=2) => v!=null ? v.toFixed(dp) : '--';
+  const chgTxt = (p) => p ? (p.chg>=0?'+':'')+fmt(p.chg,1)+'%' : '--';
 
-  const lineColor   = isThinking ? '#22d3ee' : isDone ? '#34d399' : '#2a2a44';
-  const lineOpacity = isIdle ? 0.5 : 1;
-  const lineClass   = isThinking ? 'nf-flowline' : 'nf-flowslow';
+  // Colors by state
+  const lnColor = isThinking?'#22d3ee':isDone?'#34d399':'#3a3a5a';
+  const lnCls   = isThinking?'nf-flowline':'nf-flowslow';
+  const ptDur   = isThinking?'0.7s':'2.2s';
+  const ptColor = isThinking?'#22d3ee':isDone?'#34d399':'#5a5a8a';
 
-  // ── Layout constants ─────────────────────────────────────────────────────
-  const NW = 78, NH = 55;
-  const SVG_W = 720;
-  const pipeY  = 10;
-  const pipeGap = Math.floor((SVG_W - 20 - 5 * NW) / 4);
-  const pipeX  = [0,1,2,3,4].map(i => 10 + i * (NW + pipeGap));
-  const claudeX = pipeX[3] + NW / 2;
-  const claudeY = pipeY + NH / 2;
-
-  const hasChildren = children.length > 0;
-  const CW = 90, CH = 50;
-  const divY   = pipeY + NH + 14;
-  const childY = divY + 14;
-  const SVG_H  = hasChildren ? childY + CH + 30 : childY + 46;
+  // Layout
+  const NW=80, NH=60, SVG_W=720, SVG_H=92, pipeY=16;
+  const gap = Math.floor((SVG_W-20-5*NW)/4);
+  const px = [0,1,2,3,4].map(i=>10+i*(NW+gap));
+  const midY = pipeY+NH/2;
 
   const nodeDefs = [
     { title:'BINANCE', icon:'◆', color:'#fbbf24',
-      lines:[btc?\`BTC \${chgTxt(btc)}\`:'loading...',eth?\`ETH \${chgTxt(eth)}\`:'',sol?\`SOL \${chgTxt(sol)}\`:''] },
+      l1:btc?\`BTC \${chgTxt(btc)}\`:'loading...', l2:eth?\`ETH \${chgTxt(eth)}\`:'' },
     { title:'TECHNICAL', icon:'≋', color:'#a855f7',
-      lines:[btc?\`RSI \${fmt(btc.rsi,0)} \${btc.rsi<35?'OS':btc.rsi>65?'OB':'—'}\`:'---',
-             btc?.macd?\`MACD \${btc.macd.hist>0?'▲ bull':'▼ bear'}\`:'---',
-             btc?.bb?\`BB \${fmt(btc.bb.pct,0)}%\`:'---'] },
+      l1:btc?\`RSI \${fmt(btc.rsi,0)} \${btc.rsi<35?'▼OS':btc.rsi>65?'▲OB':'━'}\`:'---',
+      l2:btc?.macd?\`MACD \${btc.macd.hist>0?'▲bull':'▼bear'}\`:'---' },
     { title:'POLYMARKET', icon:'◈', color:'#22d3ee',
-      lines:markets.length>0?markets.slice(0,2).map(m=>{
-        const a=(m.asset||'?').toUpperCase().slice(0,3);
-        const p=((m.yesPrice||0.5)*100).toFixed(0)+'%';
-        const e=((m.edge||0)*100).toFixed(0);
-        return \`\${a} \${p} e:\${e>0?'+':''}\${e}%\`;
-      }):['scanning...'] },
+      l1:markets.length?\`\${markets.length} markets\`:'scanning...',
+      l2:markets.length?\`best e:\${((markets[0]?.edge||0)*100).toFixed(0)}%\`:'' },
     { title:'CLAUDE ◈', icon:isThinking?frame:(isDone?'✓':'○'),
-      color:isThinking?'#22d3ee':(isDone?'#34d399':'#4b5563'),
-      lines:[isThinking?'analyzing...':(isDone?'decided':'idle'),'Sonnet 4.6'] },
+      color:isThinking?'#22d3ee':(isDone?'#34d399':'#5b5b7b'),
+      l1:isThinking?'analyzing...':(isDone?'decided':'idle'),
+      l2:'Sonnet 4.6' },
     { title:'DECISION', icon:isDone?'◉':'○',
-      color:isDone?(d.state?.thought?.includes('BET')?'#34d399':'#94a3b8'):'#4b5563',
-      lines:[isDone?(d.state?.thought?.includes('BET')?'● BET':'● SKIP'):(isThinking?'···':'waiting')] },
+      color:isDone?(d.state?.thought?.includes('BET')?'#34d399':'#94a3b8'):'#5b5b7b',
+      l1:isDone?(d.state?.thought?.includes('BET')?'● BET':'● SKIP'):(isThinking?frame:'waiting'),
+      l2:'' },
   ];
 
-  // ── Build SVG ─────────────────────────────────────────────────────────────
-  let svg = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:auto">
+  let svg = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
   <defs>
-    <filter id="nfg2"><feGaussianBlur stdDeviation="3" result="b"/><feComposite in="SourceGraphic" in2="b" operator="over"/></filter>
-    <marker id="arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-      <path d="M0,0 L0,6 L6,3 z" fill="\${lineColor}" opacity="\${lineOpacity}"/>
-    </marker>
-    <marker id="arr-ch" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
-      <path d="M0,0 L0,5 L5,2.5 z" fill="#22d3ee" opacity=".5"/>
+    <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feComposite in="SourceGraphic" in2="b" operator="over"/></filter>
+    <marker id="arh" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L6,3 z" fill="\${lnColor}"/>
     </marker>
   </defs>
-  <rect width="\${SVG_W}" height="\${SVG_H}" fill="#07070d" rx="8"/>\`;
+  <rect width="\${SVG_W}" height="\${SVG_H}" fill="#08080f" rx="6"/>\`;
 
   // Grid
-  for(let gx=0;gx<SVG_W;gx+=40) svg+=\`<line x1="\${gx}" y1="0" x2="\${gx}" y2="\${SVG_H}" stroke="#0d0d15" stroke-width=".5"/>\`;
-  for(let gy=0;gy<SVG_H;gy+=25) svg+=\`<line x1="0" y1="\${gy}" x2="\${SVG_W}" y2="\${gy}" stroke="#0d0d15" stroke-width=".5"/>\`;
+  for(let gx=0;gx<SVG_W;gx+=44) svg+=\`<line x1="\${gx}" y1="0" x2="\${gx}" y2="\${SVG_H}" stroke="#0e0e1a" stroke-width=".5"/>\`;
+  for(let gy=0;gy<SVG_H;gy+=20) svg+=\`<line x1="0" y1="\${gy}" x2="\${SVG_W}" y2="\${gy}" stroke="#0e0e1a" stroke-width=".5"/>\`;
 
-  // ── Pipeline arrows (horizontal) ─────────────────────────────────────────
+  // ── Connection lines + invisible paths for particle travel ───────────────
   for(let i=0;i<4;i++){
-    const x1=pipeX[i]+NW+1, y1=pipeY+NH/2, x2=pipeX[i+1]-1, y2=pipeY+NH/2;
-    svg+=\`<line x1="\${x1}" y1="\${y1}" x2="\${x2}" y2="\${y2}" stroke="\${lineColor}" stroke-width="1.5" stroke-dasharray="6 3" opacity="\${lineOpacity}" class="\${lineClass}" marker-end="url(#arr)"/>\`;
+    const x1=px[i]+NW+1, x2=px[i+1]-1;
+    svg+=\`<path id="cp\${i}" d="M\${x1},\${midY} L\${x2},\${midY}" stroke="\${lnColor}" stroke-width="1.5" stroke-dasharray="6 3" opacity=".9" class="\${lnCls}" fill="none" marker-end="url(#arh)"/>
+    <path id="pp\${i}" d="M\${x1},\${midY} L\${x2},\${midY}" stroke="none" fill="none"/>
+    <circle r="3" fill="\${ptColor}" opacity=".9">
+      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="\${(i*0.18).toFixed(2)}s">
+        <mpath href="#pp\${i}"/>
+      </animateMotion>
+    </circle>\`;
   }
 
   // Pulse ring on Claude when thinking
   if(isThinking){
-    svg+=\`<circle cx="\${claudeX}" cy="\${claudeY}" r="34" fill="none" stroke="#22d3ee" stroke-width="1" opacity=".18" class="nf-pulse"/>\`;
+    const cx=px[3]+NW/2;
+    svg+=\`<circle cx="\${cx}" cy="\${midY}" r="36" fill="none" stroke="#22d3ee" stroke-width="1.2" opacity=".2" class="nf-pulse"/>
+    <circle cx="\${cx}" cy="\${midY}" r="44" fill="none" stroke="#22d3ee" stroke-width=".6" opacity=".1" class="nf-pulse" style="animation-delay:.3s"/>\`;
   }
 
-  // ── Pipeline nodes ────────────────────────────────────────────────────────
+  // ── Nodes ─────────────────────────────────────────────────────────────────
   nodeDefs.forEach((nd,i)=>{
-    const x=pipeX[i], y=pipeY;
-    const bc=(isThinking&&i===3)?'#22d3ee':(isDone?'#34d39966':'#2a2a44');
-    const gf=(isThinking&&i===3)?' filter="url(#nfg2)"':'';
-    // BINANCE heartbeats when idle+has prices, CLAUDE glows when thinking
-    const gc=(isThinking&&i===3)?' class="nf-thinking"'
-            :(isIdle&&hasPrices&&i===0)?' class="nf-heartbeat"'
-            :(isIdle&&hasPrices)?' class="nf-idle-node"':'';
+    const x=px[i], y=pipeY;
+    const isClaude = i===3;
+    const isDec    = i===4;
+    const bc = (isThinking&&isClaude)?'#22d3ee'
+             : isDone?'#34d39988'
+             : hasPrices?'#2a2a3a':'#1a1a2a';
+    const gf = (isThinking&&isClaude)?' filter="url(#glow2)"':'';
+    const gc = (isThinking&&isClaude)?' class="nf-thinking"'
+             : (isIdle&&hasPrices&&i===0)?' class="nf-heartbeat"'
+             : (isIdle&&hasPrices)?' class="nf-idle-node"':'';
     svg+=\`<g\${gc}>
-      <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" rx="4" fill="#0d0d18" stroke="\${bc}" stroke-width="1.2"\${gf}/>
-      <text x="\${x+NW/2}" y="\${y+10}" text-anchor="middle" font-size="6.5" font-weight="700" fill="#6b7280" font-family="JetBrains Mono,monospace" letter-spacing=".8">\${nd.title}</text>
-      <text x="\${x+NW/2}" y="\${y+23}" text-anchor="middle" font-size="11" fill="\${nd.color}" font-family="JetBrains Mono,monospace">\${nd.icon}</text>\`;
-    nd.lines.filter(Boolean).slice(0,2).forEach((line,li)=>{
-      const lc=(line.includes('BET'))?'#34d399':(line.includes('SKIP'))?'#94a3b8':(line.includes('+')&&!line.includes('---'))?'#34d399':'#94a3b8';
-      svg+=\`<text x="\${x+NW/2}" y="\${y+34+li*10}" text-anchor="middle" font-size="8" fill="\${lc}" font-family="JetBrains Mono,monospace">\${line.slice(0,13)}</text>\`;
-    });
-    svg+=\`</g>\`;
+      <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" rx="4" fill="#0c0c18" stroke="\${bc}" stroke-width="1.5"\${gf}/>
+      <text x="\${x+NW/2}" y="\${y+11}" text-anchor="middle" font-size="6.5" font-weight="700" fill="#5b5b7b" font-family="JetBrains Mono,monospace" letter-spacing=".8">\${nd.title}</text>
+      <text x="\${x+NW/2}" y="\${y+26}" text-anchor="middle" font-size="13" fill="\${nd.color}" font-family="JetBrains Mono,monospace">\${nd.icon}</text>
+      <text x="\${x+NW/2}" y="\${y+37}" text-anchor="middle" font-size="8.5" fill="\${nd.color}" font-family="JetBrains Mono,monospace" opacity=".9">\${(nd.l1||'').slice(0,12)}</text>
+      <text x="\${x+NW/2}" y="\${y+48}" text-anchor="middle" font-size="7.5" fill="#5b5b7b" font-family="JetBrains Mono,monospace">\${(nd.l2||'').slice(0,12)}</text>
+    </g>\`;
   });
 
-  // Divider
-  svg+=\`<line x1="20" y1="\${divY}" x2="\${SVG_W-20}" y2="\${divY}" stroke="#1a1a2a" stroke-width="1"/>\`;
-
-  // ── Dynasty section ───────────────────────────────────────────────────────
-  if(!hasChildren){
-    // Requirements bars
-    const lvl=xp.level||1, trades=pnl.trades||0;
-    const wr=pnl.trades>0?(pnl.wins/pnl.trades*100).toFixed(0):0;
-    const pLvl=Math.min(lvl/3,1), pTrd=Math.min(trades/5,1);
-    const pWr=Math.min((pnl.wins||0)/Math.max(pnl.trades||1,1)/0.5,1);
-    const barW=160, bx=(SVG_W-barW*3-40)/2;
-    svg+=\`<text x="\${SVG_W/2}" y="\${childY+8}" text-anchor="middle" font-size="7.5" fill="#4b5563" font-family="JetBrains Mono,monospace" letter-spacing="1">&#x1F331; NO CHILDREN — REQUIREMENTS TO SPAWN</text>\`;
-    [{label:'LVL 3',pct:pLvl,cur:lvl,need:3},{label:'5 TRADES',pct:pTrd,cur:trades,need:5},{label:'50% WR',pct:pWr,cur:wr+'%',need:'50%'}].forEach((bar,bi)=>{
-      const bxi=bx+bi*(barW+20), byi=childY+16;
-      const filled=Math.round(bar.pct*barW);
-      const fc=bar.pct>=1?'#34d399':'#22d3ee';
-      svg+=\`<text x="\${bxi}" y="\${byi}" font-size="7" fill="#6b7280" font-family="JetBrains Mono,monospace">\${bar.label}: \${bar.cur}/\${bar.need}</text>
-      <rect x="\${bxi}" y="\${byi+3}" width="\${barW}" height="7" rx="2" fill="#1a1a2a"/>
-      <rect x="\${bxi}" y="\${byi+3}" width="\${filled}" height="7" rx="2" fill="\${fc}" opacity=".7"/>\`;
-    });
-  } else {
-    // Children nodes feeding Claude
-    const maxShow=Math.min(children.length,6);
-    const totalW=maxShow*(CW+12)-12;
-    const startX=(SVG_W-totalW)/2;
-    children.slice(0,maxShow).forEach((ch,ci)=>{
-      const cx=startX+ci*(CW+12), cy=childY;
-      const cMidX=cx+CW/2;
-      const chPnl=ch.pnl||{};
-      const chWr=chPnl.trades>0?((chPnl.wins||0)/chPnl.trades*100).toFixed(0):'--';
-      const chExp=ch.exp||chPnl.exp||0;
-      const chName=(ch.name||ch.spec||('CH-'+ci)).toUpperCase().slice(0,10);
-      const chSig=ch.signal||ch.lastSignal||'idle';
-      const sigColor=chSig==='bull'?'#34d399':chSig==='bear'?'#f87171':'#fbbf24';
-      const sigLabel=chSig.toUpperCase().slice(0,4);
-      const expFilled=Math.round((CW-8)*Math.min(chExp,100)/100);
-      const chBc=chSig==='bull'?'#34d39966':chSig==='bear'?'#f8717166':'#2a2a44';
-      // Arrow: child top → Claude bottom
-      svg+=\`<line x1="\${cMidX}" y1="\${cy}" x2="\${claudeX}" y2="\${pipeY+NH+1}" stroke="#22d3ee" stroke-width="1" stroke-dasharray="4 3" opacity=".4" class="nf-flowslow" marker-end="url(#arr-ch)"/>\`;
-      svg+=\`<g>
-        <rect x="\${cx}" y="\${cy}" width="\${CW}" height="\${CH}" rx="4" fill="#0d0d18" stroke="\${chBc}" stroke-width="1"/>
-        <text x="\${cx+CW/2}" y="\${cy+10}" text-anchor="middle" font-size="7" fill="#a855f7" font-family="JetBrains Mono,monospace" font-weight="700">\${chName}</text>
-        <text x="\${cx+4}" y="\${cy+21}" font-size="6.5" fill="#6b7280" font-family="JetBrains Mono,monospace">WR:\${chWr}%</text>
-        <text x="\${cx+CW-4}" y="\${cy+21}" text-anchor="end" font-size="6.5" fill="\${sigColor}" font-family="JetBrains Mono,monospace">\${sigLabel}</text>
-        <rect x="\${cx+4}" y="\${cy+25}" width="\${CW-8}" height="5" rx="1" fill="#1a1a2a"/>
-        <rect x="\${cx+4}" y="\${cy+25}" width="\${expFilled}" height="5" rx="1" fill="#a855f7" opacity=".7"/>
-        <text x="\${cx+CW/2}" y="\${cy+40}" text-anchor="middle" font-size="6" fill="#4b5563" font-family="JetBrains Mono,monospace">EXP \${chExp}</text>
-      </g>\`;
-    });
-    svg+=\`<text x="\${SVG_W/2}" y="\${childY+CH+16}" text-anchor="middle" font-size="7" fill="#4b5563" font-family="JetBrains Mono,monospace" letter-spacing=".5">\${children.length} CHILD SCANNER\${children.length>1?'S':''} FEEDING SIGNALS TO CLAUDE</text>\`;
-  }
-
-  // Live countdown from nextScanAt
+  // Bottom label (countdown)
   const nextAt = d.state?.nextScanAt;
-  let countdownStr = '';
-  if(nextAt && !isThinking && !isDone){
-    const rem = Math.max(0, Math.round((nextAt - Date.now()) / 1000));
-    const mm = Math.floor(rem/60), ss = String(rem%60).padStart(2,'0');
-    countdownStr = \` · \${mm}:\${ss} TO SCAN\`;
+  let countdown = '';
+  if(nextAt && isIdle){
+    const rem = Math.max(0, Math.round((nextAt-Date.now())/1000));
+    countdown = \`\${Math.floor(rem/60)}:\${String(rem%60).padStart(2,'0')}\`;
   }
-  // Status label
-  const label=isThinking?'◈ LIVE · ANALYZING ◈':isDone?'✓ DECISION MADE':(hasPrices?\`MONITORING\${countdownStr}\`:'INITIALIZING');
-  const labelColor=isThinking?'#22d3ee':isDone?'#34d399':(hasPrices?'#6b7280':'#4b5563');
-  svg+=\`<text x="\${SVG_W/2}" y="\${SVG_H-4}" text-anchor="middle" font-size="7" fill="\${labelColor}" font-family="JetBrains Mono,monospace" letter-spacing="2" opacity=".8">\${label}</text>\`;
+  const stLabel = isThinking?'◈ ANALYZING':isDone?'✓ DECIDED':(hasPrices&&countdown?\`NEXT \${countdown}\`:(hasPrices?'MONITORING':'INIT'));
+  const stColor = isThinking?'#22d3ee':isDone?'#34d399':(hasPrices?'#5b5b7b':'#3a3a5a');
+  svg+=\`<text x="\${SVG_W-8}" y="\${SVG_H-4}" text-anchor="end" font-size="7" fill="\${stColor}" font-family="JetBrains Mono,monospace" letter-spacing="1.5">\${stLabel}</text>\`;
 
-  svg += '</svg>';
+  svg+='</svg>';
   wrap.innerHTML = svg;
+
+  // ── Update topbar live indicator ──────────────────────────────────────────
+  const dot = document.getElementById('cmd-live-dot');
+  const txt = document.getElementById('cmd-live-txt');
+  const eta = document.getElementById('cmd-scan-eta');
+  const bar = document.getElementById('cmd-scan-bar');
+  if(dot){
+    dot.className = 'cmd-live-dot' + (isThinking?' thinking':(hasPrices?'':' idle'));
+  }
+  if(txt){
+    txt.textContent = isThinking?'THINKING — Sonnet 4.6 analyzing':isDone?'DECISION MADE':(hasPrices?'MONITORING · live prices':'INITIALIZING');
+    txt.style.color = isThinking?'var(--cyan)':isDone?'var(--green)':'var(--text2)';
+  }
+  if(eta && nextAt && isIdle){
+    const remSec = Math.max(0, Math.round((nextAt-Date.now())/1000));
+    const totalSec = 5*60;
+    const elapsed = totalSec - remSec;
+    const pct = Math.min(100, Math.round(elapsed/totalSec*100));
+    eta.textContent = countdown ? countdown+' to scan' : '';
+    if(bar) bar.style.width = pct+'%';
+  } else if(bar){
+    bar.style.width = isThinking?'98%':(isDone?'100%':'0%');
+    bar.style.background = isThinking?'var(--cyan)':'var(--green)';
+    if(eta) eta.textContent = isThinking?'scanning now...':isDone?'done':'';
+  }
+}
+
+// ── Dynasty Panel (HTML below SVG) ────────────────────────────────────────────
+function updateDynastyPanel(d) {
+  const el = document.getElementById('dynasty-panel');
+  if (!el) return;
+  const pnl      = d.pnl || {};
+  const xp       = d.xp  || {};
+  const children = d.children || [];
+  const trades   = pnl.trades || 0;
+  const wr       = trades>0 ? Math.round(pnl.wins/trades*100) : 0;
+  const lvl      = xp.level || 1;
+
+  if(children.length === 0){
+    const reqs = [
+      {label:'LEVEL 3', val:\`\${lvl} / 3\`, pct:Math.min(100,lvl/3*100), done:lvl>=3},
+      {label:'5 TRADES', val:\`\${trades} / 5\`, pct:Math.min(100,trades/5*100), done:trades>=5},
+      {label:'50% WIN RATE', val:\`\${wr}% / 50%\`, pct:Math.min(100,wr/50*100), done:wr>=50},
+    ];
+    const allDone = reqs.every(r=>r.done);
+    const doneCount = reqs.filter(r=>r.done).length;
+    const badgeCls = allDone?'dyn-badge-ready':doneCount>=2?'dyn-badge-soon':'dyn-badge-wait';
+    const badgeTxt = allDone?'READY TO SPAWN':doneCount>=2?'ALMOST THERE':'LEARNING';
+
+    el.innerHTML = \`<div class="dyn-header">
+      <span class="dyn-title">🧬 DYNASTY — NO CHILDREN YET</span>
+      <span class="dyn-badge \${badgeCls}">\${badgeTxt}</span>
+    </div>
+    <div class="dyn-req-grid">
+      \${reqs.map(r=>\`<div class="dyn-req \${r.done?'done':''}">
+        <div class="dyn-req-label">\${r.label}</div>
+        <div class="dyn-req-val">\${r.val}</div>
+        <div class="dyn-req-track"><div class="dyn-req-fill" style="width:\${r.pct.toFixed(0)}%"></div></div>
+      </div>\`).join('')}
+    </div>
+    <div class="dyn-note">
+      ADAN tiene \${trades} trade\${trades!==1?'s':''} con \${wr}% WR · necesita 50%+ en 5+ trades para spawnar el primer hijo.
+      Un hijo es un scanner especializado (ej: BTC-5MIN) que opera en paralelo y envía señales al padre.
+    </div>\`;
+  } else {
+    const activeSigs = children.filter(c=>c.intel?.signal && c.intel.signal!=='idle').length;
+    el.innerHTML = \`<div class="dyn-header">
+      <span class="dyn-title">🧬 DYNASTY — \${children.length} CHILD SCANNER\${children.length>1?'S':''}</span>
+      <span class="dyn-badge dyn-badge-active">\${activeSigs} LIVE SIGNAL\${activeSigs!==1?'S':''}</span>
+    </div>
+    <div class="dyn-children-grid">
+      \${children.map(ch=>{
+        const cp=ch.pnl||{};
+        const cwr=cp.trades>0?Math.round((cp.wins||0)/cp.trades*100):0;
+        const cexp=Math.min(100,ch.childExp||cp.exp||0);
+        const sig=(ch.intel?.signal||'idle').toLowerCase();
+        const sigCls=sig==='bull'?'bull':sig==='bear'?'bear':'idle';
+        return \`<div class="dyn-child-card \${sigCls}">
+          <div class="dyn-child-name">\${(ch.name||ch.spec||'CHILD').toUpperCase().slice(0,14)}</div>
+          <div class="dyn-child-stats">
+            <span class="dyn-stat">\${cp.trades||0} trades</span>
+            <span class="dyn-stat">\${cwr}% WR</span>
+            <span class="dyn-sig \${sigCls}">\${sig.toUpperCase().slice(0,4)}</span>
+          </div>
+          <div class="dyn-exp-track"><div class="dyn-exp-fill" style="width:\${cexp}%"></div></div>
+          <div class="dyn-child-meta">EXP \${ch.childExp||cp.exp||0} / 100\${ch.grandChildren?.length?' · '+ch.grandChildren.length+' nieto'+(ch.grandChildren.length>1?'s':''):''}</div>
+        </div>\`;
+      }).join('')}
+    </div>\`;
+  }
 }
 
 refresh();
