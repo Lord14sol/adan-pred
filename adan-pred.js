@@ -848,9 +848,50 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
     </div>
 
     <!-- Child Detail Modal -->
-    <div id="child-modal" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);overflow-y:auto" onclick="if(event.target===this)this.style.display='none'">
-      <div style="max-width:560px;margin:40px auto;background:var(--card);border:2px solid var(--purple);padding:20px;font-family:var(--mono);font-size:12px;position:relative">
-        <div onclick="document.getElementById('child-modal').style.display='none'" style="position:absolute;top:8px;right:12px;cursor:pointer;color:var(--grey);font-size:18px;font-weight:bold">x</div>
+    <style>
+      @keyframes childPulse { 0%,100%{box-shadow:0 0 12px rgba(90,26,138,0.3),3px 3px 0 #1a1a1a} 50%{box-shadow:0 0 24px rgba(90,26,138,0.6),3px 3px 0 #1a1a1a} }
+      @keyframes heartbeat { 0%,100%{transform:scale(1)} 50%{transform:scale(1.15)} }
+      @keyframes scanLine { 0%{top:-2px} 100%{top:100%} }
+      @keyframes fadeSlideIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+      @keyframes barFill { from{width:0} to{width:var(--target-w)} }
+      @keyframes glowText { 0%,100%{text-shadow:0 0 4px rgba(26,74,138,0.5)} 50%{text-shadow:0 0 12px rgba(26,74,138,0.9)} }
+      .child-modal-wrap{display:none;position:fixed;inset:0;z-index:999;background:rgba(10,10,8,0.85);backdrop-filter:blur(6px);overflow-y:auto}
+      .child-panel{max-width:520px;margin:30px auto;background:var(--bg3);border:3px solid var(--border);font-family:var(--mono);font-size:12px;position:relative;animation:childPulse 3s ease infinite,fadeSlideIn .3s ease-out}
+      .child-panel::before{content:'';position:absolute;top:-2px;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--purple),var(--cyan),var(--purple),transparent);animation:scanLine 3s linear infinite;pointer-events:none;z-index:2}
+      .child-header{background:var(--border);color:var(--bg3);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden}
+      .child-header::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0,transparent 3px,rgba(255,255,255,0.03) 3px,rgba(255,255,255,0.03) 4px);pointer-events:none}
+      .child-name{font-family:var(--pixel);font-size:14px;letter-spacing:3px;color:#f0ece2}
+      .child-gen{font-family:var(--pixel);font-size:9px;color:var(--cyan);background:rgba(26,74,138,0.2);padding:2px 8px;border:1px solid var(--cyan)}
+      .child-close{cursor:pointer;color:var(--grey);font-family:var(--pixel);font-size:12px;padding:4px 8px;border:2px solid var(--border2);background:var(--bg);transition:all .15s}
+      .child-close:hover{background:var(--red);color:#fff;border-color:var(--red)}
+      .child-body{padding:16px 18px}
+      .child-section{margin-bottom:14px;animation:fadeSlideIn .4s ease-out both}
+      .child-section:nth-child(2){animation-delay:.05s}
+      .child-section:nth-child(3){animation-delay:.1s}
+      .child-section:nth-child(4){animation-delay:.15s}
+      .child-section:nth-child(5){animation-delay:.2s}
+      .child-section:nth-child(6){animation-delay:.25s}
+      .child-section:nth-child(7){animation-delay:.3s}
+      .child-sec-title{font-family:var(--pixel);font-size:8px;color:var(--purple);letter-spacing:2px;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid var(--border);display:flex;align-items:center;gap:6px}
+      .child-sec-title::before{content:'▶';font-size:6px}
+      .child-grid{display:grid;gap:4px 12px;font-size:12px}
+      .child-grid .lbl{color:var(--grey);font-size:10px;font-family:var(--pixel)}
+      .child-grid .val{color:var(--text);font-family:var(--mono)}
+      .dna-chip{display:inline-block;padding:2px 8px;font-size:10px;font-family:var(--pixel);border:2px solid;margin:2px}
+      .child-bar-track{height:14px;background:var(--bg);border:2px solid var(--border);overflow:hidden;position:relative}
+      .child-bar-fill{height:100%;transition:width .6s steps(16)}
+      .child-bar-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--pixel);font-size:7px;color:var(--text);mix-blend-mode:difference;z-index:1}
+      .score-dot{display:inline-block;width:8px;height:8px;border:1px solid var(--border);margin:1px;transition:all .15s}
+      .score-dot:hover{transform:scale(1.8);z-index:5;position:relative}
+      .gc-card{padding:8px;border:2px solid var(--border);background:var(--bg4);box-shadow:var(--shadow-sm);position:relative;overflow:hidden}
+      .gc-card::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%}
+      .gc-card.elite::before{background:var(--purple)}
+      .gc-card:not(.elite)::before{background:var(--cyan)}
+      .alive-dot{width:6px;height:6px;border-radius:0;display:inline-block;animation:heartbeat 1.5s ease infinite}
+      .signal-badge{padding:3px 10px;font-family:var(--pixel);font-size:8px;border:2px solid;letter-spacing:1px;display:inline-block}
+    </style>
+    <div id="child-modal" class="child-modal-wrap" onclick="if(event.target===this)this.style.display='none'">
+      <div class="child-panel">
         <div id="child-modal-content"></div>
       </div>
     </div>
@@ -945,72 +986,222 @@ function showChildDetail(childIdx) {
   const exp = Math.min(100, ch.childExp||0);
   const gcs = ch.grandChildren||[];
   const styleMap = { volume_vwap:'VOL/VWAP', bollinger_vol:'BB/VOL', rsi_reversal:'RSI/REV' };
+  const cogStyle = styleMap[dna.cognitiveStyle]||dna.cognitiveStyle||'UNKNOWN';
 
-  // Read child pnl from API data if available
   const cpnl = ch.childPnl||{};
   const cTrades = cpnl.trades||0;
   const cWins = cpnl.wins||0;
+  const cLosses = cpnl.losses||0;
   const cWR = cTrades>0 ? Math.round(cWins/cTrades*100) : 0;
+  const cNet = cpnl.net||0;
+
+  // Age calculation
+  const ageDays = ch.born ? Math.floor((Date.now()-new Date(ch.born).getTime())/86400000) : 0;
+  const ageHrs  = ch.born ? Math.floor((Date.now()-new Date(ch.born).getTime())/3600000) : 0;
+  const ageStr  = ageDays > 0 ? ageDays+'d' : ageHrs+'h';
+
+  // Signal age
+  const sigAge = intel.ts ? Math.round((Date.now()-new Date(intel.ts).getTime())/1000) : null;
+  const sigFresh = sigAge !== null && sigAge < 600;
+
+  // Status colors
+  const statusColor = ch.status==='observing'?'var(--yellow)':ch.status==='dead'?'var(--red)':'var(--green)';
+
+  // Score heatmap blocks
+  const scoreBlocks = scoreHist.length ? scoreHist.map((s,i)=>{
+    const bg = s>=70?'var(--green)':s>=55?'var(--cyan)':s>=40?'var(--yellow)':'var(--red)';
+    return '<div class="score-dot" style="background:'+bg+'" title="Cycle '+(i+1)+': '+s+'/100"></div>';
+  }).join('') : '<span style="color:var(--grey);font-size:10px">Awaiting first cycle...</span>';
+
+  // Sparkline SVG for score history
+  const scoreSpark = (()=>{
+    if(scoreHist.length<2) return '';
+    const W=200,H=32,n=scoreHist.length;
+    const mn=Math.min(...scoreHist),mx=Math.max(...scoreHist),rg=mx-mn||1;
+    const pts=scoreHist.map((v,i)=>\`\${(i/(n-1))*W},\${H-(v-mn)/rg*H}\`).join(' ');
+    const last=scoreHist[n-1],prev=scoreHist[n-2];
+    const c=last>prev?'var(--green)':last<prev?'var(--red)':'var(--grey)';
+    // area fill
+    const area=pts+\` \${W},\${H} 0,\${H}\`;
+    return \`<svg width="\${W}" height="\${H}" style="display:block;margin-top:4px">
+      <polygon points="\${area}" fill="\${c}" fill-opacity="0.1"/>
+      <polyline points="\${pts}" fill="none" stroke="\${c}" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="\${W}" cy="\${H-(scoreHist[n-1]-mn)/rg*H}" r="3" fill="\${c}"/>
+    </svg>\`;
+  })();
+
+  // Build DNA bar visualization
+  function dnaBar(label, value, max, color) {
+    const pct = Math.min(100, (value/max)*100);
+    return \`<div style="margin-bottom:4px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+        <span class="lbl">\${label}</span><span style="font-family:var(--mono);font-size:11px;color:\${color}">\${typeof value==='number'?value.toFixed(3):value}</span>
+      </div>
+      <div class="child-bar-track"><div class="child-bar-fill" style="width:\${pct}%;background:repeating-linear-gradient(90deg,\${color} 0,\${color} 4px,transparent 4px,transparent 6px)"></div></div>
+    </div>\`;
+  }
+
+  // Grandchildren HTML
+  const gcHTML = gcs.length ? gcs.map(gc => {
+    const gcExp = Math.min(100, gc.childExp||gc.exp||0);
+    const isElite = gc.dna?.isElite || gc.isElite;
+    const gcName = (gc.name||gc.spec||'GC').toUpperCase();
+    const crossFrom = gc.dna?.crossoverFrom;
+    return \`<div class="gc-card \${isElite?'elite':''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-family:var(--pixel);font-size:8px;color:\${isElite?'var(--purple)':'var(--cyan)'};\${isElite?'animation:glowText 2s infinite':''}">\${gcName}</span>
+        <span style="font-family:var(--pixel);font-size:7px;color:var(--grey)">G\${gc.generation||3}</span>
+      </div>
+      \${isElite?'<div style="font-size:9px;color:var(--purple);margin-bottom:3px">ELITE CANDIDATE</div>':''}
+      \${crossFrom?'<div style="font-size:9px;color:var(--grey)">Cross: '+crossFrom.join(' x ')+'</div>':''}
+      <div style="font-size:10px;margin-top:3px">
+        <span style="color:var(--grey)">Status:</span> \${gc.status||'?'}
+        <span style="margin-left:8px;color:var(--grey)">Cap:</span> $\${(gc.capital||0).toFixed(2)}
+      </div>
+      <div style="margin-top:4px">
+        <div class="child-bar-track" style="height:8px">
+          <div class="child-bar-fill" style="width:\${gcExp}%;background:repeating-linear-gradient(90deg,\${isElite?'var(--purple)':'var(--cyan)'} 0,\${isElite?'var(--purple)':'var(--cyan)'} 3px,transparent 3px,transparent 5px)"></div>
+          <div class="child-bar-label" style="font-size:6px">\${gcExp}/100 EXP</div>
+        </div>
+      </div>
+    </div>\`;
+  }).join('') : '';
 
   content.innerHTML = \`
-    <div style="color:var(--purple);font-size:16px;font-weight:bold;margin-bottom:12px;letter-spacing:2px">\${(ch.name||'CHILD').toUpperCase()} · GEN \${ch.generation||2}</div>
-    <div style="border-bottom:1px dashed var(--border2);padding-bottom:10px;margin-bottom:10px">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-        <div><span style="color:var(--grey)">Spec:</span> \${ch.spec||'?'}</div>
-        <div><span style="color:var(--grey)">Status:</span> <span style="color:\${ch.status==='observing'?'var(--yellow)':'var(--green)'}">\${ch.status||'?'}</span></div>
-        <div><span style="color:var(--grey)">Capital:</span> <span style="color:var(--cyan)">$\${(ch.capital||0).toFixed(2)}</span></div>
-        <div><span style="color:var(--grey)">Born:</span> \${ch.born?new Date(ch.born).toLocaleDateString():'-'}</div>
+    <div class="child-header">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="alive-dot" style="background:\${statusColor}"></div>
+        <div>
+          <div class="child-name">\${(ch.name||'CHILD').toUpperCase()}</div>
+          <div style="font-size:10px;color:var(--grey);font-family:var(--mono);margin-top:2px">\${ch.spec||'?'} · \${cogStyle} · \${ageStr} old</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="child-gen">GEN \${ch.generation||2}</span>
+        <div class="child-close" onclick="document.getElementById('child-modal').style.display='none'">X</div>
       </div>
     </div>
 
-    <div style="color:var(--purple);font-size:11px;font-weight:bold;margin-bottom:6px;letter-spacing:1px">DNA GENOME</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:12px;font-size:11px">
-      <div><span style="color:var(--grey)">Cognitive:</span> <span style="color:var(--cyan)">\${styleMap[dna.cognitiveStyle]||dna.cognitiveStyle||'---'}</span></div>
-      <div><span style="color:var(--grey)">Stake:</span> \${dna.stakePct?(dna.stakePct*100).toFixed(1)+'%':'---'}</div>
-      <div><span style="color:var(--grey)">Patience:</span> \${dna.patience?.toFixed(2)||'---'}x</div>
-      <div><span style="color:var(--grey)">MinEdge:</span> \${dna.minEdge?(dna.minEdge*100).toFixed(1)+'%':'---'}</div>
-      <div><span style="color:var(--grey)">VolW:</span> \${dna.volWeight?.toFixed(3)||'---'}</div>
-      <div><span style="color:var(--grey)">VwapW:</span> \${dna.vwapWeight?.toFixed(3)||'---'}</div>
-      <div><span style="color:var(--grey)">Mutation:</span> \${dna.mutation??'---'}</div>
-      <div><span style="color:var(--grey)">BoredBB:</span> \${dna.boredBBMin?.toFixed(4)||'---'}</div>
-    </div>
+    <div class="child-body">
 
-    <div style="color:var(--purple);font-size:11px;font-weight:bold;margin-bottom:6px;letter-spacing:1px">CURRENT INTEL</div>
-    <div style="margin-bottom:12px;font-size:11px">
-      <div><span style="color:var(--grey)">Signal:</span> <span style="color:\${sig.dir==='UP'?'var(--green)':sig.dir==='DOWN'?'#e74c3c':'var(--grey)'}; font-weight:bold">\${sig.dir||'---'} (\${sig.conf||0}%)</span></div>
-      <div><span style="color:var(--grey)">Reason:</span> \${sig.reason||'---'}</div>
-      <div><span style="color:var(--grey)">Intel Score:</span> \${intel.intelScore||'---'}/100</div>
-      <div><span style="color:var(--grey)">Price:</span> $\${intel.price?.toLocaleString()||'---'}</div>
-      <div><span style="color:var(--grey)">Age:</span> \${intel.ts?Math.round((Date.now()-new Date(intel.ts).getTime())/1000)+'s ago':'---'}</div>
-      \${intel.bestMarket?\`<div style="margin-top:4px;padding:6px;background:var(--bg3);border-left:3px solid var(--cyan)">
-        <div style="color:var(--cyan);font-weight:bold">\${intel.bestMarket.title||''}</div>
-        <div>Side: \${intel.bestMarket.suggestedSide||'?'} | Edge: \${((intel.bestMarket.impliedEdge||0)*100).toFixed(1)}% | Closes: \${intel.bestMarket.closesIn||'?'}min</div>
+      <!-- VITALS -->
+      <div class="child-section">
+        <div class="child-sec-title">VITALS</div>
+        <div class="child-grid" style="grid-template-columns:1fr 1fr 1fr 1fr">
+          <div><span class="lbl">STATUS</span><div class="val" style="color:\${statusColor}">\${(ch.status||'?').toUpperCase()}</div></div>
+          <div><span class="lbl">CAPITAL</span><div class="val" style="color:var(--cyan)">$\${(ch.capital||0).toFixed(2)}</div></div>
+          <div><span class="lbl">EXP</span><div class="val">\${exp}/100</div></div>
+          <div><span class="lbl">BORN</span><div class="val">\${ch.born?new Date(ch.born).toLocaleDateString():'---'}</div></div>
+        </div>
+      </div>
+
+      <!-- EXP BAR -->
+      <div class="child-section">
+        <div class="child-sec-title">EXPERIENCE</div>
+        <div class="child-bar-track" style="height:18px">
+          <div class="child-bar-fill" style="width:\${exp}%;background:repeating-linear-gradient(90deg,var(--purple) 0,var(--purple) 6px,#8b3acd 6px,#8b3acd 8px)"></div>
+          <div class="child-bar-label">\${exp}/100 \${exp>=100?'READY TO SPAWN':'· needs '+(100-exp)+' more'}</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:3px;font-size:9px;font-family:var(--pixel);color:var(--grey)">
+          <span>0</span>
+          <span>\${exp>=100?'CAN BREED':'OBSERVING'}</span>
+          <span>100</span>
+        </div>
+      </div>
+
+      <!-- DNA GENOME -->
+      <div class="child-section">
+        <div class="child-sec-title">DNA GENOME</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">
+          <span class="dna-chip" style="border-color:var(--purple);color:var(--purple)">\${cogStyle}</span>
+          <span class="dna-chip" style="border-color:var(--cyan);color:var(--cyan)">MUT #\${dna.mutation??0}</span>
+          \${dna.crossoverFrom?\`<span class="dna-chip" style="border-color:var(--green);color:var(--green)">CROSSOVER</span>\`:''}
+          \${dna.isElite?\`<span class="dna-chip" style="border-color:var(--red);color:var(--red);animation:glowText 2s infinite">ELITE</span>\`:''}
+        </div>
+        \${dnaBar('STAKE', dna.stakePct||0.1, 0.2, 'var(--cyan)')}
+        \${dnaBar('PATIENCE', dna.patience||1, 2, 'var(--purple)')}
+        \${dnaBar('MIN EDGE', dna.minEdge||0.05, 0.15, 'var(--green)')}
+        \${dnaBar('VOL WEIGHT', dna.volWeight||1, 2, 'var(--yellow)')}
+        \${dnaBar('VWAP WEIGHT', dna.vwapWeight||1, 2, 'var(--cyan)')}
+        \${dnaBar('BORED BB', dna.boredBBMin||0.005, 0.015, 'var(--grey)')}
+      </div>
+
+      <!-- LIVE INTEL -->
+      <div class="child-section">
+        <div class="child-sec-title">LIVE INTEL \${sigFresh?'<span class="alive-dot" style="background:var(--green);margin-left:4px"></span>':''}</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          \${sig.dir?\`<span class="signal-badge" style="border-color:\${sig.dir==='UP'?'var(--green)':'var(--red)'};color:\${sig.dir==='UP'?'var(--green)':'var(--red)'};background:\${sig.dir==='UP'?'rgba(26,90,26,0.1)':'rgba(138,26,26,0.1)'}">\${sig.dir} \${sig.conf||0}%</span>\`:'<span style="color:var(--grey);font-size:10px">No signal</span>'}
+          \${intel.price?\`<span style="font-family:var(--mono);font-size:13px;color:var(--text)">$\${Number(intel.price).toLocaleString()}</span>\`:''}
+          \${sigAge!==null?\`<span style="font-size:10px;color:\${sigFresh?'var(--green)':'var(--grey)'}">\${sigAge}s ago</span>\`:''}
+        </div>
+        \${sig.reason?\`<div style="font-size:11px;color:var(--text2);padding:6px 8px;background:var(--bg);border-left:3px solid var(--cyan);margin-bottom:6px">\${sig.reason}</div>\`:''}
+        <div class="child-grid" style="grid-template-columns:1fr 1fr">
+          <div><span class="lbl">INTEL SCORE</span><div class="val" style="color:\${(intel.intelScore||0)>=65?'var(--green)':(intel.intelScore||0)>=40?'var(--yellow)':'var(--red)'}">\${intel.intelScore||0}/100</div></div>
+          <div><span class="lbl">MARKETS SCANNED</span><div class="val">\${intel.markets||0}</div></div>
+        </div>
+        \${intel.bestMarket?\`<div style="margin-top:8px;padding:8px;background:var(--bg4);border:2px solid var(--border)">
+          <div style="font-family:var(--pixel);font-size:8px;color:var(--cyan);margin-bottom:4px">BEST MARKET FOUND</div>
+          <div style="font-size:12px;font-weight:bold;color:var(--text);margin-bottom:3px">\${intel.bestMarket.title||''}</div>
+          <div class="child-grid" style="grid-template-columns:1fr 1fr 1fr;font-size:10px">
+            <div><span class="lbl">SIDE</span><div style="color:\${intel.bestMarket.suggestedSide==='YES'?'var(--green)':'var(--red)'}; font-weight:bold">\${intel.bestMarket.suggestedSide||'?'}</div></div>
+            <div><span class="lbl">EDGE</span><div style="color:var(--cyan)">\${((intel.bestMarket.impliedEdge||0)*100).toFixed(1)}%</div></div>
+            <div><span class="lbl">CLOSES IN</span><div>\${intel.bestMarket.closesIn||'?'}min</div></div>
+          </div>
+        </div>\`:''}
+      </div>
+
+      <!-- SCORE HISTORY (heatmap) -->
+      <div class="child-section">
+        <div class="child-sec-title">SCORE HISTORY (\${scoreHist.length} cycles)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:1px;margin-bottom:4px">\${scoreBlocks}</div>
+        \${scoreSpark}
+        \${scoreHist.length>=2?\`<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--grey);font-family:var(--pixel);margin-top:4px">
+          <span>LOW \${Math.min(...scoreHist)}</span>
+          <span>AVG \${Math.round(scoreHist.reduce((a,b)=>a+b,0)/scoreHist.length)}</span>
+          <span>HIGH \${Math.max(...scoreHist)}</span>
+        </div>\`:''}
+      </div>
+
+      <!-- TRADE PERFORMANCE -->
+      <div class="child-section">
+        <div class="child-sec-title">TRADE PERFORMANCE</div>
+        \${cTrades>0?\`
+          <div class="child-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-bottom:8px">
+            <div><span class="lbl">TRADES</span><div class="val">\${cTrades}</div></div>
+            <div><span class="lbl">WINS</span><div class="val" style="color:var(--green)">\${cWins}</div></div>
+            <div><span class="lbl">LOSSES</span><div class="val" style="color:var(--red)">\${cLosses}</div></div>
+            <div><span class="lbl">WIN RATE</span><div class="val" style="color:\${cWR>=55?'var(--green)':cWR>=40?'var(--yellow)':'var(--red)'}">\${cWR}%</div></div>
+          </div>
+          <div class="child-bar-track" style="height:12px;margin-bottom:6px">
+            <div class="child-bar-fill" style="width:\${cWR}%;background:var(--green)"></div>
+            <div style="position:absolute;top:0;right:0;height:100%;width:\${100-cWR}%;background:var(--red);opacity:0.4"></div>
+            <div class="child-bar-label">\${cWR}% WR</div>
+          </div>
+          <div class="child-grid" style="grid-template-columns:1fr 1fr">
+            <div><span class="lbl">NET P&L</span><div class="val" style="color:\${cNet>=0?'var(--green)':'var(--red)'}">\${cNet>=0?'+':''}$\${cNet.toFixed(2)}</div></div>
+            <div><span class="lbl">FUND</span><div class="val" style="color:var(--cyan)">$\${(cpnl.fund||0).toFixed(2)}</div></div>
+          </div>
+        \`:\`
+          <div style="text-align:center;padding:12px;color:var(--grey);font-size:11px">
+            <div style="font-size:20px;margin-bottom:6px">...</div>
+            <div style="font-family:var(--pixel);font-size:8px">NO TRADES YET</div>
+            <div style="margin-top:4px">Observing and building intel for ADAN</div>
+          </div>
+        \`}
+      </div>
+
+      <!-- GRANDCHILDREN -->
+      \${gcs.length||exp>=100?\`<div class="child-section">
+        <div class="child-sec-title">OFFSPRING (\${gcs.length} grandchildren)</div>
+        \${gcs.length?\`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\${gcHTML}</div>\`:\`
+          <div style="text-align:center;padding:10px;border:2px dashed var(--border2)">
+            <div style="font-family:var(--pixel);font-size:8px;color:var(--purple);margin-bottom:4px">\${exp>=100?'READY TO BREED':'AWAITING 100 EXP'}</div>
+            <div style="font-size:10px;color:var(--grey)">\${exp>=100?'Will spawn on next ADAN LVL 4+ cycle':'Needs '+(100-exp)+' more EXP to unlock breeding'}</div>
+          </div>
+        \`}
       </div>\`:''}
+
     </div>
-
-    <div style="color:var(--purple);font-size:11px;font-weight:bold;margin-bottom:6px;letter-spacing:1px">EXP PROGRESS</div>
-    <div style="margin-bottom:12px">
-      <div style="background:var(--border2);height:12px;border-radius:2px;overflow:hidden;margin-bottom:4px">
-        <div style="background:var(--cyan);height:100%;width:\${exp}%;transition:width .3s"></div>
-      </div>
-      <div style="font-size:10px;color:var(--grey)">\${exp}/100 EXP — \${exp>=100?'CAN SPAWN GRANDCHILDREN':'needs '+(100-exp)+' more to spawn'}</div>
-    </div>
-
-    <div style="color:var(--purple);font-size:11px;font-weight:bold;margin-bottom:6px;letter-spacing:1px">SCORE HISTORY</div>
-    <div style="font-size:10px;color:var(--grey);margin-bottom:12px">\${scoreHist.length?scoreHist.map(s=>'<span style="color:'+(s>=65?'var(--green)':s>=45?'var(--yellow)':'#e74c3c')+'">'+s+'</span>').join(' → '):'No history yet'}</div>
-
-    \${gcs.length?\`<div style="color:var(--purple);font-size:11px;font-weight:bold;margin-bottom:6px;letter-spacing:1px">GRANDCHILDREN (\${gcs.length})</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px">\${gcs.map(gc=>\`
-      <div style="padding:6px;border:1px solid var(--border2);background:var(--bg3)">
-        <div style="color:var(--purple);font-weight:bold">\${(gc.name||gc.spec||'GC').toUpperCase()} · G\${gc.generation||3}</div>
-        <div>Status: \${gc.status||'?'} | Capital: $\${(gc.capital||0).toFixed(2)}</div>
-      </div>\`).join('')}</div>\`:''}
-
-    \${cTrades>0?\`<div style="color:var(--purple);font-size:11px;font-weight:bold;margin-bottom:6px;margin-top:12px;letter-spacing:1px">TRADE HISTORY</div>
-    <div style="font-size:11px">
-      <div>Trades: \${cTrades} | Wins: \${cWins} | WR: <span style="color:\${cWR>=55?'var(--green)':cWR>=40?'var(--yellow)':'#e74c3c'}">\${cWR}%</span></div>
-      <div>Net: $\${(cpnl.net||0).toFixed(2)} | Fund: $\${(cpnl.fund||0).toFixed(2)}</div>
-    </div>\`:'<div style="color:var(--grey);font-size:10px;margin-top:8px">No trades yet — observing and building intel for ADAN</div>'}
   \`;
   modal.style.display='block';
 }
