@@ -1245,87 +1245,104 @@ function updateNeuralFlow(d) {
   const fmt    = (v,dp=2) => v!=null ? v.toFixed(dp) : '--';
   const chgTxt = (p) => p ? (p.chg>=0?'+':'')+fmt(p.chg,1)+'%' : '--';
 
-  // Colors by state
-  const lnColor = isThinking?'#22d3ee':isDone?'#34d399':'#3a3a5a';
-  const lnCls   = isThinking?'nf-flowline':'nf-flowslow';
-  const ptDur   = isThinking?'0.7s':'2.2s';
-  const ptColor = isThinking?'#22d3ee':isDone?'#34d399':'#5a5a8a';
+  // ── Paleta retro = misma que la página ──────────────────────────────────
+  // bg:#ccc8bc  bg2:#ddd9cc  border:#1a1a1a  text:#1a1a1a  dim:#888878
+  // purple:#5a1a8a  cyan:#1a4a8a  green:#1a5a1a  red:#8a1a1a  yellow:#7a5a10
+  const C_BG    = '#ccc8bc';   // fondo SVG = fondo página
+  const C_CARD  = '#ddd9cc';   // fondo nodo = --bg2
+  const C_CARD3 = '#e8e4d8';   // nodo activo/hover = --bg3
+  const C_BRD   = '#1a1a1a';   // borde negro pixel = --border
+  const C_BRD2  = '#3a3a2a';   // borde secundario = --border2
+  const C_TXT   = '#1a1a1a';   // texto principal = --text
+  const C_DIM   = '#888878';   // texto apagado = --dim
+  const C_SHD   = '#1a1a1a';   // sombra pixel
+  const C_CYA   = '#1a4a8a';   // cyan retro (--cyan)
+  const C_GRN   = '#1a5a1a';   // verde retro (--green)
+  const C_PUR   = '#5a1a8a';   // púrpura (--purple)
+  const C_YEL   = '#7a5a10';   // amarillo retro (--yellow)
+  const C_RED   = '#8a1a1a';   // rojo retro (--red)
+
+  // Estado → colores de línea/partícula
+  const lnColor = isThinking ? C_CYA : isDone ? C_GRN : C_BRD2;
+  const lnCls   = isThinking ? 'nf-flowline' : 'nf-flowslow';
+  const ptDur   = isThinking ? '0.65s' : '2s';
+  const ptColor = isThinking ? C_CYA : isDone ? C_GRN : C_BRD2;
 
   // Layout
-  const NW=80, NH=60, SVG_W=720, SVG_H=92, pipeY=16;
+  const NW=82, NH=64, SVG_W=720, SVG_H=96, pipeY=14;
   const gap = Math.floor((SVG_W-20-5*NW)/4);
   const px = [0,1,2,3,4].map(i=>10+i*(NW+gap));
   const midY = pipeY+NH/2;
 
   const nodeDefs = [
-    { title:'BINANCE', icon:'◆', color:'#fbbf24',
+    { title:'BINANCE', icon:'◆', color:C_YEL,
       l1:btc?\`BTC \${chgTxt(btc)}\`:'loading...', l2:eth?\`ETH \${chgTxt(eth)}\`:'' },
-    { title:'TECHNICAL', icon:'≋', color:'#a855f7',
+    { title:'TECHNICAL', icon:'≋', color:C_PUR,
       l1:btc?\`RSI \${fmt(btc.rsi,0)} \${btc.rsi<35?'▼OS':btc.rsi>65?'▲OB':'━'}\`:'---',
       l2:btc?.macd?\`MACD \${btc.macd.hist>0?'▲bull':'▼bear'}\`:'---' },
-    { title:'POLYMARKET', icon:'◈', color:'#22d3ee',
+    { title:'POLYMARKET', icon:'◈', color:C_CYA,
       l1:markets.length?\`\${markets.length} markets\`:'scanning...',
       l2:markets.length?\`best e:\${((markets[0]?.edge||0)*100).toFixed(0)}%\`:'' },
     { title:'CLAUDE ◈', icon:isThinking?frame:(isDone?'✓':'○'),
-      color:isThinking?'#22d3ee':(isDone?'#34d399':'#5b5b7b'),
+      color:isThinking?C_CYA:(isDone?C_GRN:C_DIM),
       l1:isThinking?'analyzing...':(isDone?'decided':'idle'),
       l2:'Sonnet 4.6' },
     { title:'DECISION', icon:isDone?'◉':'○',
-      color:isDone?(d.state?.thought?.includes('BET')?'#34d399':'#94a3b8'):'#5b5b7b',
+      color:isDone?(d.state?.thought?.includes('BET')?C_GRN:C_RED):C_DIM,
       l1:isDone?(d.state?.thought?.includes('BET')?'● BET':'● SKIP'):(isThinking?frame:'waiting'),
       l2:'' },
   ];
 
   let svg = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
   <defs>
-    <filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feComposite in="SourceGraphic" in2="b" operator="over"/></filter>
-    <marker id="arh" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-      <path d="M0,0 L0,6 L6,3 z" fill="\${lnColor}"/>
+    <marker id="arh" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="\${lnColor}"/>
     </marker>
   </defs>
-  <rect width="\${SVG_W}" height="\${SVG_H}" fill="#08080f" rx="6"/>\`;
+  <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}"/>\`;
 
-  // Grid
-  for(let gx=0;gx<SVG_W;gx+=44) svg+=\`<line x1="\${gx}" y1="0" x2="\${gx}" y2="\${SVG_H}" stroke="#0e0e1a" stroke-width=".5"/>\`;
-  for(let gy=0;gy<SVG_H;gy+=20) svg+=\`<line x1="0" y1="\${gy}" x2="\${SVG_W}" y2="\${gy}" stroke="#0e0e1a" stroke-width=".5"/>\`;
+  // Dot grid sutil (mismo estilo que el fondo de la página)
+  for(let gx=0;gx<SVG_W;gx+=36) svg+=\`<circle cx="\${gx}" cy="\${SVG_H/2}" r=".8" fill="\${C_BRD2}" opacity=".12"/>\`;
 
-  // ── Connection lines + invisible paths for particle travel ───────────────
+  // ── Líneas de conexión con partículas viajando ─────────────────────────
   for(let i=0;i<4;i++){
-    const x1=px[i]+NW+1, x2=px[i+1]-1;
-    svg+=\`<path id="cp\${i}" d="M\${x1},\${midY} L\${x2},\${midY}" stroke="\${lnColor}" stroke-width="1.5" stroke-dasharray="6 3" opacity=".9" class="\${lnCls}" fill="none" marker-end="url(#arh)"/>
-    <path id="pp\${i}" d="M\${x1},\${midY} L\${x2},\${midY}" stroke="none" fill="none"/>
-    <circle r="3" fill="\${ptColor}" opacity=".9">
-      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="\${(i*0.18).toFixed(2)}s">
-        <mpath href="#pp\${i}"/>
+    const x1=px[i]+NW+2, x2=px[i+1]-2;
+    svg+=\`<path id="pp\${i}" d="M\${x1},\${midY} L\${x2},\${midY}" stroke="\${lnColor}" stroke-width="2" stroke-dasharray="5 4" class="\${lnCls}" fill="none" marker-end="url(#arh)"/>
+    <path id="pv\${i}" d="M\${x1},\${midY} L\${x2},\${midY}" stroke="none" fill="none"/>
+    <circle r="3.5" fill="\${ptColor}">
+      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="\${(i*0.2).toFixed(2)}s">
+        <mpath href="#pv\${i}"/>
       </animateMotion>
     </circle>\`;
   }
 
-  // Pulse ring on Claude when thinking
+  // Anillo de pulso en CLAUDE cuando piensa
   if(isThinking){
     const cx=px[3]+NW/2;
-    svg+=\`<circle cx="\${cx}" cy="\${midY}" r="36" fill="none" stroke="#22d3ee" stroke-width="1.2" opacity=".2" class="nf-pulse"/>
-    <circle cx="\${cx}" cy="\${midY}" r="44" fill="none" stroke="#22d3ee" stroke-width=".6" opacity=".1" class="nf-pulse" style="animation-delay:.3s"/>\`;
+    svg+=\`<circle cx="\${cx}" cy="\${midY}" r="38" fill="none" stroke="\${C_CYA}" stroke-width="1.5" opacity=".25" class="nf-pulse"/>
+    <circle cx="\${cx}" cy="\${midY}" r="46" fill="none" stroke="\${C_CYA}" stroke-width=".8" opacity=".1" class="nf-pulse" style="animation-delay:.35s"/>\`;
   }
 
-  // ── Nodes ─────────────────────────────────────────────────────────────────
+  // ── Nodos — estilo pixel card igual que los cards de la página ───────────
   nodeDefs.forEach((nd,i)=>{
     const x=px[i], y=pipeY;
     const isClaude = i===3;
-    const isDec    = i===4;
-    const bc = (isThinking&&isClaude)?'#22d3ee'
-             : isDone?'#34d39988'
-             : hasPrices?'#2a2a3a':'#1a1a2a';
-    const gf = (isThinking&&isClaude)?' filter="url(#glow2)"':'';
+    // Sombra pixel (rect desplazado)
+    svg+=\`<rect x="\${x+3}" y="\${y+3}" width="\${NW}" height="\${NH}" fill="\${C_SHD}" rx="0"/>\`;
+    // Borde más grueso y coloreado según estado
+    const bc = (isThinking&&isClaude)?C_CYA : isDone?C_GRN : C_BRD;
+    const bw = (isThinking&&isClaude)||isDone ? '2.5' : '2';
+    const fill = (isThinking&&isClaude) ? C_CARD3 : C_CARD;
     const gc = (isThinking&&isClaude)?' class="nf-thinking"'
              : (isIdle&&hasPrices&&i===0)?' class="nf-heartbeat"'
              : (isIdle&&hasPrices)?' class="nf-idle-node"':'';
     svg+=\`<g\${gc}>
-      <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" rx="4" fill="#0c0c18" stroke="\${bc}" stroke-width="1.5"\${gf}/>
-      <text x="\${x+NW/2}" y="\${y+11}" text-anchor="middle" font-size="6.5" font-weight="700" fill="#5b5b7b" font-family="JetBrains Mono,monospace" letter-spacing=".8">\${nd.title}</text>
-      <text x="\${x+NW/2}" y="\${y+26}" text-anchor="middle" font-size="13" fill="\${nd.color}" font-family="JetBrains Mono,monospace">\${nd.icon}</text>
-      <text x="\${x+NW/2}" y="\${y+37}" text-anchor="middle" font-size="8.5" fill="\${nd.color}" font-family="JetBrains Mono,monospace" opacity=".9">\${(nd.l1||'').slice(0,12)}</text>
-      <text x="\${x+NW/2}" y="\${y+48}" text-anchor="middle" font-size="7.5" fill="#5b5b7b" font-family="JetBrains Mono,monospace">\${(nd.l2||'').slice(0,12)}</text>
+      <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" rx="0" fill="\${fill}" stroke="\${bc}" stroke-width="\${bw}"/>
+      <text x="\${x+NW/2}" y="\${y+11}" text-anchor="middle" font-size="6" font-weight="700" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" letter-spacing="1">\${nd.title}</text>
+      <line x1="\${x+6}" y1="\${y+14}" x2="\${x+NW-6}" y2="\${y+14}" stroke="\${C_BRD2}" stroke-width=".8" opacity=".4"/>
+      <text x="\${x+NW/2}" y="\${y+28}" text-anchor="middle" font-size="14" fill="\${nd.color}" font-family="JetBrains Mono,monospace" font-weight="700">\${nd.icon}</text>
+      <text x="\${x+NW/2}" y="\${y+40}" text-anchor="middle" font-size="8.5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(nd.l1||'').slice(0,12)}</text>
+      <text x="\${x+NW/2}" y="\${y+52}" text-anchor="middle" font-size="7.5" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${(nd.l2||'').slice(0,12)}</text>
     </g>\`;
   });
 
@@ -1336,9 +1353,9 @@ function updateNeuralFlow(d) {
     const rem = Math.max(0, Math.round((nextAt-Date.now())/1000));
     countdown = \`\${Math.floor(rem/60)}:\${String(rem%60).padStart(2,'0')}\`;
   }
-  const stLabel = isThinking?'◈ ANALYZING':isDone?'✓ DECIDED':(hasPrices&&countdown?\`NEXT \${countdown}\`:(hasPrices?'MONITORING':'INIT'));
-  const stColor = isThinking?'#22d3ee':isDone?'#34d399':(hasPrices?'#5b5b7b':'#3a3a5a');
-  svg+=\`<text x="\${SVG_W-8}" y="\${SVG_H-4}" text-anchor="end" font-size="7" fill="\${stColor}" font-family="JetBrains Mono,monospace" letter-spacing="1.5">\${stLabel}</text>\`;
+  const stLabel = isThinking?'◈ ANALYZING':isDone?'✓ DECIDED':(hasPrices&&countdown?'NEXT '+countdown:(hasPrices?'MONITORING':'INIT'));
+  const stColor = isThinking?C_CYA:isDone?C_GRN:C_DIM;
+  svg+=\`<text x="\${SVG_W-6}" y="\${SVG_H-4}" text-anchor="end" font-size="7" fill="\${stColor}" font-family="JetBrains Mono,monospace" letter-spacing="1.5">\${stLabel}</text>\`;
 
   svg+='</svg>';
   wrap.innerHTML = svg;
