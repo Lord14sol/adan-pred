@@ -847,6 +847,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
       <div class="dynasty-panel" id="dynasty-panel"></div>
     </div>
 
+    <!-- Child Detail Modal -->
+    <div id="child-modal" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);overflow-y:auto" onclick="if(event.target===this)this.style.display='none'">
+      <div style="max-width:560px;margin:40px auto;background:var(--card);border:2px solid var(--purple);padding:20px;font-family:var(--mono);font-size:12px;position:relative">
+        <div onclick="document.getElementById('child-modal').style.display='none'" style="position:absolute;top:8px;right:12px;cursor:pointer;color:var(--grey);font-size:18px;font-weight:bold">x</div>
+        <div id="child-modal-content"></div>
+      </div>
+    </div>
+
     <!-- Brain Log: Decisions + Reasoning -->
     <div class="card">
       <div class="card-title">🧠 BRAIN LOG · Decisions &amp; Learning</div>
@@ -918,6 +926,93 @@ function sparkSvg(history){
   const last=history[n-1],prev=history[n-2];
   const c=last>prev?'34d399':last<prev?'f87171':'94a3b8';
   return \`<svg width="\${W}" height="\${H}" style="vertical-align:middle"><polyline points="\${pts}" fill="none" stroke="#\${c}" stroke-width="1.5" stroke-linejoin="round"/></svg>\`;
+}
+
+// ── Child Detail Modal ─────────────────────────────────────────────────────
+function showChildDetail(childIdx) {
+  const d = window._lastNFData;
+  if (!d) return;
+  const ch = (d.children||[])[childIdx];
+  if (!ch) return;
+  const modal = document.getElementById('child-modal');
+  const content = document.getElementById('child-modal-content');
+  if (!modal||!content) return;
+
+  const dna = ch.dna||{};
+  const intel = ch.intel||{};
+  const sig = intel.signal||{};
+  const scoreHist = intel.scoreHistory||[];
+  const exp = Math.min(100, ch.childExp||0);
+  const gcs = ch.grandChildren||[];
+  const styleMap = { volume_vwap:'VOL/VWAP', bollinger_vol:'BB/VOL', rsi_reversal:'RSI/REV' };
+
+  // Read child pnl from API data if available
+  const cpnl = ch.childPnl||{};
+  const cTrades = cpnl.trades||0;
+  const cWins = cpnl.wins||0;
+  const cWR = cTrades>0 ? Math.round(cWins/cTrades*100) : 0;
+
+  content.innerHTML = \`
+    <div style="color:var(--purple);font-size:16px;font-weight:bold;margin-bottom:12px;letter-spacing:2px">\${(ch.name||'CHILD').toUpperCase()} · GEN \${ch.generation||2}</div>
+    <div style="border-bottom:1px dashed var(--border2);padding-bottom:10px;margin-bottom:10px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div><span style="color:var(--grey)">Spec:</span> \${ch.spec||'?'}</div>
+        <div><span style="color:var(--grey)">Status:</span> <span style="color:\${ch.status==='observing'?'var(--yellow)':'var(--green)'}">\${ch.status||'?'}</span></div>
+        <div><span style="color:var(--grey)">Capital:</span> <span style="color:var(--cyan)">$\${(ch.capital||0).toFixed(2)}</span></div>
+        <div><span style="color:var(--grey)">Born:</span> \${ch.born?new Date(ch.born).toLocaleDateString():'-'}</div>
+      </div>
+    </div>
+
+    <div style="color:var(--purple);font-size:11px;font-weight:bold;margin-bottom:6px;letter-spacing:1px">DNA GENOME</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:12px;font-size:11px">
+      <div><span style="color:var(--grey)">Cognitive:</span> <span style="color:var(--cyan)">\${styleMap[dna.cognitiveStyle]||dna.cognitiveStyle||'---'}</span></div>
+      <div><span style="color:var(--grey)">Stake:</span> \${dna.stakePct?(dna.stakePct*100).toFixed(1)+'%':'---'}</div>
+      <div><span style="color:var(--grey)">Patience:</span> \${dna.patience?.toFixed(2)||'---'}x</div>
+      <div><span style="color:var(--grey)">MinEdge:</span> \${dna.minEdge?(dna.minEdge*100).toFixed(1)+'%':'---'}</div>
+      <div><span style="color:var(--grey)">VolW:</span> \${dna.volWeight?.toFixed(3)||'---'}</div>
+      <div><span style="color:var(--grey)">VwapW:</span> \${dna.vwapWeight?.toFixed(3)||'---'}</div>
+      <div><span style="color:var(--grey)">Mutation:</span> \${dna.mutation??'---'}</div>
+      <div><span style="color:var(--grey)">BoredBB:</span> \${dna.boredBBMin?.toFixed(4)||'---'}</div>
+    </div>
+
+    <div style="color:var(--purple);font-size:11px;font-weight:bold;margin-bottom:6px;letter-spacing:1px">CURRENT INTEL</div>
+    <div style="margin-bottom:12px;font-size:11px">
+      <div><span style="color:var(--grey)">Signal:</span> <span style="color:\${sig.dir==='UP'?'var(--green)':sig.dir==='DOWN'?'#e74c3c':'var(--grey)'}; font-weight:bold">\${sig.dir||'---'} (\${sig.conf||0}%)</span></div>
+      <div><span style="color:var(--grey)">Reason:</span> \${sig.reason||'---'}</div>
+      <div><span style="color:var(--grey)">Intel Score:</span> \${intel.intelScore||'---'}/100</div>
+      <div><span style="color:var(--grey)">Price:</span> $\${intel.price?.toLocaleString()||'---'}</div>
+      <div><span style="color:var(--grey)">Age:</span> \${intel.ts?Math.round((Date.now()-new Date(intel.ts).getTime())/1000)+'s ago':'---'}</div>
+      \${intel.bestMarket?\`<div style="margin-top:4px;padding:6px;background:var(--bg3);border-left:3px solid var(--cyan)">
+        <div style="color:var(--cyan);font-weight:bold">\${intel.bestMarket.title||''}</div>
+        <div>Side: \${intel.bestMarket.suggestedSide||'?'} | Edge: \${((intel.bestMarket.impliedEdge||0)*100).toFixed(1)}% | Closes: \${intel.bestMarket.closesIn||'?'}min</div>
+      </div>\`:''}
+    </div>
+
+    <div style="color:var(--purple);font-size:11px;font-weight:bold;margin-bottom:6px;letter-spacing:1px">EXP PROGRESS</div>
+    <div style="margin-bottom:12px">
+      <div style="background:var(--border2);height:12px;border-radius:2px;overflow:hidden;margin-bottom:4px">
+        <div style="background:var(--cyan);height:100%;width:\${exp}%;transition:width .3s"></div>
+      </div>
+      <div style="font-size:10px;color:var(--grey)">\${exp}/100 EXP — \${exp>=100?'CAN SPAWN GRANDCHILDREN':'needs '+(100-exp)+' more to spawn'}</div>
+    </div>
+
+    <div style="color:var(--purple);font-size:11px;font-weight:bold;margin-bottom:6px;letter-spacing:1px">SCORE HISTORY</div>
+    <div style="font-size:10px;color:var(--grey);margin-bottom:12px">\${scoreHist.length?scoreHist.map(s=>'<span style="color:'+(s>=65?'var(--green)':s>=45?'var(--yellow)':'#e74c3c')+'">'+s+'</span>').join(' → '):'No history yet'}</div>
+
+    \${gcs.length?\`<div style="color:var(--purple);font-size:11px;font-weight:bold;margin-bottom:6px;letter-spacing:1px">GRANDCHILDREN (\${gcs.length})</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px">\${gcs.map(gc=>\`
+      <div style="padding:6px;border:1px solid var(--border2);background:var(--bg3)">
+        <div style="color:var(--purple);font-weight:bold">\${(gc.name||gc.spec||'GC').toUpperCase()} · G\${gc.generation||3}</div>
+        <div>Status: \${gc.status||'?'} | Capital: $\${(gc.capital||0).toFixed(2)}</div>
+      </div>\`).join('')}</div>\`:''}
+
+    \${cTrades>0?\`<div style="color:var(--purple);font-size:11px;font-weight:bold;margin-bottom:6px;margin-top:12px;letter-spacing:1px">TRADE HISTORY</div>
+    <div style="font-size:11px">
+      <div>Trades: \${cTrades} | Wins: \${cWins} | WR: <span style="color:\${cWR>=55?'var(--green)':cWR>=40?'var(--yellow)':'#e74c3c'}">\${cWR}%</span></div>
+      <div>Net: $\${(cpnl.net||0).toFixed(2)} | Fund: $\${(cpnl.fund||0).toFixed(2)}</div>
+    </div>\`:'<div style="color:var(--grey);font-size:10px;margin-top:8px">No trades yet — observing and building intel for ADAN</div>'}
+  \`;
+  modal.style.display='block';
 }
 
 async function refresh(){
@@ -1390,10 +1485,8 @@ function updateNeuralFlow(d) {
       <path d="M0,0 L0,6 L7,3 z" fill="\${lnColor}"/>
     </marker>
   </defs>
-  <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}" fill-opacity="1"/>\`;
+  <rect width="\${SVG_W}" height="\${SVG_H}" fill="none"/>\`;
 
-  // Dot grid sutil (mismo estilo que el fondo de la página)
-  for(let gx=0;gx<SVG_W;gx+=36) svg+=\`<circle cx="\${gx}" cy="\${SVG_H/2}" r=".8" fill="\${C_BRD2}" opacity=".12"/>\`;
 
   // ── Líneas de conexión con partículas viajando ─────────────────────────
   for(let i=0;i<4;i++){
@@ -1505,7 +1598,7 @@ function updateDynastyPanel(d) {
     const SVG_W=720, SVG_H=54;
     const bw=Math.floor((SVG_W-40)/3)-8;
     let svg=\`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
-    <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}" fill-opacity="1"/>
+    <rect width="\${SVG_W}" height="\${SVG_H}" fill="none"/>
     <text x="10" y="14" font-family="JetBrains Mono,monospace" font-size="8" fill="\${C_PUR}" font-weight="700" letter-spacing="2">🧬 DYNASTY — SPAWN REQUIREMENTS</text>\`;
     reqs.forEach((r,i)=>{
       const x=10+i*(bw+8), y=20;
@@ -1556,7 +1649,7 @@ function updateDynastyPanel(d) {
       <path d="M0,0 L0,5 L6,2.5 z" fill="\${C_PUR}"/>
     </marker>
   </defs>
-  <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}" fill-opacity="1"/>\`;
+  <rect width="\${SVG_W}" height="\${SVG_H}" fill="none"/>\`;
 
   // Label header
   const activeSigs = children.filter(c=>c.intel?.signal).length;
@@ -1612,7 +1705,8 @@ function updateDynastyPanel(d) {
     const dnaColor   = dna ? C_PUR : C_DIM;
     const gcCount    = ch.grandChildren?.length || 0;
 
-    svg+=\`<rect x="\${x+3}" y="\${y+3}" width="\${NW}" height="\${NH}" fill="\${C_SHD}"/>
+    svg+=\`<g style="cursor:pointer" onclick="showChildDetail(\${i})">
+    <rect x="\${x+3}" y="\${y+3}" width="\${NW}" height="\${NH}" fill="\${C_SHD}"/>
     <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" fill="\${fillC}" stroke="\${bColor}" stroke-width="\${bw2}"/>
     <text x="\${x+NW/2}" y="\${y+13}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" font-weight="700" fill="\${C_PUR}" letter-spacing=".5">\${(ch.name||'CHILD').slice(0,12).toUpperCase()}</text>
     <line x1="\${x+5}" y1="\${y+17}" x2="\${x+NW-5}" y2="\${y+17}" stroke="\${C_BRD2}" stroke-width=".7" opacity=".4"/>
@@ -1624,7 +1718,8 @@ function updateDynastyPanel(d) {
     <text x="\${x+NW-6}" y="\${y+86}" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="7" fill="\${dnaColor}">stake:\${stakeTxt}</text>
     <rect x="\${x+6}" y="\${y+91}" width="\${NW-12}" height="6" fill="\${C_BRD2}" opacity=".3" rx="1"/>
     <rect x="\${x+6}" y="\${y+91}" width="\${Math.round((NW-12)*cexp/100)}" height="6" fill="\${C_CYA}" opacity=".85" rx="1"/>
-    <text x="\${x+NW/2}" y="\${y+106}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="\${C_DIM}">EXP \${cexp}/100 · GC \${gcCount}/2</text>\`;
+    <text x="\${x+NW/2}" y="\${y+106}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="\${C_DIM}">EXP \${cexp}/100 · GC \${gcCount}/2</text>
+    </g>\`;
 
     // ── Grandchild mini-nodes below parent ───────────────────────────────────
     const gcs = ch.grandChildren || [];
@@ -1703,7 +1798,7 @@ setInterval(()=>{
           if (fs.existsSync(fp)) {
             const d = JSON.parse(fs.readFileSync(fp, 'utf8'));
             const age = (Date.now() - new Date(d.ts).getTime()) / 60000;
-            if (age <= 10) intel = { signal: d.signal, intelScore: d.intelScore, ts: d.ts };
+            if (age <= 10) intel = { signal: d.signal, intelScore: d.intelScore, ts: d.ts, price: d.price, bestMarket: d.bestMarket, scoreHistory: d.scoreHistory };
           }
         } catch {}
         // grandchildren + child EXP
@@ -1729,7 +1824,20 @@ setInterval(()=>{
             });
           }
         } catch {}
-        return { ...child, intel, grandChildren, childExp, childSignals };
+        // Read child DNA + PnL
+        let dna = child.dna || null;
+        let childPnl = {};
+        try {
+          const specSlug = (child.spec||'').replace(/[^a-zA-Z0-9-]/g,'-');
+          const childDir = path.join(DIR, 'children', specSlug);
+          const cpPath = path.join(childDir, 'pnl.json');
+          if (fs.existsSync(cpPath)) {
+            const cp = JSON.parse(fs.readFileSync(cpPath, 'utf8'));
+            childPnl = { trades: cp.trades||0, wins: cp.wins||0, losses: cp.losses||0, net: cp.net||0, fund: cp.fund||0 };
+            if (!dna && cp.dna) dna = cp.dna;  // read DNA from child's pnl.json
+          }
+        } catch {}
+        return { ...child, intel, grandChildren, childExp, childSignals, dna, childPnl };
       });
 
       // Auto-reset result → idle after RESULT_SHOW_MS so the flow goes back to monitoring
@@ -3542,7 +3650,7 @@ ${inheritedLines.join('\n')}
     dna  // mutación genética hereditaria
   },null,2));
 
-  const child = { id:childId, name:childName, spec:nextSpec, born:new Date().toISOString(), capital, dir:childDir, generation:(pnl.generation||1)+1, status:'observing' };
+  const child = { id:childId, name:childName, spec:nextSpec, born:new Date().toISOString(), capital, dir:childDir, generation:(pnl.generation||1)+1, status:'observing', dna };
   pnl.children = [...children, child];
   pnl.treasury = parseFloat(((pnl.treasury||0) - capital).toFixed(2));
   savePnL(pnl);
