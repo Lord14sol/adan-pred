@@ -2217,16 +2217,18 @@ async function fetchAllPrices() {
   const result = { _meta: { fearGreed, fundingRates } };
 
   await Promise.all(SYMBOLS.map(async sym=>{
-    const [klines1m, klines5m, klines15m, orderBook] = await Promise.all([
+    const [klines1m, klines5m, klines15m, klines1h, orderBook] = await Promise.all([
       fetchBinanceKlines(sym,'1m',30),
       fetchBinanceKlines(sym,'5m',30),
       fetchBinanceKlines(sym,'15m',20),
+      fetchBinanceKlines(sym,'1h',8),   // ← macro trend (8 hourly candles)
       fetchOrderBookWalls(sym)
     ]);
     if (!klines1m.length) return;
     const closes1m  = klines1m.map(k=>k.close);
     const closes5m  = klines5m.map(k=>k.close);
     const closes15m = klines15m.map(k=>k.close);
+    const closes1h  = klines1h.map(k=>k.close);
     const price     = closes1m[closes1m.length-1];
     const open24    = closes5m.length>0?closes5m[0]:price;
     const macd      = calcMACD(closes5m);
@@ -2235,24 +2237,30 @@ async function fetchAllPrices() {
     const vwap5m    = calcVWAP(klines5m);
     const volAccel  = calcVolAccel(klines5m);
     const funding   = fundingRates[sym]||null;
+    // Order book imbalance: bid/ask ratio > 1.3 = buy wall dominant
+    const obImbalance = orderBook ? (orderBook.buyPressure > 60 ? 'BUY_WALL' : orderBook.buyPressure < 40 ? 'SELL_WALL' : 'BALANCED') : 'UNKNOWN';
     const d = {
       price,
       chg:       ((price-open24)/open24)*100,
       closes:    closes1m,
       closes5m,
       closes15m,
+      closes1h,
       trend1m:   calcTrend(closes1m),
       trend5m:   calcTrend(closes5m),
       trend15m:  calcTrend(closes15m),
+      trend1h:   closes1h.length>=2 ? calcTrend(closes1h) : 0,
       volatility:calcVolatility(closes1m),
       rsi:       calcRSI(closes1m),
       rsi5m:     calcRSI(closes5m),
+      rsi1h:     closes1h.length>=14 ? calcRSI(closes1h) : null,
       macd,
       bb,
       vol,
       vwap5m,
       volAccel,
       orderBook,
+      obImbalance,
       funding
     };
     d.intelScore = calcIntelScore(d);
@@ -2969,24 +2977,39 @@ async function think(client, markets, prices, pnl, openPos, soul) {
   const fg = prices._meta?.fearGreed;
   const fgContext = fg?`Fear & Greed: ${fg.value} (${fg.label}) — direction: ${fg.direction>0?'improving':'worsening'}`:'Fear & Greed: unavailable';
 
-  const priceContext = Object.entries(prices).filter(([k])=>k!=='_meta').map(([sym,d])=>{
+  // BTC macro context for correlation rule
+  const btcData = prices['BTCUSDT'];
+  const btcMacro1h = btcData?.trend1h ?? 0;
+  const btcMicro5m = btcData?.trend5m ?? 0;
+  const btcObImb   = btcData?.obImbalance || 'UNKNOWN';
+  const btcMacroDir = btcMacro1h > 0.3 ? 'BULLISH' : btcMacro1h < -0.3 ? 'BEARISH' : 'NEUTRAL';
+  const btcCorrelationRule = btcData
+    ? `BTC MACRO (1h): ${btcMacroDir} (${btcMacro1h>=0?'+':''}${btcMacro1h.toFixed(2)}%) | BTC micro (5m): ${btcMicro5m>=0?'+':''}${btcMicro5m.toFixed(2)}% | OB: ${btcObImb}
+⚡ CORRELATION RULE: If BTC macro=${btcMacroDir} & BTC 5m is ${btcMicro5m<-0.2?'FALLING ← PROHIBIT YES on ETH/SOL':'stable/rising → ETH/SOL YES allowed'}`
+    : '';
+
+  const priceContext = (btcCorrelationRule ? btcCorrelationRule + '\n\n' : '') +
+    Object.entries(prices).filter(([k])=>k!=='_meta').map(([sym,d])=>{
     if (!d) return '';
     const name = sym.replace('USDT','');
     const funding = d.funding;
     const ob      = d.orderBook;
     const bb      = d.bb;
     const macd    = d.macd;
+    const macro1h = d.trend1h ?? 0;
+    const macroDir= macro1h > 0.3 ? '▲ MACRO UP' : macro1h < -0.3 ? '▼ MACRO DOWN' : '━ MACRO FLAT';
+    const wallInfo = ob ? (ob.buyPressure > 60 ? `BUY WALL (${ob.buyPressure}% bids) — support $${ob.support.toLocaleString()}` : ob.buyPressure < 40 ? `SELL WALL (${100-ob.buyPressure}% asks) — resist $${ob.resistance.toLocaleString()}` : `BALANCED (${ob.buyPressure}% bids)`) : '---';
     return `━━ ${name} ━━
   Price: $${d.price.toLocaleString()} | Change: ${d.chg>=0?'+':''}${d.chg.toFixed(2)}%
-  TREND:  1m=${d.trend1m.toFixed(2)}%  5m=${d.trend5m.toFixed(2)}%  15m=${d.trend15m?.toFixed(2)||'?'}%
+  MACRO 1h: ${macroDir} (${macro1h>=0?'+':''}${macro1h.toFixed(2)}%) | RSI1h: ${d.rsi1h!=null?d.rsi1h.toFixed(0):'--'}  ← macro trend dictates direction
+  MICRO 5m: ${d.trend5m.toFixed(2)}% | 1m: ${d.trend1m.toFixed(2)}%  ← micro is the trigger
   RSI:    1m=${d.rsi.toFixed(0)}  5m=${d.rsi5m?.toFixed(0)||'?'}  (>70=overbought <30=oversold)
-  MACD:   hist=${macd?.hist.toFixed(4)||'?'} (${macd?.hist>0?'BULLISH':'BEARISH'})
   BB:     %B=${bb?.pct.toFixed(0)||'?'}%  std=$${bb?.std?.toFixed(0)||'?'}  (>80=strong up <20=strong dn)
   VOL:    trend=${d.vol?.trend||'?'}  spike=${d.vol?.spike?'YES':'no'}  ratio=${d.vol?.ratio?.toFixed(1)||'?'}x avg  accel=${d.volAccel>0?'+'+d.volAccel:d.volAccel??'?'} (${d.volAccel>=2?'ACCELERATING':d.volAccel<=-2?'DYING':'flat'})
   VWAP5m: $${d.vwap5m?.vwap?.toFixed(2)||'?'} | price ${d.vwap5m?.pct!=null?(d.vwap5m.pct>=0?'+':'')+d.vwap5m.pct.toFixed(2)+'%':'?'} ${d.vwap5m?.above?'ABOVE VWAP ▲':'BELOW VWAP ▼'}
+  ORDER BOOK WALLS: ${wallInfo}
   VOLATILITY: ${d.volatility.toFixed(4)}% per candle
   INTEL SCORE: ${d.intelScore}/100 — ${d.intelScore>=65?'BULLISH SIGNAL':d.intelScore>=45?'NEUTRAL':d.intelScore>=35?'BEARISH':'STRONG BEAR'}
-  ${ob?`ORDERBOOK: support=$${ob.support.toLocaleString()} resist=$${ob.resistance.toLocaleString()} buyPressure=${ob.buyPressure}%`:''}
   ${funding?`FUNDING: ${funding.rate.toFixed(4)}% — ${funding.label}`:''}
   Last 6 closes (1m): ${d.closes.slice(-6).map(c=>'$'+c.toLocaleString()).join(' → ')}`;
   }).filter(Boolean).join('\n\n');
@@ -3052,19 +3075,36 @@ POLYMARKET CANDIDATES (${candidates.length} crypto markets):
 ${marketsText}
 
 ══════════════════════════════════════════
-YOUR 6-STEP ANALYSIS:
+YOUR 7-STEP ANALYSIS (INSTITUTIONAL GRADE):
 ══════════════════════════════════════════
-1. MARKET SENTIMENT: Fear/Greed level → overall risk appetite. F&G < 20 biases market to overprice downside.
-2. VOLUME MICROSTRUCTURE (PRIMARY EDGE SOURCE):
-   - volRatio > 1.3x avg = conviction move. volRatio < 0.8x = noise/chop → default SKIP unless other signals are extreme.
-   - volAccel >= +2 = volume accelerating candle-over-candle = strong directional signal.
-   - VWAP deviation: price ABOVE VWAP + rising vol = genuine momentum. BELOW VWAP = fade/reversal risk.
-   - POLYMARKET LAG: Polymarket prices update 10-30s after Binance moves. A confirmed volume spike on Binance is your edge window — act before humans adjust odds.
-   - NOTE: MACD processes 130+ min of 5m history. For 5-15min market windows it is NOISE. Ignore it. Use volume + VWAP instead.
-3. MOMENTUM: RSI extreme? Volume spike confirmed (ratio > 1.5x)? VWAP break with accelerating volume?
-4. VOLATILITY CHECK: If volatility > 0.12% per candle → widen uncertainty bands significantly
-5. PRICE vs TARGET: Use current price + VWAP position + volume trend + time remaining to estimate probability
-6. EDGE vs MARKET: Is market under/over-pricing? By how much? Only bet if edge > min threshold.
+1. MARKET SENTIMENT: Fear/Greed level → overall risk appetite. F&G < 20 biases market to overprice downside (lean NO pays more).
+
+2. MULTI-TIMEFRAME CONFLUENCE (FRACTAL ANALYSIS — most important):
+   - MACRO (1h) DICTATES DIRECTION. MICRO (5m/15m) DICTATES THE TRIGGER.
+   - If 1h macro=BEARISH + 5m attempts rally → it's a LIQUIDITY TRAP. Bet NO.
+   - If 1h macro=BULLISH + 5m dip → it's a buying opportunity. Bet YES.
+   - NO CONFLUENCE = NO BET. A great 5m signal against the 1h trend = suicide.
+   - BTC CORRELATION: ETH/SOL/XRP CANNOT bet YES if BTC is falling 5m (cascade risk).
+
+3. ORDER BOOK REALITY (predicts near-term 5-15min — ignore MACD for these timeframes):
+   - BUY WALL dominant (>60% bids): price has FLOOR support. YES bets safer.
+   - SELL WALL dominant (>60% asks): price has CEILING resistance. NO bets safer.
+   - If a SELL WALL is 0.2% above current price → price will bounce DOWN. BET NO.
+   - If a BUY WALL is 0.2% below current price → price has support. BET YES.
+
+4. VOLUME MICROSTRUCTURE (PRIMARY EDGE — Polymarket lags Binance 10-30s):
+   - volRatio > 1.3x = conviction move in progress. volRatio < 0.8x = noise → SKIP.
+   - volAccel >= +2 = accelerating candle-over-candle = strong directional signal.
+   - VWAP deviation: price ABOVE VWAP + rising vol = genuine momentum. BELOW = fade risk.
+
+5. TIMEFRAME-SPECIFIC LOGIC (match your analysis to market window):
+   - 5min markets: IGNORE macro trends. Focus 100% on volume acceleration + order book.
+   - 15min markets: Look for DIVERGENCES (price up but volume falling = imminent collapse). RSI >65 + falling vol = BET NO.
+   - 1hr markets: BTC correlation + support/resistance macro levels matter most.
+
+6. VOLATILITY & PROBABILITY: volatility > 0.12%/candle → widen uncertainty by 15%. If unsure, SKIP.
+
+7. EDGE vs MARKET: Only bet if YOUR probability vs market price diverges by >${(strat.minEdge*100).toFixed(0)}%+.
 
 DECISION FORMAT — copy exactly:
 MARKET_ID: [N]
