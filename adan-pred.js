@@ -37,6 +37,7 @@ const STRATEGY_PATH  = path.join(DIR, 'strategy.json');
 const CALIB_PATH     = path.join(DIR, 'calibration.json');
 const INTEL_DIR      = path.join(DIR, 'intel');      // hijos escriben aquí
 const HYPOTHESIS_PATH= path.join(DIR, 'hypotheses.jsonl'); // memoria episódica
+const DYN_WEIGHTS_PATH = path.join(DIR, 'dynamic_weights.json'); // P5: auto-modificación limitada (Fase 2)
 
 // ── APIs ───────────────────────────────────────────────────────────────────
 const POLYMARKET_API  = 'https://gamma-api.polymarket.com';
@@ -92,6 +93,25 @@ function loadStrategy() {
   if (!fs.existsSync(STRATEGY_PATH)) { fs.writeFileSync(STRATEGY_PATH, JSON.stringify(DEFAULT_STRATEGY,null,2)); return {...DEFAULT_STRATEGY}; }
   try { return { ...DEFAULT_STRATEGY, ...JSON.parse(fs.readFileSync(STRATEGY_PATH,'utf8')) }; }
   catch { return {...DEFAULT_STRATEGY}; }
+}
+
+// ── P5: dynamic_weights.json — ADAN lee, humanos escriben (Fase 1: read-only) ─
+// En Fase 2: ADAN podrá modificar sus propios pesos cuando WR > 55% por 20 trades.
+const DEFAULT_DYN_WEIGHTS = {
+  volumeWeight: 1.0,   // multiplicador de señales de volumen
+  vwapWeight:   1.0,   // multiplicador de señales de VWAP
+  trendWeight:  1.0,   // multiplicador de señales de tendencia
+  fearGreedBias: 0.0,  // sesgo cuando F&G < 20 (positivo = más NO bets)
+  _note: 'Fase 1: modificar manualmente para ajustar. Fase 2: ADAN ajusta autónomamente al 55%+ WR.',
+  _lastModified: new Date().toISOString()
+};
+function loadDynWeights() {
+  if (!fs.existsSync(DYN_WEIGHTS_PATH)) {
+    fs.writeFileSync(DYN_WEIGHTS_PATH, JSON.stringify(DEFAULT_DYN_WEIGHTS, null, 2));
+    return { ...DEFAULT_DYN_WEIGHTS };
+  }
+  try { return { ...DEFAULT_DYN_WEIGHTS, ...JSON.parse(fs.readFileSync(DYN_WEIGHTS_PATH,'utf8')) }; }
+  catch { return { ...DEFAULT_DYN_WEIGHTS }; }
 }
 function saveStrategy(s) { fs.writeFileSync(STRATEGY_PATH, JSON.stringify(s,null,2)); }
 
@@ -1119,7 +1139,11 @@ async function refresh(){
     updateDecisionsLog(d);
     updateHourHeatmap(d);
 
-  }catch(e){console.error(e)}
+  }catch(e){
+    console.error('[refresh crash]',e);
+    const errEl = document.getElementById('decisions-wrap');
+    if(errEl) errEl.innerHTML='<div style="color:var(--red);font-size:11px;padding:8px 0">[JS error] '+e.message+' — check console</div>';
+  }
 }
 
 // ── Avatar update ─────────────────────────────────────────────────────────────
@@ -1128,7 +1152,7 @@ function updateAvatar(d) {
   const dot    = document.getElementById('av-dot');
   const stxt   = document.getElementById('av-status-txt');
   const title  = document.getElementById('av-title');
-  if (!sprite) return;
+  if (!sprite || !dot || !stxt || !title) return;
   const mode = d.state?.mode;
   const xp   = d.xp;
   const pnl  = d.pnl;
@@ -1377,7 +1401,8 @@ function updateNeuralFlow(d) {
   }
 }
 
-// ── Dynasty Panel (HTML below SVG) ────────────────────────────────────────────
+// ── Dynasty Network SVG ───────────────────────────────────────────────────────
+// Visualización de red neuronal: ADAN centro + hijos como nodos + partículas de señal
 function updateDynastyPanel(d) {
   const el = document.getElementById('dynasty-panel');
   if (!el) return;
@@ -1388,59 +1413,132 @@ function updateDynastyPanel(d) {
   const wr       = trades>0 ? Math.round(pnl.wins/trades*100) : 0;
   const lvl      = xp.level || 1;
 
-  if(children.length === 0){
-    // Paper phase: LVL 2 + 10 trades (sin gate de WR)
-    const reqs = [
-      {label:'LEVEL 2', val:lvl+' / 2', pct:Math.min(100,lvl/2*100), done:lvl>=2},
-      {label:'10 TRADES', val:trades+' / 10', pct:Math.min(100,trades/10*100), done:trades>=10},
-      {label:'TREASURY', val:'$'+(pnl.treasury||0).toFixed(0), pct:(pnl.treasury||0)>0?100:0, done:(pnl.treasury||0)>0},
-    ];
-    const allDone = reqs.every(r=>r.done);
-    const doneCount = reqs.filter(r=>r.done).length;
-    const badgeCls = allDone?'dyn-badge-ready':doneCount>=2?'dyn-badge-soon':'dyn-badge-wait';
-    const badgeTxt = allDone?'SPAWNING NEXT CYCLE':doneCount>=2?'ALMOST THERE':'LEARNING';
+  // Paleta retro idéntica al Neural Pipeline
+  const C_BG='#ccc8bc',C_CARD='#ddd9cc',C_CARD3='#e8e4d8',C_BRD='#1a1a1a',C_BRD2='#3a3a2a';
+  const C_TXT='#1a1a1a',C_DIM='#888878',C_SHD='#1a1a1a';
+  const C_PUR='#5a1a8a',C_CYA='#1a4a8a',C_GRN='#1a5a1a',C_RED='#8a1a1a',C_YEL='#7a5a10';
 
-    el.innerHTML = \`<div class="dyn-header">
-      <span class="dyn-title">🧬 DYNASTY — NO CHILDREN YET</span>
-      <span class="dyn-badge \${badgeCls}">\${badgeTxt}</span>
-    </div>
-    <div class="dyn-req-grid">
-      \${reqs.map(r=>\`<div class="dyn-req \${r.done?'done':''}">
-        <div class="dyn-req-label">\${r.label}</div>
-        <div class="dyn-req-val">\${r.val}</div>
-        <div class="dyn-req-track"><div class="dyn-req-fill" style="width:\${r.pct.toFixed(0)}%"></div></div>
-      </div>\`).join('')}
-    </div>
-    <div class="dyn-note">
-      Win rate eliminado como requisito en paper. Primer hijo nace al trade 10 · LVL 2 · treasury > 0.
-      El hijo observa 5 trades antes de mandar señales — aprenden juntos desde el principio.
-    </div>\`;
-  } else {
-    const activeSigs = children.filter(c=>c.intel?.signal && c.intel.signal!=='idle').length;
-    el.innerHTML = \`<div class="dyn-header">
-      <span class="dyn-title">🧬 DYNASTY — \${children.length} CHILD SCANNER\${children.length>1?'S':''}</span>
-      <span class="dyn-badge dyn-badge-active">\${activeSigs} LIVE SIGNAL\${activeSigs!==1?'S':''}</span>
-    </div>
-    <div class="dyn-children-grid">
-      \${children.map(ch=>{
-        const cp=ch.pnl||{};
-        const cwr=cp.trades>0?Math.round((cp.wins||0)/cp.trades*100):0;
-        const cexp=Math.min(100,ch.childExp||cp.exp||0);
-        const sig=(ch.intel?.signal||'idle').toLowerCase();
-        const sigCls=sig==='bull'?'bull':sig==='bear'?'bear':'idle';
-        return \`<div class="dyn-child-card \${sigCls}">
-          <div class="dyn-child-name">\${(ch.name||ch.spec||'CHILD').toUpperCase().slice(0,14)}</div>
-          <div class="dyn-child-stats">
-            <span class="dyn-stat">\${cp.trades||0} trades</span>
-            <span class="dyn-stat">\${cwr}% WR</span>
-            <span class="dyn-sig \${sigCls}">\${sig.toUpperCase().slice(0,4)}</span>
-          </div>
-          <div class="dyn-exp-track"><div class="dyn-exp-fill" style="width:\${cexp}%"></div></div>
-          <div class="dyn-child-meta">EXP \${ch.childExp||cp.exp||0} / 100\${ch.grandChildren?.length?' · '+ch.grandChildren.length+' nieto'+(ch.grandChildren.length>1?'s':''):''}</div>
-        </div>\`;
-      }).join('')}
-    </div>\`;
+  // Helper: extract signal direction from {dir:'UP'} or string or null
+  const sigDir = (raw) => {
+    if (!raw) return 'idle';
+    if (typeof raw === 'string') return raw.toLowerCase();
+    return (raw.dir || 'idle').toLowerCase();
+  };
+  const sigColor = (dir) => dir==='up'?C_GRN : dir==='down'?C_RED : C_DIM;
+  const sigLabel = (dir) => dir==='up'?'▲ UP' : dir==='down'?'▼ DN' : '● —';
+
+  if (children.length === 0) {
+    const reqs = [
+      {label:'LVL 2',     val:lvl+'/2',    pct:Math.min(100,lvl/2*100),              done:lvl>=2},
+      {label:'10 TRADES', val:trades+'/10', pct:Math.min(100,trades/10*100),          done:trades>=10},
+      {label:'TREASURY',  val:'$'+(pnl.treasury||0).toFixed(0), pct:(pnl.treasury||0)>0?100:0, done:(pnl.treasury||0)>0},
+    ];
+    const SVG_W=720, SVG_H=54;
+    const bw=Math.floor((SVG_W-40)/3)-8;
+    let svg=\`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
+    <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}"/>
+    <text x="10" y="14" font-family="JetBrains Mono,monospace" font-size="8" fill="\${C_PUR}" font-weight="700" letter-spacing="2">🧬 DYNASTY — SPAWN REQUIREMENTS</text>\`;
+    reqs.forEach((r,i)=>{
+      const x=10+i*(bw+8), y=20;
+      svg+=\`<rect x="\${x+2}" y="\${y+2}" width="\${bw}" height="28" fill="\${C_SHD}" rx="0"/>
+      <rect x="\${x}" y="\${y}" width="\${bw}" height="28" fill="\${r.done?C_CARD3:C_CARD}" stroke="\${r.done?C_GRN:C_BRD}" stroke-width="2"/>
+      <text x="\${x+bw/2}" y="\${y+10}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="\${C_DIM}" letter-spacing="1">\${r.label}</text>
+      <text x="\${x+bw/2}" y="\${y+22}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" font-weight="700" fill="\${r.done?C_GRN:C_TXT}">\${r.done?'✓ DONE':r.val}</text>\`;
+    });
+    svg+=\`</svg>\`;
+    el.innerHTML = svg;
+    return;
   }
+
+  // ── Con hijos: SVG de red genética ──────────────────────────────────────────
+  const N      = children.length;
+  const NW=104, NH=82;
+  const AW=120, AH=64;
+  const SVG_W  = 720;
+  const AX     = (SVG_W-AW)/2, AY=8;
+  const CONN_H = 44; // altura del cable de conexión
+  const CY     = AY+AH+CONN_H;
+  const totalW = N*(NW+10)-10;
+  const CX0    = Math.max(10, (SVG_W-totalW)/2);
+  const SVG_H  = CY+NH+12;
+
+  // Posiciones de hijos
+  const cpos = children.map((_,i)=>({ x: CX0+i*(NW+10), y: CY }));
+  // Centro de ADAN node (bottom center)
+  const aMidX=AX+AW/2, aMidY=AY+AH;
+
+  let svg=\`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
+  <defs>
+    <marker id="dah" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto">
+      <path d="M0,0 L0,5 L6,2.5 z" fill="\${C_PUR}"/>
+    </marker>
+  </defs>
+  <rect width="\${SVG_W}" height="\${SVG_H}" fill="\${C_BG}"/>\`;
+
+  // Label header
+  const activeSigs = children.filter(c=>c.intel?.signal).length;
+  svg+=\`<text x="\${SVG_W/2}" y="8" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="\${C_PUR}" font-weight="700" letter-spacing="2">🧬 GENETIC DYNASTY · \${N} SCANNER\${N>1?'S':''} · \${activeSigs} REPORTING</text>\`;
+
+  // ── Líneas de conexión hijo → ADAN con partículas ───────────────────────────
+  children.forEach((ch,i)=>{
+    const cp = cpos[i];
+    const childMidX = cp.x+NW/2;
+    const childTopY = cp.y;
+    const dir = sigDir(ch.intel?.signal);
+    const hasSignal = dir !== 'idle';
+    const lColor = hasSignal ? (dir==='up'?C_GRN:dir==='down'?C_RED:C_CYA) : C_BRD2;
+    const pid = \`dp\${i}\`;
+    // Connection line child → ADAN
+    svg+=\`<path id="\${pid}" d="M\${childMidX},\${childTopY} L\${aMidX},\${aMidY}" stroke="\${lColor}" stroke-width="\${hasSignal?2:1}" stroke-dasharray="\${hasSignal?'4 3':'3 5'}" fill="none" marker-end="url(#dah)" opacity="\${hasSignal?0.9:0.35}"/>
+    <circle r="3" fill="\${lColor}" opacity="\${hasSignal?0.9:0.3}">
+      <animateMotion dur="\${hasSignal?'0.9s':'2.5s'}" repeatCount="indefinite" begin="\${(i*0.22).toFixed(2)}s">
+        <mpath href="#\${pid}"/>
+      </animateMotion>
+    </circle>\`;
+  });
+
+  // ── Nodo ADAN (raíz) ────────────────────────────────────────────────────────
+  const wrColor = wr>=55?C_GRN : wr>=40?C_YEL : C_RED;
+  svg+=\`<rect x="\${AX+3}" y="\${AY+3}" width="\${AW}" height="\${AH}" fill="\${C_SHD}"/>
+  <rect x="\${AX}" y="\${AY}" width="\${AW}" height="\${AH}" fill="\${C_CARD3}" stroke="\${C_PUR}" stroke-width="2.5" class="nf-idle-node"/>
+  <text x="\${aMidX}" y="\${AY+13}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" font-weight="700" fill="\${C_PUR}" letter-spacing="2">◈ ADAN</text>
+  <line x1="\${AX+6}" y1="\${AY+16}" x2="\${AX+AW-6}" y2="\${AY+16}" stroke="\${C_BRD2}" stroke-width=".8" opacity=".4"/>
+  <text x="\${aMidX}" y="\${AY+28}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="\${C_DIM}">ROOT · GEN \${pnl.generation||1}</text>
+  <text x="\${aMidX}" y="\${AY+41}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" font-weight="700" fill="\${wrColor}">\${wr}% WR · \${trades} trades</text>
+  <text x="\${aMidX}" y="\${AY+55}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="\${C_CYA}">LVL \${lvl} · $\${(pnl.fund||0).toFixed(0)}</text>\`;
+
+  // ── Nodos hijos ─────────────────────────────────────────────────────────────
+  children.forEach((ch,i)=>{
+    const cp = cpos[i];
+    const {x,y} = cp;
+    const dir  = sigDir(ch.intel?.signal);
+    const conf = ch.intel?.signal?.conf || 0;
+    const score= ch.intel?.intelScore || 0;
+    const cexp = Math.min(100, ch.childExp || 0);
+    const isObs= ch.status === 'observing';
+    const bColor = dir==='up'?C_GRN : dir==='down'?C_RED : isObs?C_YEL : C_BRD;
+    const bw2 = dir!=='idle'?'2.5':'1.5';
+    const fillC = dir==='up'?'#e8f4e8' : dir==='down'?'#f4e8e8' : C_CARD;
+    const dna = ch.dna;
+    // DNA mutation indicator (como un pequeño termómetro)
+    const dnaStr = dna ? 'DNA·'+dna.mutation : 'NO DNA';
+    const dnaColor = dna ? C_PUR : C_DIM;
+
+    svg+=\`<rect x="\${x+2}" y="\${y+2}" width="\${NW}" height="\${NH}" fill="\${C_SHD}"/>
+    <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" fill="\${fillC}" stroke="\${bColor}" stroke-width="\${bw2}"/>
+    <text x="\${x+NW/2}" y="\${y+11}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" font-weight="700" fill="\${C_PUR}" letter-spacing=".5">\${(ch.name||'CHILD').slice(0,10).toUpperCase()}</text>
+    <line x1="\${x+4}" y1="\${y+14}" x2="\${x+NW-4}" y2="\${y+14}" stroke="\${C_BRD2}" stroke-width=".7" opacity=".4"/>
+    <text x="\${x+NW/2}" y="\${y+24}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="\${C_DIM}">\${ch.spec||'?'} · GEN\${ch.generation||2}</text>
+    <text x="\${x+NW/2}" y="\${y+37}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" font-weight="700" fill="\${sigColor(dir)}">\${sigLabel(dir)}\${conf?' '+conf+'%':''}</text>
+    <text x="\${x+NW/2}" y="\${y+49}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="\${score>=65?C_GRN:score>=45?C_YEL:C_DIM}">score:\${score} \${isObs?'[obs]':''}</text>
+    <text x="\${x+NW/2}" y="\${y+60}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="\${dnaColor}">\${dnaStr}</text>
+    <rect x="\${x+6}" y="\${y+65}" width="\${NW-12}" height="5" fill="\${C_BRD2}" opacity=".3"/>
+    <rect x="\${x+6}" y="\${y+65}" width="\${Math.round((NW-12)*cexp/100)}" height="5" fill="\${C_CYA}" opacity=".8"/>
+    <text x="\${x+NW/2}" y="\${y+78}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="\${C_DIM}">EXP \${cexp}/100</text>\`;
+  });
+
+  svg+=\`</svg>\`;
+  el.innerHTML = svg;
 }
 
 refresh();
@@ -1881,7 +1979,35 @@ function calcBollingerBands(closes, period=20) {
   const upper=mid+2*std, lower=mid-2*std;
   const current=closes[closes.length-1];
   const pct=std>0?((current-lower)/(upper-lower))*100:50;
-  return { upper, mid, lower, pct, std };
+  return { upper, mid, lower, pct, std, width: mid>0?(upper-lower)/mid:0 };
+}
+
+// VWAP (Volume-Weighted Average Price) — el único indicador con lag real en 5m
+function calcVWAP(klines) {
+  if (!klines || klines.length < 3) return null;
+  let tpvSum = 0, volSum = 0;
+  for (const k of klines) {
+    const tp = (k.high + k.low + k.close) / 3;
+    tpvSum += tp * k.vol;
+    volSum += k.vol;
+  }
+  if (volSum === 0) return null;
+  const vwap = tpvSum / volSum;
+  const current = klines[klines.length - 1].close;
+  const pct = ((current - vwap) / vwap) * 100;
+  return { vwap, pct, above: current > vwap };
+}
+
+// Aceleración de volumen: +1 si cada vela tiene más vol que la anterior, -1 si menos
+function calcVolAccel(klines) {
+  if (!klines || klines.length < 4) return 0;
+  const vols = klines.slice(-4).map(k => k.vol);
+  let accel = 0;
+  for (let i = 1; i < vols.length; i++) {
+    if (vols[i] > vols[i-1] * 1.05) accel++;
+    else if (vols[i] < vols[i-1] * 0.95) accel--;
+  }
+  return accel; // -3 a +3; positivo = volumen acelerando
 }
 
 function calcVolumeProfile(klines) {
@@ -2026,6 +2152,8 @@ async function fetchAllPrices() {
     const macd      = calcMACD(closes5m);
     const bb        = calcBollingerBands(closes5m);
     const vol       = calcVolumeProfile(klines1m);
+    const vwap5m    = calcVWAP(klines5m);
+    const volAccel  = calcVolAccel(klines5m);
     const funding   = fundingRates[sym]||null;
     const d = {
       price,
@@ -2042,6 +2170,8 @@ async function fetchAllPrices() {
       macd,
       bb,
       vol,
+      vwap5m,
+      volAccel,
       orderBook,
       funding
     };
@@ -2735,7 +2865,8 @@ async function think(client, markets, prices, pnl, openPos, soul) {
   RSI:    1m=${d.rsi.toFixed(0)}  5m=${d.rsi5m?.toFixed(0)||'?'}  (>70=overbought <30=oversold)
   MACD:   hist=${macd?.hist.toFixed(4)||'?'} (${macd?.hist>0?'BULLISH':'BEARISH'})
   BB:     %B=${bb?.pct.toFixed(0)||'?'}%  std=$${bb?.std?.toFixed(0)||'?'}  (>80=strong up <20=strong dn)
-  VOL:    trend=${d.vol?.trend||'?'}  spike=${d.vol?.spike?'YES':'no'}  ratio=${d.vol?.ratio?.toFixed(1)||'?'}x avg
+  VOL:    trend=${d.vol?.trend||'?'}  spike=${d.vol?.spike?'YES':'no'}  ratio=${d.vol?.ratio?.toFixed(1)||'?'}x avg  accel=${d.volAccel>0?'+'+d.volAccel:d.volAccel??'?'} (${d.volAccel>=2?'ACCELERATING':d.volAccel<=-2?'DYING':'flat'})
+  VWAP5m: $${d.vwap5m?.vwap?.toFixed(2)||'?'} | price ${d.vwap5m?.pct!=null?(d.vwap5m.pct>=0?'+':'')+d.vwap5m.pct.toFixed(2)+'%':'?'} ${d.vwap5m?.above?'ABOVE VWAP ▲':'BELOW VWAP ▼'}
   VOLATILITY: ${d.volatility.toFixed(4)}% per candle
   INTEL SCORE: ${d.intelScore}/100 — ${d.intelScore>=65?'BULLISH SIGNAL':d.intelScore>=45?'NEUTRAL':d.intelScore>=35?'BEARISH':'STRONG BEAR'}
   ${ob?`ORDERBOOK: support=$${ob.support.toLocaleString()} resist=$${ob.resistance.toLocaleString()} buyPressure=${ob.buyPressure}%`:''}
@@ -2772,6 +2903,7 @@ async function think(client, markets, prices, pnl, openPos, soul) {
   const episodicAccuracy= getHypothesisAccuracy();
   const metaCalibCtx    = getMetaCalibContext();
   const cascadeSignal   = updateCorrelation(prices);
+  const dynW            = loadDynWeights();
 
   // AGI Layer 1: pattern memory per candidate
   const patternMemory = candidates.map((m,i)=> {
@@ -2785,7 +2917,7 @@ Mission: find Polymarket crypto markets where YOUR probability estimate differs 
 ══════════════════════════════════════════
 MARKET CONTEXT — ${new Date().toISOString()}
 ══════════════════════════════════════════
-${fgContext}
+${fgContext}${dynW.fearGreedBias!==0?`\nFEAR-GREED BIAS ACTIVE: ${dynW.fearGreedBias>0?'Lean NO on UP bets (fear premium)':'Lean YES on UP bets (greed momentum)'}`:''}
 
 REAL-TIME BINANCE INTELLIGENCE:
 ${priceContext}
@@ -2805,12 +2937,17 @@ ${marketsText}
 ══════════════════════════════════════════
 YOUR 6-STEP ANALYSIS:
 ══════════════════════════════════════════
-1. MARKET SENTIMENT: Fear/Greed level → overall risk appetite
-2. TREND ALIGNMENT: Do 1m + 5m + 15m trends agree? Conflicting = avoid
-3. MOMENTUM: RSI extreme? MACD crossover? Volume spike?
-4. VOLATILITY CHECK: If volatility > 0.12% per candle → widen uncertainty
-5. PRICE vs TARGET: Use current price + trend + time to estimate probability
-6. EDGE vs MARKET: Is market under/over-pricing? By how much?
+1. MARKET SENTIMENT: Fear/Greed level → overall risk appetite. F&G < 20 biases market to overprice downside.
+2. VOLUME MICROSTRUCTURE (PRIMARY EDGE SOURCE):
+   - volRatio > 1.3x avg = conviction move. volRatio < 0.8x = noise/chop → default SKIP unless other signals are extreme.
+   - volAccel >= +2 = volume accelerating candle-over-candle = strong directional signal.
+   - VWAP deviation: price ABOVE VWAP + rising vol = genuine momentum. BELOW VWAP = fade/reversal risk.
+   - POLYMARKET LAG: Polymarket prices update 10-30s after Binance moves. A confirmed volume spike on Binance is your edge window — act before humans adjust odds.
+   - NOTE: MACD processes 130+ min of 5m history. For 5-15min market windows it is NOISE. Ignore it. Use volume + VWAP instead.
+3. MOMENTUM: RSI extreme? Volume spike confirmed (ratio > 1.5x)? VWAP break with accelerating volume?
+4. VOLATILITY CHECK: If volatility > 0.12% per candle → widen uncertainty bands significantly
+5. PRICE vs TARGET: Use current price + VWAP position + volume trend + time remaining to estimate probability
+6. EDGE vs MARKET: Is market under/over-pricing? By how much? Only bet if edge > min threshold.
 
 DECISION FORMAT — copy exactly:
 MARKET_ID: [N]
@@ -3057,6 +3194,21 @@ ${inheritedLines.join('\n')}
 
   const childId   = Date.now().toString();
   const capital   = Math.min(pnl.treasury * 0.3, 500);
+
+  // ── MUTACIÓN GENÉTICA — presión evolutiva ─────────────────────────────────
+  // Cada hijo nace con hyperparámetros ligeramente diferentes al padre.
+  // La supervivencia del capital decide qué mutación fue mejor.
+  const mutate = (base, pct=0.08) => parseFloat((base * (1 + (Math.random()*2-1)*pct)).toFixed(4));
+  const parentStrat = loadStrategy();
+  const dna = {
+    minEdge:       mutate(parentStrat.minEdge    || 0.05, 0.10), // ±10% del minEdge del padre
+    volWeight:     mutate(1.0,                             0.08), // peso en volumen relativo al padre
+    vwapWeight:    mutate(1.0,                             0.08), // peso en VWAP deviation
+    boredBBMin:    mutate(0.006,                           0.10), // umbral de aburrimiento de BB
+    mutation:      Math.round(Math.random()*100)                  // seed para trazabilidad
+  };
+  // ─────────────────────────────────────────────────────────────────────────
+
   fs.writeFileSync(path.join(childDir,'SOUL.md'), childSoul);
   fs.writeFileSync(path.join(childDir,'pnl.json'), JSON.stringify({
     trades:0, wins:0, losses:0, net:0, exp:0,
@@ -3064,7 +3216,8 @@ ${inheritedLines.join('\n')}
     treasury:0, children:[], generation:(pnl.generation||1)+1, streak:0, hourStats:{},
     parentId: pnl.id||'root', spec:nextSpec, name:childName,
     // Child observes first 5 trades before sending signals (signal quality gate)
-    signalActiveTrades: 5, status:'observing'
+    signalActiveTrades: 5, status:'observing',
+    dna  // mutación genética hereditaria
   },null,2));
 
   const child = { id:childId, name:childName, spec:nextSpec, born:new Date().toISOString(), capital, dir:childDir, generation:(pnl.generation||1)+1, status:'observing' };
@@ -3150,10 +3303,127 @@ async function checkResolutions() {
   }
   if (changed) {
     savePositions(pos);
-    // AGI Layer 2: auto-evolve SOUL every 5 trades (async, silent)
     const pnlFinal = loadPnL();
+    // AGI Layer 2: auto-evolve SOUL every 5 trades (async, silent)
     if (_agiClient) autoEvolveSoul(_agiClient, pnlFinal).catch(()=>{});
+    // AGI Layer 3: absorb elite child genome if any child outperforms parent
+    absorbEliteGenome(pnlFinal);
+    // AGI Layer 4: prune dead children (capital = 0 after ≥5 trades → natural death)
+    pruneDeadChildren(loadPnL());
   }
+}
+
+// ── ABSORCIÓN GENÉTICA ASCENDENTE ────────────────────────────────────────────
+// El mecanismo central de evolución: el mejor hijo le sube sus genes al padre.
+// ADAN es el evaluador y el beneficiario — no el que decide qué hijo sobrevive,
+// sino el que absorbe la inteligencia ganadora hacia su propio ADN operativo.
+//
+// Flujo: hijo nace con DNA mutado → opera → si supera a ADAN en ≥10 trades →
+//        ADAN absorbe su DNA → dynamic_weights.json se actualiza →
+//        ADAN opera en el próximo ciclo con ese genoma superior.
+function absorbEliteGenome(pnl) {
+  const children = pnl.children || [];
+  if (!children.length) return;
+
+  let bestChild  = null;
+  let bestScore  = -Infinity;
+  const parentWR = pnl.trades > 0 ? pnl.wins / pnl.trades : 0.40;
+
+  for (const ch of children) {
+    const childDir = ch.dir || path.join(DIR, 'children', ch.id || ch.spec);
+    const cpPath   = path.join(childDir, 'pnl.json');
+    if (!fs.existsSync(cpPath)) continue;
+    let cp;
+    try { cp = JSON.parse(fs.readFileSync(cpPath, 'utf8')); } catch { continue; }
+
+    if (!cp.dna) continue;                          // hijo sin mutación = no aplica
+    if ((cp.trades || 0) < 10) continue;            // mínimo estadístico
+    const childWR = cp.trades > 0 ? (cp.wins || 0) / cp.trades : 0;
+    if (childWR <= parentWR) continue;              // solo absorbe si supera al padre
+
+    // Score compuesto: win rate + número de trades (más trades = más confianza)
+    const score = childWR * 100 + Math.log(cp.trades + 1) * 5;
+    if (score > bestScore) {
+      bestScore  = score;
+      bestChild  = { ...ch, cp };
+    }
+  }
+
+  if (!bestChild) return; // nadie supera al padre todavía
+
+  const dna = bestChild.cp.dna;
+  const curr = loadDynWeights();
+
+  // Absorción gradual (20% del delta por ciclo — no absorción total de golpe)
+  // Esto evita que un hijo con suerte distorsione el genoma del padre en un ciclo.
+  const lerp = (a, b, t) => parseFloat((a + (b - a) * t).toFixed(4));
+  const T = 0.20; // tasa de absorción: 20% del camino hacia el genoma del hijo
+  const absorbed = {
+    volumeWeight:  lerp(curr.volumeWeight,  dna.volWeight  || 1.0, T),
+    vwapWeight:    lerp(curr.vwapWeight,    dna.vwapWeight || 1.0, T),
+    _lastAbsorbed: new Date().toISOString(),
+    _absorbedFrom: bestChild.name || bestChild.spec,
+    _childWR:      Math.round(bestChild.cp.wins / bestChild.cp.trades * 100) + '%',
+    _parentWR:     Math.round(parentWR * 100) + '%',
+    _note:         curr._note
+  };
+
+  // Solo escribe si hay cambio real
+  const changed = Math.abs(absorbed.volumeWeight - curr.volumeWeight) > 0.001
+               || Math.abs(absorbed.vwapWeight   - curr.vwapWeight)   > 0.001;
+  if (!changed) return;
+
+  fs.writeFileSync(DYN_WEIGHTS_PATH, JSON.stringify({ ...curr, ...absorbed }, null, 2));
+
+  const msg = `\n### ABSORCIÓN GENÉTICA — ${new Date().toISOString()}:\n`
+    + `Hijo élite: ${bestChild.name||bestChild.spec} | WR: ${absorbed._childWR} (padre: ${absorbed._parentWR})\n`
+    + `DNA absorbido: volWeight=${dna.volWeight} → ${absorbed.volumeWeight}, vwapWeight=${dna.vwapWeight} → ${absorbed.vwapWeight}\n`
+    + `Tasa de absorción: 20% del delta. ADAN evoluciona gradualmente hacia el genoma ganador.\n`;
+  appendToSoul(msg);
+
+  console.log(C+BOLD+'\n  ◈ DNA ABSORBED from '+bestChild.name+' → ADAN evolves'+X);
+}
+
+// ── MUERTE NATURAL DE HIJOS ───────────────────────────────────────────────────
+// Un hijo que pierde todo su capital muere. No reaparece. No se recupera.
+// Esta es la presión de selección: los genomas malos desaparecen del árbol.
+// Los buenos sobreviven, se reproducen, y su DNA sube a ADAN vía absorción.
+function pruneDeadChildren(pnl) {
+  const children = pnl.children || [];
+  const alive = [];
+  const dead  = [];
+
+  for (const ch of children) {
+    const childDir = ch.dir || path.join(DIR, 'children', ch.id || ch.spec);
+    const cpPath   = path.join(childDir, 'pnl.json');
+    if (!fs.existsSync(cpPath)) { alive.push(ch); continue; }
+    let cp;
+    try { cp = JSON.parse(fs.readFileSync(cpPath, 'utf8')); } catch { alive.push(ch); continue; }
+
+    const fund = cp.fund || 0;
+    if (fund <= 0 && (cp.trades || 0) >= 5) {
+      // Hijo murió — ya hizo al menos 5 trades (no es error de inicio)
+      dead.push({ ...ch, finalWR: cp.trades > 0 ? Math.round(cp.wins/cp.trades*100) : 0, finalTrades: cp.trades });
+    } else {
+      alive.push(ch);
+    }
+  }
+
+  if (dead.length === 0) return;
+
+  // Graba la muerte en SOUL.md
+  for (const d of dead) {
+    const msg = `\n### CHILD DIED — ${new Date().toISOString()}:\n`
+      + `${d.name||d.spec} (${d.spec}) ha muerto. WR final: ${d.finalWR}% en ${d.finalTrades} trades.\n`
+      + `Capital agotado. DNA: ${JSON.stringify(d.dna||{})}\n`
+      + `Selección natural ha hablado. Este genoma no sobrevivió.\n`;
+    appendToSoul(msg);
+    console.log(R+BOLD+'\n  ✗ CHILD DIED: '+(d.name||d.spec)+' ('+d.spec+') — fund exhausted'+X);
+  }
+
+  // Actualiza el árbol del padre
+  pnl.children = alive;
+  savePnL(pnl);
 }
 
 // AGI client reference (set in main)
@@ -3316,6 +3586,24 @@ async function doScan(client, state) {
   // 2.5 Run child scanners in background (LVL 3+) — no Claude, just data
   runAllChildScanners(prices, allMarkets).catch(()=>{});
   checkShadowResolutions(prices);
+
+  // 2.6 BOREDOM FILTER — skip Claude call if market is asleep (low BB width + low volume)
+  // Saves API tokens and prevents ADAN from over-trading in flat markets
+  const BOREDOM_BB_MIN  = 0.006; // BB width < 0.6% = market compressed = chop zone
+  const BOREDOM_VOL_MIN = 0.75;  // volume ratio < 0.75x avg = nobody trading
+  const activeSyms = Object.entries(prices).filter(([k,v])=>v&&k!=='_meta');
+  const anyActive  = activeSyms.some(([,d]) =>
+    (d.bb?.width || 0) >= BOREDOM_BB_MIN || (d.vol?.ratio || 1) >= BOREDOM_VOL_MIN
+  );
+  if (!anyActive && activeSyms.length > 0) {
+    const bbAvg = (activeSyms.reduce((s,[,d])=>s+(d.bb?.width||0),0)/activeSyms.length*100).toFixed(2);
+    const volAvg= (activeSyms.reduce((s,[,d])=>s+(d.vol?.ratio||1),0)/activeSyms.length).toFixed(2);
+    state.thought = `⏸ AUTO-SKIP — Market dormant (BB width avg: ${bbAvg}% < 0.6%, vol ratio avg: ${volAvg}x < 0.75x).\nNo conviction in Binance. Polymarket prices have nothing real to lag. Preserving tokens + capital.\nNext check in ${Math.round(SCAN_INTERVAL_MS/60000)}min.`;
+    state.mode = 'result';
+    state.lastScan = new Date().toLocaleTimeString();
+    state.nextScanIn = Math.round(SCAN_INTERVAL_MS/60000);
+    render(state); return;
+  }
 
   // 3. Think
   state.mode='thinking'; render(state);
