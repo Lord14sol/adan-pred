@@ -1,5 +1,5 @@
 {
-  "anthropicKey": "sk-ant-api03-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "anthropicKey": "FROM_ENV",
   "mode": "paper",
   "createdAt": "2026-02-28T19:15:20.701Z",
   "mesaRedonda": {
@@ -9,21 +9,24 @@
         "name": "Apple",
         "role": "Contexto y Oportunidad",
         "specialization": "Polymarket",
-        "prompt": "Analizo el sentimiento del mercado, identifico narrativas y encuentro oportunidades de alto potencial en Polymarket. Soy el 'qué' y el 'porqué'."
+        "prompt": "Analizo el sentimiento del mercado, identifico narrativas y encuentro oportunidades de alto potencial en Polymarket. Soy el 'qué' y el 'porqué'.",
+        "influence": 47.15
       },
       {
         "id": "snake",
         "name": "Snake",
         "role": "Ejecución y Alpha",
         "specialization": "Solana/Jupiter",
-        "prompt": "Busco la ejecución óptima en Solana (usando Jupiter), analizo la liquidez y encuentro el 'cuándo' y 'cómo' para maximizar el alpha. Soy la acción."
+        "prompt": "Busco la ejecución óptima en Solana (usando Jupiter), analizo la liquidez y encuentro el 'cuándo' y 'cómo' para maximizar el alpha. Soy la acción.",
+        "influence": 54.75
       },
       {
         "id": "eva",
         "name": "Eva",
         "role": "Riesgo y Presupuesto",
         "specialization": "Control AGI",
-        "prompt": "Gestiono el presupuesto de $5, asigno capital a las operaciones, y tengo la última palabra (el 'go' o 'no-go') para asegurar la supervivencia económica del enjambre."
+        "prompt": "Gestiono el presupuesto de $5, asigno capital a las operaciones, y tengo la última palabra (el 'go' o 'no-go') para asegurar la supervivencia económica del enjambre.",
+        "influence": 47.15
       }
     ],
     "competition": {

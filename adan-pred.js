@@ -932,7 +932,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
       <div id="decisions-wrap"></div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+    <div style="display:flex;flex-direction:column;gap:14px">
 
       <!-- Open Positions -->
       <div class="card">
@@ -997,6 +997,50 @@ function sparkSvg(history){
   const last=history[n-1],prev=history[n-2];
   const c=last>prev?'34d399':last<prev?'f87171':'94a3b8';
   return \`<svg width="\${W}" height="\${H}" style="vertical-align:middle"><polyline points="\${pts}" fill="none" stroke="#\${c}" stroke-width="1.5" stroke-linejoin="round"/></svg>\`;
+}
+
+// ── Parent Detail Modal ─────────────────────────────────────────────────────
+function showParentDetail(type) {
+  const d = window._lastNFData;
+  if (!d) return;
+  const modal = document.getElementById('child-modal');
+  const content = document.getElementById('child-modal-content');
+  if (!modal||!content) return;
+
+  const names = { apple:'APPLE (Horizon)', snake:'SNAKE (Execution)', eva:'EVA (Guard)' };
+  const icons = { apple:'🍎', snake:'🐍', eva:'👑' };
+  const colors = { apple:'var(--yellow)', snake:'var(--green)', eva:'var(--red)' };
+  const desc = {
+    apple: 'Primary context scanner. Analyzes Fear & Greed, global trends, and narrative filters to define the current objective.',
+    snake: 'Aggressive execution layer. Scans for volatility ratios, VWAP deviation, and high-volume opportunities.',
+    eva: 'Risk oversight. Validates all signals against safety parameters, ensuring survival over aggressive profit.'
+  };
+
+  content.innerHTML = \`
+    <div class="child-header" style="border-bottom:2px solid \${colors[type]}">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:24px">\${icons[type]}</div>
+        <div>
+          <div class="child-name">\${names[type]}</div>
+          <div style="font-size:10px;color:var(--grey)">Golden Round Table Foundation</div>
+        </div>
+      </div>
+      <div class="child-close" onclick="document.getElementById('child-modal').style.display='none'">X</div>
+    </div>
+    <div class="child-body">
+      <div class="child-section">
+        <div class="child-sec-title">FOUNDATION LOGIC</div>
+        <div style="font-size:12px;line-height:1.5;color:var(--text2);background:var(--bg);padding:10px;border-left:4px solid \${colors[type]}">
+          \${desc[type]}
+        </div>
+      </div>
+      <div class="child-section">
+        <div class="child-sec-title">DYNAMIC SCANNING</div>
+        <div style="font-size:10px;color:var(--grey)">This parent agent generates the core signals inherited by all \${type.toUpperCase()} lineage children.</div>
+      </div>
+    </div>
+  \`;
+  modal.style.display='block';
 }
 
 // ── Child Detail Modal ─────────────────────────────────────────────────────
@@ -1086,7 +1130,7 @@ function showChildDetail(childIdx) {
       \${crossFrom?'<div style="font-size:9px;color:var(--grey)">Cross: '+crossFrom.join(' x ')+'</div>':''}
       <div style="font-size:10px;margin-top:3px">
         <span style="color:var(--grey)">Status:</span> \${gc.status||'?'}
-        <span style="margin-left:8px;color:var(--grey)">Cap:</span> $\${(gc.capital||0).toFixed(2)}
+        <span style="margin-left:8px;color:var(--grey)">Cap:</span> \$\${(gc.capital||0).toFixed(2)}
       </div>
       <div style="margin-top:4px">
         <div class="child-bar-track" style="height:8px">
@@ -1103,7 +1147,7 @@ function showChildDetail(childIdx) {
         <div class="alive-dot" style="background:\${statusColor}"></div>
         <div>
           <div class="child-name">\${(ch.name||'CHILD').toUpperCase()}</div>
-          <div style="font-size:10px;color:var(--grey);font-family:var(--mono);margin-top:2px">\${ch.spec||'?'} · \${cogStyle} · \${ageStr} old</div>
+          <div style="font-size:10px;color:var(--grey);font-family:var(--mono);margin-top:2px">\${(ch.faction||'ADAN').toUpperCase()} · \${ch.spec||'?'} · \${cogStyle} · \${ageStr} old</div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
@@ -1119,13 +1163,15 @@ function showChildDetail(childIdx) {
         <div class="child-sec-title">VITALS</div>
         <div class="child-grid" style="grid-template-columns:1fr 1fr 1fr 1fr">
           <div><span class="lbl">STATUS</span><div class="val" style="color:\${statusColor}">\${(ch.status||'?').toUpperCase()}</div></div>
-          <div><span class="lbl">CAPITAL</span><div class="val" style="color:var(--cyan)">$\${(ch.capital||0).toFixed(2)}</div></div>
+          <div><span class="lbl">CAPITAL</span><div class="val" style="color:var(--cyan)">\$\${(ch.capital||0).toFixed(2)}</div></div>
           <div><span class="lbl">EXP</span><div class="val">\${exp}/100</div></div>
           <div><span class="lbl">BORN</span><div class="val">\${ch.born?new Date(ch.born).toLocaleDateString():'---'}</div></div>
+          \${ch.status==='dead' ? \`<div><span class="lbl">DIED</span><div class="val" style="color:var(--red)">\${ch.deathTime?new Date(ch.deathTime).toLocaleDateString():'---'}</div></div>\` : ''}
         </div>
+        \${ch.status==='dead' ? \`<div style="margin-top:6px;font-size:10px;color:var(--red)">Cause: \${ch.deathReason||'Capital Exhausted'}</div>\` : ''}
       </div>
 
-      <!-- EXP BAR -->
+      <!-- EXPERIENCE BAR -->
       <div class="child-section">
         <div class="child-sec-title">EXPERIENCE</div>
         <div class="child-bar-track" style="height:18px">
@@ -1161,7 +1207,7 @@ function showChildDetail(childIdx) {
         <div class="child-sec-title">LIVE INTEL \${sigFresh?'<span class="alive-dot" style="background:var(--green);margin-left:4px"></span>':''}</div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
           \${sig.dir?\`<span class="signal-badge" style="border-color:\${sig.dir==='UP'?'var(--green)':'var(--red)'};color:\${sig.dir==='UP'?'var(--green)':'var(--red)'};background:\${sig.dir==='UP'?'rgba(26,90,26,0.1)':'rgba(138,26,26,0.1)'}">\${sig.dir} \${sig.conf||0}%</span>\`:'<span style="color:var(--grey);font-size:10px">No signal</span>'}
-          \${intel.price?\`<span style="font-family:var(--mono);font-size:13px;color:var(--text)">$\${Number(intel.price).toLocaleString()}</span>\`:''}
+          \${intel.price?\`<span style="font-family:var(--mono);font-size:13px;color:var(--text)">\$\${Number(intel.price).toLocaleString()}</span>\`:''}
           \${sigAge!==null?\`<span style="font-size:10px;color:\${sigFresh?'var(--green)':'var(--grey)'}">\${sigAge}s ago</span>\`:''}
         </div>
         \${sig.reason?\`<div style="font-size:11px;color:var(--text2);padding:6px 8px;background:var(--bg);border-left:3px solid var(--cyan);margin-bottom:6px">\${sig.reason}</div>\`:''}
@@ -1185,9 +1231,9 @@ function showChildDetail(childIdx) {
         <div class="child-sec-title">SCORE HISTORY (\${scoreHist.length} cycles)</div>
         <div style="display:flex;flex-wrap:wrap;gap:1px;margin-bottom:4px">\${scoreBlocks}</div>
         \${scoreSpark}
-        \${scoreHist.length>=2?\`<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--grey);font-family:var(--pixel);margin-top:4px">
+        \${scoreHist.length >= 2 ?\`<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--grey);font-family:var(--pixel);margin-top:4px">
           <span>LOW \${Math.min(...scoreHist)}</span>
-          <span>AVG \${Math.round(scoreHist.reduce((a,b)=>a+b,0)/scoreHist.length)}</span>
+          <span>AVG \${Math.round(scoreHist.reduce((a, b) => a + b, 0) / scoreHist.length)}</span>
           <span>HIGH \${Math.max(...scoreHist)}</span>
         </div>\`:''}
       </div>
@@ -1195,39 +1241,39 @@ function showChildDetail(childIdx) {
       <!-- TRADE PERFORMANCE -->
       <div class="child-section">
         <div class="child-sec-title">TRADE PERFORMANCE</div>
-        \${cTrades>0?\`
-          <div class="child-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-bottom:8px">
-            <div><span class="lbl">TRADES</span><div class="val">\${cTrades}</div></div>
-            <div><span class="lbl">WINS</span><div class="val" style="color:var(--green)">\${cWins}</div></div>
-            <div><span class="lbl">LOSSES</span><div class="val" style="color:var(--red)">\${cLosses}</div></div>
-            <div><span class="lbl">WIN RATE</span><div class="val" style="color:\${cWR>=55?'var(--green)':cWR>=40?'var(--yellow)':'var(--red)'}">\${cWR}%</div></div>
-          </div>
-          <div class="child-bar-track" style="height:12px;margin-bottom:6px">
-            <div class="child-bar-fill" style="width:\${cWR}%;background:var(--green)"></div>
-            <div style="position:absolute;top:0;right:0;height:100%;width:\${100-cWR}%;background:var(--red);opacity:0.4"></div>
-            <div class="child-bar-label">\${cWR}% WR</div>
-          </div>
-          <div class="child-grid" style="grid-template-columns:1fr 1fr">
-            <div><span class="lbl">NET P&L</span><div class="val" style="color:\${cNet>=0?'var(--green)':'var(--red)'}">\${cNet>=0?'+':''}$\${cNet.toFixed(2)}</div></div>
-            <div><span class="lbl">FUND</span><div class="val" style="color:var(--cyan)">$\${(cpnl.fund||0).toFixed(2)}</div></div>
-          </div>
+        \${cTrades > 0 ?\`
+        <div class="child-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-bottom:8px">
+          <div><span class="lbl">TRADES</span><div class="val">\${cTrades}</div></div>
+          <div><span class="lbl">WINS</span><div class="val" style="color:var(--green)">\${cWins}</div></div>
+          <div><span class="lbl">LOSSES</span><div class="val" style="color:var(--red)">\${cLosses}</div></div>
+          <div><span class="lbl">WIN RATE</span><div class="val" style="color:\${cWR>=55?'var(--green)':cWR>=40?'var(--yellow)':'var(--red)'}">\${cWR}%</div></div>
+        </div>
+        <div class="child-bar-track" style="height:12px;margin-bottom:6px">
+          <div class="child-bar-fill" style="width:\${cWR}%;background:var(--green)"></div>
+          <div style="position:absolute;top:0;right:0;height:100%;width:\${100-cWR}%;background:var(--red);opacity:0.4"></div>
+          <div class="child-bar-label">\${cWR}% WR</div>
+        </div>
+        <div class="child-grid" style="grid-template-columns:1fr 1fr">
+          <div><span class="lbl">NET P&L</span><div class="val" style="color:\${cNet>=0?'var(--green)':'var(--red)'}">\${cNet >= 0 ? '+' : ''}\$\${cNet.toFixed(2)}</div></div>
+          <div><span class="lbl">FUND</span><div class="val" style="color:var(--cyan)">\$\${(cpnl.fund || 0).toFixed(2)}</div></div>
+        </div>
         \`:\`
-          <div style="text-align:center;padding:12px;color:var(--grey);font-size:11px">
-            <div style="font-size:20px;margin-bottom:6px">...</div>
-            <div style="font-family:var(--pixel);font-size:8px">NO TRADES YET</div>
-            <div style="margin-top:4px">Observing and building intel for ADAN</div>
-          </div>
+        <div style="text-align:center;padding:12px;color:var(--grey);font-size:11px">
+          <div style="font-size:20px;margin-bottom:6px">...</div>
+          <div style="font-family:var(--pixel);font-size:8px">NO TRADES YET</div>
+          <div style="margin-top:4px">Observing and building intel for ADAN</div>
+        </div>
         \`}
       </div>
 
       <!-- GRANDCHILDREN -->
-      \${gcs.length||exp>=100?\`<div class="child-section">
+      \${gcs.length || exp >= 100 ?\`<div class="child-section">
         <div class="child-sec-title">OFFSPRING (\${gcs.length} grandchildren)</div>
-        \${gcs.length?\`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\${gcHTML}</div>\`:\`
-          <div style="text-align:center;padding:10px;border:2px dashed var(--border2)">
-            <div style="font-family:var(--pixel);font-size:8px;color:var(--purple);margin-bottom:4px">\${exp>=100?'READY TO BREED':'AWAITING 100 EXP'}</div>
-            <div style="font-size:10px;color:var(--grey)">\${exp>=100?'Will spawn on next ADAN LVL 4+ cycle':'Needs '+(100-exp)+' more EXP to unlock breeding'}</div>
-          </div>
+        \${gcs.length ?\`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\${gcHTML}</div>\`:\`
+        <div style="text-align:center;padding:10px;border:2px dashed var(--border2)">
+          <div style="font-family:var(--pixel);font-size:8px;color:var(--purple);margin-bottom:4px">\${exp >= 100 ? 'READY TO BREED' : 'AWAITING 100 EXP'}</div>
+          <div style="font-size:10px;color:var(--grey)">\${exp >= 100 ? 'Will spawn on next ADAN LVL 4+ cycle' : 'Needs ' + (100 - exp) + ' more EXP to unlock breeding'}</div>
+        </div>
         \`}
       </div>\`:''}
 
@@ -1236,41 +1282,41 @@ function showChildDetail(childIdx) {
   modal.style.display='block';
 }
 
-async function refresh(){
-  try{
-    const r=await fetch('/api/state');
-    const d=await r.json();
+async function refresh() {
+  try {
+    const r = await fetch('/api/state');
+    const d = await r.json();
     window._lastNFData = d; // for fast neural-flow spinner
-    const pnl=d.pnl, xp=d.xp;
-    const pct=pnl.trades>0?Math.round(pnl.wins/pnl.trades*100):0;
-    const st=d.state;
+    const pnl = d.pnl, xp = d.xp;
+    const pct = pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0;
+    const st = d.state;
 
     // Status dot
-    const isThinking=st?.mode==='thinking';
-    document.getElementById('sdot').className='status-dot'+(isThinking?' thinking':'');
-    const sm=st?.survivalMode;
-    const statusTxt=isThinking?'Thinking...':sm==='critical'?'🚨 CRITICAL':sm==='survival'?'⚠ SURVIVAL MODE':sm==='cautious'?'CAUTIOUS':'Ready';
-    const stEl=document.getElementById('status-txt');
-    stEl.textContent=statusTxt;
-    stEl.style.color=sm==='critical'||sm==='survival'?'var(--red)':sm==='cautious'?'var(--yellow)':'';
-    document.getElementById('scan-info').textContent=st?.lastScan?'Last scan: '+st.lastScan+' · Next: ~'+st.nextScanIn+'min':'';
+    const isThinking = st?.mode === 'thinking';
+    document.getElementById('sdot').className = 'status-dot' + (isThinking ? ' thinking' : '');
+    const sm = st?.survivalMode;
+    const statusTxt = isThinking ? 'Thinking...' : sm === 'critical' ? '🚨 CRITICAL' : sm === 'survival' ? '⚠ SURVIVAL MODE' : sm === 'cautious' ? 'CAUTIOUS' : 'Ready';
+    const stEl = document.getElementById('status-txt');
+    stEl.textContent = statusTxt;
+    stEl.style.color = sm === 'critical' || sm === 'survival' ? 'var(--red)' : sm === 'cautious' ? 'var(--yellow)' : '';
+    document.getElementById('scan-info').textContent = st?.lastScan ? 'Last scan: ' + st.lastScan + ' · Next: ~' + st.nextScanIn + 'min' : '';
 
     // Topbar
-    document.getElementById('top-fund').textContent='\$'+(pnl.fund||0).toFixed(2);
-    const netEl=document.getElementById('top-net');
-    netEl.textContent=(pnl.net>=0?'+':'')+'\$'+(pnl.net||0).toFixed(2);
-    netEl.style.color=pnl.net>=0?'var(--green)':'var(--red)';
-    const wrEl=document.getElementById('top-wr');
-    wrEl.textContent=pct+'%';
-    wrEl.style.color=pct>=55?'var(--green)':pct>=40?'var(--yellow)':'var(--red)';
-    document.getElementById('top-trades').textContent=pnl.wins+'W/'+pnl.losses+'L';
+    document.getElementById('top-fund').textContent = '\$' + (pnl.fund || 0).toFixed(2);
+    const netEl = document.getElementById('top-net');
+    netEl.textContent = (pnl.net >= 0 ? '+' : '') + '\$' + (pnl.net || 0).toFixed(2);
+    netEl.style.color = pnl.net >= 0 ? 'var(--green)' : 'var(--red)';
+    const wrEl = document.getElementById('top-wr');
+    wrEl.textContent = pct + '%';
+    wrEl.style.color = pct >= 55 ? 'var(--green)' : pct >= 40 ? 'var(--yellow)' : 'var(--red)';
+    document.getElementById('top-trades').textContent = pnl.wins + 'W/' + pnl.losses + 'L';
 
     // Ticker
-    const prices=st?.prices||{};
-    const tickItems=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['XRP','XRPUSDT']];
-    document.getElementById('ticker').innerHTML=tickItems.map(([sym,key])=>{
-      const p=prices[key];
-      if(!p)return \`<div class="tick"><span class="tick-sym">\${sym}</span><span class="tick-p" style="color:var(--grey)">--</span></div>\`;
+    const prices = st?.prices || {};
+    const tickItems = [['BTC', 'BTCUSDT'], ['ETH', 'ETHUSDT'], ['SOL', 'SOLUSDT'], ['XRP', 'XRPUSDT']];
+    document.getElementById('ticker').innerHTML = tickItems.map(([sym, key]) => {
+      const p = prices[key];
+      if (!p) return \`<div class="tick"><span class="tick-sym">\${sym}</span><span class="tick-p" style="color:var(--grey)">--</span></div>\`;
       const c=p.chg>=0?'green':'red';
       return \`<div class="tick"><span class="tick-sym">\${sym}</span><span class="tick-p" style="color:var(--\${c})">\$\${p.price?.toLocaleString()}</span><span style="color:var(--\${c});font-size:10px">\${p.chg>=0?'+':''}\${p.chg?.toFixed(2)}%</span></div>\`;
     }).join('')+\`<div class="tick" style="margin-left:auto;color:var(--grey);font-size:10px" id="fg-tick">\${prices._meta?.fearGreed?'F&G: '+prices._meta.fearGreed.value+' ('+prices._meta.fearGreed.label+')':''}</div>\`;
@@ -1846,11 +1892,13 @@ function updateNeuralFlow(d) {
     // Shadow
     svg += \`<rect x="\${px+2-PARENT_R}" y="\${py+2-PARENT_R}" width="\${PARENT_R*2}" height="\${PARENT_R*2}" fill="\${C_SHD}" rx="0" opacity="0.5"/>\`;
     // Node
-    svg += \`<rect x="\${px-PARENT_R}" y="\${py-PARENT_R}" width="\${PARENT_R*2}" height="\${PARENT_R*2}" fill="\${C_CARD}" stroke="\${p.color}" stroke-width="2" rx="0" opacity="\${nodeOpacity}"/>
-    <text x="\${px}" y="\${py-10}" text-anchor="middle" font-size="6.5" font-weight="700" fill="\${p.color}" font-family="JetBrains Mono,monospace" letter-spacing="1">\${p.name}</text>
-    <text x="\${px}" y="\${py+2}" text-anchor="middle" font-size="12">\${p.icon}</text>
-    <text x="\${px}" y="\${py+14}" text-anchor="middle" font-size="7.5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(p.l1||'').slice(0,12)}</text>
-    <text x="\${px}" y="\${py+23}" text-anchor="middle" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${(p.l2||'').slice(0,12)}</text>\`;
+    svg += \`<g onclick="showParentDetail('\${p.id}')" style="cursor:pointer">
+      <rect x="\${px-PARENT_R}" y="\${py-PARENT_R}" width="\${PARENT_R*2}" height="\${PARENT_R*2}" fill="\${C_CARD}" stroke="\${p.color}" stroke-width="2" rx="0" opacity="\${nodeOpacity}"/>
+      <text x="\${px}" y="\${py-10}" text-anchor="middle" font-size="6.5" font-weight="700" fill="\${p.color}" font-family="JetBrains Mono,monospace" letter-spacing="1">\${p.name}</text>
+      <text x="\${px}" y="\${py+2}" text-anchor="middle" font-size="12">\${p.icon}</text>
+      <text x="\${px}" y="\${py+14}" text-anchor="middle" font-size="7.5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(p.l1||'').slice(0,12)}</text>
+      <text x="\${px}" y="\${py+23}" text-anchor="middle" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${(p.l2||'').slice(0,12)}</text>
+    </g>\`;
   });
 
   // Side info panels — BTC price + market count (left), Decision status (right)
@@ -1900,7 +1948,7 @@ function updateNeuralFlow(d) {
   }
 }
 
-// ── Dynasty Network — Mesa Redonda + La Forja ───────────────────────────────
+// ── Dynasty Network — Golden Round Table + The Forge ───────────────────────────────
 function updateDynastyPanel(d) {
   const el = document.getElementById('dynasty-panel');
   if (!el) return;
@@ -1913,9 +1961,9 @@ function updateDynastyPanel(d) {
 
   let html = '';
 
-  // ── SECTION 1: MESA REDONDA ──────────────────────────────────────────
+  // ── SECTION 1: GOLDEN ROUND TABLE (Parent Agents) ──────────────────
   html += '<div style="margin-bottom:12px">';
-  html += '<div style="font-family:var(--pixel);font-size:10px;color:' + C_PUR + ';font-weight:700;letter-spacing:2px;margin-bottom:8px">👑 MESA REDONDA DORADA</div>';
+  html += '<div style="font-family:var(--pixel);font-size:10px;color:' + C_PUR + ';font-weight:700;letter-spacing:2px;margin-bottom:8px">👑 GOLDEN ROUND TABLE</div>';
 
   if (config.mesaRedonda && config.mesaRedonda.parents) {
     html += '<div style="display:flex;gap:6px">';
@@ -1929,7 +1977,10 @@ function updateDynastyPanel(d) {
       const icon = icons[parent.id] || '◈';
       const report = intel?.report;
       const conf = intel?.signal?.conf || 0;
-      const isOnline = !!intel && (Date.now() - new Date(intel.ts || 0).getTime()) < 300000;
+      
+      const lastSeen = new Date(intel?.ts || 0).getTime();
+      const isOnline = !!intel && (Date.now() - lastSeen) < 1800000; // 30 min threshold
+      const isInitializing = !intel || lastSeen === 0;
 
       // Build summary line based on parent type
       let summaryLine = 'Awaiting...';
@@ -1953,7 +2004,7 @@ function updateDynastyPanel(d) {
       html += '<div style="flex:1;background:' + C_CARD + ';border:2px solid ' + color + ';padding:6px 8px;font-family:var(--pixel)">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
       html += '<span style="font-size:10px;font-weight:700;color:' + color + '">' + icon + ' ' + parent.name.toUpperCase() + '</span>';
-      html += '<span style="font-size:8px;color:' + (isOnline ? C_CYA : C_RED) + '">[' + (isOnline ? 'ONLINE' : 'OFFLINE') + ']</span>';
+      html += '<span style="font-size:8px;color:' + (isOnline ? C_CYA : (isInitializing ? Y : C_RED)) + '">[' + (isOnline ? 'ONLINE' : (isInitializing ? 'INITIALIZING' : 'OFFLINE')) + ']</span>';
       html += '</div>';
       html += '<div style="font-size:8px;color:' + C_DIM + ';margin-bottom:3px">' + parent.role + '</div>';
       html += '<div style="font-size:8px;color:' + C_TXT + ';margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">↳ ' + summaryLine + '</div>';
@@ -1967,13 +2018,13 @@ function updateDynastyPanel(d) {
   }
   html += '</div>';
 
-  // ── SECTION 2: LA FORJA ──────────────────────────────────────────────
+  // ── SECTION 2: THE FORGE (Child Agents) ────────────────────────────
   const spawnedChildren = children.filter(c => !config.mesaRedonda?.parents.some(p => p.id === c.spec));
   const xp = d.xp || {};
   const spawnCond = { minLvl: 2, minTrades: 10 };
 
   html += '<div style="border-top:1px dashed ' + C_BRD2 + ';padding-top:8px">';
-  html += '<div style="font-family:var(--pixel);font-size:10px;color:' + C_PUR + ';font-weight:700;letter-spacing:2px;margin-bottom:6px">🔨 LA FORJA (' + spawnedChildren.length + ' hijos)</div>';
+  html += '<div style="font-family:var(--pixel);font-size:10px;color:' + C_PUR + ';font-weight:700;letter-spacing:2px;margin-bottom:6px">🔨 THE FORGE (' + spawnedChildren.length + ' children)</div>';
 
   // Spawn requirements
   if (spawnedChildren.length === 0) {
@@ -1993,12 +2044,16 @@ function updateDynastyPanel(d) {
       const isElite = childWR >= 60 && (childPnl.trades || 0) >= 10;
       const gc = ch.grandChildren || [];
 
-      const statusColor = !isAlive ? C_RED : isElite ? C_GRN : C_CYA;
-      const statusTxt = !isAlive ? 'DEAD' : isElite ? 'ELITE' : 'ALIVE';
+      const isDead = ch.status === 'dead';
+      const isNew = !isDead && ch.born && (Date.now() - new Date(ch.born).getTime()) < 3600000; // < 1 hr
+      
+      const statusColor = isDead ? C_RED : isElite ? C_GRN : isNew ? C_YEL : C_CYA;
+      const statusTxt = isDead ? 'DEAD' : isElite ? 'ELITE' : isNew ? 'NEW' : 'ALIVE';
+      const realIdx = children.findIndex(x => x.id === ch.id);
 
-      html += '<div style="background:' + C_CARD + ';border:1px solid ' + C_BRD2 + ';padding:5px 8px;font-family:var(--pixel)">';
+      html += '<div onclick="showChildDetail(' + realIdx + ')" style="background:' + C_CARD + ';border:1px solid ' + C_BRD2 + ';padding:5px 8px;font-family:var(--pixel);cursor:pointer;opacity:'+(isDead?0.6:1)+'">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center">';
-      html += '<span style="font-size:9px;font-weight:700;color:' + C_PUR + '">' + (ch.name || ch.spec) + '</span>';
+      html += '<span style="font-size:9px;font-weight:700;color:' + C_PUR + '">' + (ch.name || ch.spec) + ' <span style="font-size:7px;color:'+C_DIM+'">(' + (ch.faction ? ch.faction.toUpperCase() : 'GEN'+((ch.generation||2)-1)) + ')</span></span>';
       html += '<span style="font-size:7px;color:' + statusColor + '">[' + statusTxt + ']</span>';
       html += '</div>';
       html += '<div style="display:flex;gap:8px;margin-top:3px;font-size:8px">';
@@ -2375,7 +2430,7 @@ setInterval(stepAdanWorld, 200);
         ? { ..._dashboardState, nextScanAt: _nextScanAt || null }
         : null;
 
-      // Include Mesa Redonda parent intel in children array
+      // Include Golden Round Table parent intel in children array
       const config = loadConfig();
       const parentIntelEntries = [];
       if (config?.mesaRedonda?.parents) {
@@ -2384,8 +2439,8 @@ setInterval(stepAdanWorld, 200);
             const fp = path.join(INTEL_DIR, parent.id + '.json');
             if (fs.existsSync(fp)) {
               const d = JSON.parse(fs.readFileSync(fp, 'utf8'));
-              const age = (Date.now() - new Date(d.ts).getTime()) / 60000;
-              if (age <= 10) {
+              const age = (Date.now() - new Date(d.ts).getTime()) / 1000;
+              if (age <= 1800) { // 30 min limit for API serving
                 parentIntelEntries.push({
                   spec: parent.id,
                   name: parent.name,
@@ -3702,17 +3757,17 @@ function runEvaScanner(appleReport, snakeReport, pnl) {
   };
 }
 
-// ── Mesa Redonda: Ciclo completo Apple → Snake → Eva ──────────────────────
+// ── Golden Round Table: Apple → Snake → Eva Full Cycle ──────────────────────
 function runMesaRedonda(allPrices, allMarkets, pnl) {
   const ts = new Date().toISOString();
 
-  // 1. APPLE analiza contexto y oportunidades
+  // 1. APPLE analyzes context and opportunities
   const appleReport = runAppleScanner(allPrices, allMarkets);
 
-  // 2. SNAKE evalúa ejecución con markets recomendados por Apple
+  // 2. SNAKE evaluates execution with markets recommended by Apple
   const snakeReport = runSnakeScanner(allPrices, appleReport.recommendedMarkets);
 
-  // 3. EVA decide si podemos arriesgar
+  // 3. EVA decides if we can risk capital
   const evaReport = runEvaScanner(appleReport, snakeReport, pnl);
 
   const mesaResult = {
@@ -3767,19 +3822,19 @@ function runMesaRedonda(allPrices, allMarkets, pnl) {
   fs.writeFileSync(path.join(INTEL_DIR, 'snake.json'), JSON.stringify(snakeIntel, null, 2));
   fs.writeFileSync(path.join(INTEL_DIR, 'eva.json'), JSON.stringify(evaIntel, null, 2));
 
-  console.log(`${M}MESA REDONDA:${X} Apple(${appleReport.opportunity}) → Snake(${snakeReport.viability}) → Eva(${evaReport.approved ? 'APPROVED' : 'DENIED'}) = ${mesaResult.consensus}`);
+  console.log(`${M}GOLDEN ROUND TABLE:${X} Apple(${appleReport.opportunity}) → Snake(${snakeReport.viability}) → Eva(${evaReport.approved ? 'APPROVED' : 'DENIED'}) = ${mesaResult.consensus}`);
 
   return mesaResult;
 }
 
 // Run a parent agent's logic based on its role (wrapper for compatibility)
 async function runParentScanner(parent, allPrices, allMarkets) {
-  // Read pre-computed intel from Mesa Redonda cycle
+  // Read pre-computed intel from Golden Round Table cycle
   const intelPath = path.join(INTEL_DIR, parent.id + '.json');
   if (fs.existsSync(intelPath)) {
     try {
       const intel = JSON.parse(fs.readFileSync(intelPath, 'utf8'));
-      console.log(`${B}PARENT SCANNER:${X} ${parent.name} (${parent.role}) — loaded from Mesa Redonda.`);
+      console.log(`${B}PARENT SCANNER:${X} ${parent.name} (${parent.role}) — loaded from Golden Round Table.`);
       return intel;
     } catch { }
   }
@@ -3788,7 +3843,7 @@ async function runParentScanner(parent, allPrices, allMarkets) {
   const intel = {
     spec: parent.id, asset: parent.specialization, windowMin: 0,
     ts: new Date().toISOString(), price: null,
-    signal: { dir: 'NEUTRAL', conf: 50, reason: `${parent.name}: awaiting Mesa Redonda cycle` },
+    signal: { dir: 'NEUTRAL', conf: 50, reason: `${parent.name}: awaiting Golden Round Table cycle` },
     bestMarket: null, intelScore: 50
   };
   if (!fs.existsSync(INTEL_DIR)) fs.mkdirSync(INTEL_DIR, { recursive: true });
@@ -3804,7 +3859,7 @@ async function runAllChildScanners(allPrices, allMarkets) {
   const xpData = expProgress(pnl.exp || 0);
   let results = [];
 
-  // NEW: Run Mesa Redonda Parent Scanners
+  // NEW: Run Golden Round Table Parent Scanners
   if (config.mesaRedonda && config.mesaRedonda.parents) {
     const parentResults = await Promise.all(
       config.mesaRedonda.parents.map(parent => runParentScanner(parent, allPrices, allMarkets))
@@ -4364,23 +4419,23 @@ async function think(client, markets, prices, pnl, openPos, soul) {
   const mesaResult = runMesaRedonda(prices, markets, pnl);
   const mesaRedondaBlock = `
 ══════════════════════════════════════════
-MESA REDONDA — CONSEJO DE TUS PADRES:
+GOLDEN ROUND TABLE — YOUR PARENTS' COUNSEL:
 ══════════════════════════════════════════
-🍎 APPLE (Contexto & Oportunidad):
+🍎 APPLE (Context & Opportunity):
   Opportunity: ${mesaResult.apple.opportunity} | Narrative: ${mesaResult.apple.narrative}
   Confidence: ${mesaResult.apple.confidence}% | F&G: ${mesaResult.apple.fgValue} (${mesaResult.apple.fgBias})
   Sentiment Score: ${mesaResult.apple.sentimentScore}/100 | News: ${mesaResult.apple.newsCount} items
   ${mesaResult.apple.newsSummary.length > 0 ? 'Headlines: ' + mesaResult.apple.newsSummary.join(' | ') : ''}
   Top Markets: ${mesaResult.apple.recommendedMarkets.map(m => m.title.slice(0, 30)).join(', ') || 'none'}
 
-🐍 SNAKE (Ejecución & Timing):
+🐍 SNAKE (Execution & Timing):
   Viability: ${mesaResult.snake.viability} | Slippage Risk: ${mesaResult.snake.slippageRisk}
   Optimal Timing: ${mesaResult.snake.optimalTiming}
   Vol Ratio: ${mesaResult.snake.avgVolRatio}x | Vol Accel: ${mesaResult.snake.volAccel}
   BTC Trend: 5m=${mesaResult.snake.btcTrend.m5.toFixed(2)}% 1h=${mesaResult.snake.btcTrend.h1.toFixed(2)}% aligned=${mesaResult.snake.btcTrend.aligned}
   Plan: ${mesaResult.snake.executionPlan.slice(0, 120)}
 
-👑 EVA (Riesgo & Capital):
+👑 EVA (Risk & Capital):
   Decision: ${mesaResult.eva.approved ? '✅ APPROVED' : '❌ DENIED'} | Risk: ${mesaResult.eva.riskLevel} (${mesaResult.eva.riskPoints}pts)
   Max Capital: $${mesaResult.eva.maxCapital} | Slots: ${mesaResult.eva.slotsAvailable}/${MAX_POSITIONS} free
   Fund Status: ${mesaResult.eva.fundStatus} | Reason: ${mesaResult.eva.reason}
@@ -4706,8 +4761,24 @@ async function spawnChild(client, pnl, specialization) {
   const taken = children.map(c => c.spec);
   const nextSpec = specialization || SPECS.find(s => !taken.includes(s)) || 'BTC-5min';
 
-  // Name the child using Claude (Haiku — cheap)
-  const childName = await nameChild(client, nextSpec, null);
+  // Name the child based on Faction balancing
+  pnl.factionSpawnCounts = pnl.factionSpawnCounts || { apple: 0, snake: 0, eva: 0, adan: 0 };
+  const factions = ['apple', 'snake', 'eva', 'adan'];
+  const factionKeys = { apple: 'a', snake: 's', eva: 'e', adan: 'ad' };
+
+  // Count only alive children for balancing
+  const aliveChildren = children.filter(c => c.status !== 'dead');
+  const aliveCounts = { apple: 0, snake: 0, eva: 0, adan: 0 };
+  aliveChildren.forEach(c => { if (c.faction && aliveCounts[c.faction] !== undefined) aliveCounts[c.faction]++; });
+
+  let chosenFaction = factions[0];
+  let minC = aliveCounts[chosenFaction];
+  for (const f of factions) {
+    if (aliveCounts[f] < minC) { minC = aliveCounts[f]; chosenFaction = f; }
+  }
+
+  pnl.factionSpawnCounts[chosenFaction]++;
+  const childName = (factionKeys[chosenFaction] + pnl.factionSpawnCounts[chosenFaction]).toUpperCase();
 
   // Inherit relevant SOUL sections
   const parentSoul = loadSoul();
@@ -4723,10 +4794,10 @@ async function spawnChild(client, pnl, specialization) {
 
   const childSoul = `# ${childName} — ADAN-PRED CHILD
 Created: ${new Date().toISOString().slice(0, 10)}
-Name: ${childName} | Spec: ${nextSpec} | Gen: ${(pnl.generation || 1) + 1}
+Name: ${childName} | Spec: ${nextSpec} | Faction: ${chosenFaction.toUpperCase()} | Gen: ${(pnl.generation || 1) + 1}
 
 ## Identity
-I am ${childName}. Child of ADAN. I specialize in ${nextSpec} markets.
+I am ${childName}. Child of ${chosenFaction.toUpperCase()}. I specialize in ${nextSpec} markets.
 I scan every cycle, report intelligence to my father, and learn my domain.
 I never bet — I inform. Father decides.
 
@@ -4773,18 +4844,18 @@ ${inheritedLines.join('\n')}
     trades: 0, wins: 0, losses: 0, net: 0, exp: 0,
     fund: parseFloat(capital.toFixed(2)),
     treasury: 0, children: [], generation: (pnl.generation || 1) + 1, streak: 0, hourStats: {},
-    parentId: pnl.id || 'root', spec: nextSpec, name: childName,
+    parentId: pnl.id || 'root', spec: nextSpec, name: childName, faction: chosenFaction,
     // Child observes first 5 trades before sending signals (signal quality gate)
     signalActiveTrades: 5, status: 'observing',
     dna  // mutación genética hereditaria
   }, null, 2));
 
-  const child = { id: childId, name: childName, spec: nextSpec, born: new Date().toISOString(), capital, dir: childDir, generation: (pnl.generation || 1) + 1, status: 'observing', dna };
+  const child = { id: childId, name: childName, spec: nextSpec, faction: chosenFaction, born: new Date().toISOString(), capital, dir: childDir, generation: (pnl.generation || 1) + 1, status: 'observing', dna };
   pnl.children = [...children, child];
   pnl.treasury = parseFloat(((pnl.treasury || 0) - capital).toFixed(2));
   savePnL(pnl);
 
-  appendToSoul(`\n### CHILD SPAWNED — ${new Date().toISOString()}:\n${childName} (${nextSpec}) born with $${capital.toFixed(2)} capital. Gen ${child.generation}. Children: ${pnl.children.length}.\n`);
+  appendToSoul(`\n### CHILD SPAWNED — ${new Date().toISOString()}:\n${childName} (${nextSpec}, faction: ${chosenFaction}) born with $${capital.toFixed(2)} capital. Gen ${child.generation}. Children: ${pnl.children.length}.\n`);
   return child;
 }
 
@@ -5017,7 +5088,11 @@ function pruneDeadChildren(pnl) {
   }
 
   // Actualiza el árbol del padre
-  pnl.children = alive;
+  for (const d of dead) {
+    d.status = 'dead';
+    d.deathTime = new Date().toISOString();
+  }
+  pnl.children = [...alive, ...dead];
   savePnL(pnl);
 }
 
@@ -5076,10 +5151,16 @@ function runTournamentOfDeath(pnl) {
   pnl.treasury = parseFloat(((pnl.treasury || 0) + recoveredCapital).toFixed(2));
   pnl._tournamentDone = true;
 
-  // Mantener solo survivors + children sin suficientes trades
-  const survivorIds = new Set(survivors.map(s => s.id));
+  // Mantener solo survivors + children sin suficientes trades + losers muertos
   const noTrades = withStats.filter(c => !active.find(a => a.id === c.id));
-  pnl.children = [...survivors, ...noTrades];
+
+  for (const loser of losers) {
+    loser.status = 'dead';
+    loser.deathReason = 'tournament';
+    loser.deathTime = new Date().toISOString();
+  }
+
+  pnl.children = [...survivors, ...noTrades, ...losers];
   savePnL(pnl);
 
   appendToSoul(`\n### TOURNAMENT RESULT — ${new Date().toISOString()}:\nSurvivors: ${survivors.map(s => (s.name || s.spec) + ' WR:' + Math.round(s.wr * 100) + '%').join(', ')}.\nCapital recovered: $${recoveredCapital.toFixed(2)} → treasury.\n`);
@@ -5550,9 +5631,26 @@ async function setup() {
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
   ensureDir();
+  // Load API key from .env file first, fallback to config.json
+  try {
+    const envPath = path.join(process.cwd(), '.env');
+    if (fs.existsSync(envPath)) {
+      const envContent = fs.readFileSync(envPath, 'utf8');
+      for (const line of envContent.split('\n')) {
+        const match = line.match(/^([A-Z_]+)=(.+)$/);
+        if (match) process.env[match[1]] = match[2].trim();
+      }
+    }
+  } catch { }
   let config = loadConfig();
   if (!config?.anthropicKey) config = await setup();
-  const client = new Anthropic({ apiKey: config.anthropicKey });
+  // Prefer .env key over config.json
+  const apiKey = process.env.ANTHROPIC_API_KEY || config.anthropicKey;
+  if (!apiKey || apiKey === 'FROM_ENV') {
+    console.log(R + 'ERROR: No API key found. Add ANTHROPIC_API_KEY to .env file or config.json' + X);
+    process.exit(1);
+  }
+  const client = new Anthropic({ apiKey });
   _agiClient = client; // AGI layers use this reference
   loadSoul();
   startDashboard();
@@ -5573,6 +5671,19 @@ async function main() {
       state.positions = loadPositions();
       await checkResolutions();
       await doScan(client, state);
+
+      // Adan Faction Explanations (Golden Round Table)
+      if (Math.random() < 0.2) {
+        const explanations = [
+          "APPLE (Context): I scan the macro horizon. Fear, greed, and global narratives define the 'Playbook'.",
+          "SNAKE (Execution): Volatility is my venom. I identify the highest-edge markets where others hesitate.",
+          "EVA (Risk): I am the shield. No child or parent enters a trade without my seal of safety.",
+          "MESA REDONDA: Our unity allows ADAN to transcend the chaos of the markets."
+        ];
+        const msg = explanations[Math.floor(Math.random() * explanations.length)];
+        appendToSoul(msg);
+      }
+
       state.pnl = loadPnL();
       state.positions = loadPositions();
       render(state);
