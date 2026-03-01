@@ -1340,7 +1340,7 @@ function updateNeuralFlow(d) {
       <rect x="\${x}" y="\${y}" width="\${NW}" height="\${NH}" rx="0" fill="\${fill}" stroke="\${bc}" stroke-width="\${bw}"/>
       <text x="\${x+NW/2}" y="\${y+11}" text-anchor="middle" font-size="6" font-weight="700" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" letter-spacing="1">\${nd.title}</text>
       <line x1="\${x+6}" y1="\${y+14}" x2="\${x+NW-6}" y2="\${y+14}" stroke="\${C_BRD2}" stroke-width=".8" opacity=".4"/>
-      <text x="\${x+NW/2}" y="\${y+28}" text-anchor="middle" font-size="14" fill="\${nd.color}" font-family="JetBrains Mono,monospace" font-weight="700">\${nd.icon}</text>
+      <text x="\${x+NW/2}" y="\${y+28}" text-anchor="middle" font-size="14" fill="\${nd.color}" font-family="JetBrains Mono,monospace" font-weight="700" \${i===3?'id="nf-claude-icon"':i===4?'id="nf-dec-icon"':''}>\${nd.icon}</text>
       <text x="\${x+NW/2}" y="\${y+40}" text-anchor="middle" font-size="8.5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(nd.l1||'').slice(0,12)}</text>
       <text x="\${x+NW/2}" y="\${y+52}" text-anchor="middle" font-size="7.5" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${(nd.l2||'').slice(0,12)}</text>
     </g>\`;
@@ -1360,28 +1360,19 @@ function updateNeuralFlow(d) {
   svg+='</svg>';
   wrap.innerHTML = svg;
 
-  // ── Update topbar live indicator ──────────────────────────────────────────
+  // Topbar: solo estado (dot + texto) — countdown lo maneja el timer de 150ms
   const dot = document.getElementById('cmd-live-dot');
   const txt = document.getElementById('cmd-live-txt');
-  const eta = document.getElementById('cmd-scan-eta');
   const bar = document.getElementById('cmd-scan-bar');
-  if(dot){
-    dot.className = 'cmd-live-dot' + (isThinking?' thinking':(hasPrices?'':' idle'));
-  }
+  if(dot) dot.className = 'cmd-live-dot'+(isThinking?' thinking':(hasPrices?'':' idle'));
   if(txt){
     txt.textContent = isThinking?'THINKING — Sonnet 4.6 analyzing':isDone?'DECISION MADE':(hasPrices?'MONITORING · live prices':'INITIALIZING');
     txt.style.color = isThinking?'var(--cyan)':isDone?'var(--green)':'var(--text2)';
   }
-  if(eta && nextAt && isIdle){
-    const remSec = Math.max(0, Math.round((nextAt-Date.now())/1000));
-    const totalSec = 5*60;
-    const elapsed = totalSec - remSec;
-    const pct = Math.min(100, Math.round(elapsed/totalSec*100));
-    eta.textContent = countdown ? countdown+' to scan' : '';
-    if(bar) bar.style.width = pct+'%';
-  } else if(bar){
-    bar.style.width = isThinking?'98%':(isDone?'100%':'0%');
+  if(bar && (isThinking||isDone)){
+    bar.style.width = isThinking?'98%':'100%';
     bar.style.background = isThinking?'var(--cyan)':'var(--green)';
+    const eta = document.getElementById('cmd-scan-eta');
     if(eta) eta.textContent = isThinking?'scanning now...':isDone?'done':'';
   }
 }
@@ -1454,9 +1445,33 @@ function updateDynastyPanel(d) {
 
 refresh();
 setInterval(refresh,4000);
-// Fast-refresh neural flow spinner (only redraws SVG, not full state)
+// Fast-refresh: solo actualiza countdown + spinner via DOM — NO reconstruye el SVG
+const _spinFrames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
 setInterval(()=>{
-  if(window._lastNFData) updateNeuralFlow(window._lastNFData);
+  const d = window._lastNFData;
+  if(!d) return;
+  const mode   = d.state?.mode;
+  const nextAt = d.state?.nextScanAt;
+  const isIdle = !mode || mode===null;
+
+  // Countdown en topbar (no toca el SVG)
+  const eta = document.getElementById('cmd-scan-eta');
+  const bar = document.getElementById('cmd-scan-bar');
+  if(nextAt && isIdle && eta){
+    const rem = Math.max(0, Math.round((nextAt-Date.now())/1000));
+    const mm=Math.floor(rem/60), ss=String(rem%60).padStart(2,'0');
+    if(eta) eta.textContent = mm+':'+ss+' to scan';
+    if(bar){ bar.style.width=Math.min(100,Math.round((300-rem)/300*100))+'%'; bar.style.background='var(--cyan)'; }
+  }
+
+  // Braille spinner: solo actualiza el textContent del nodo CLAUDE en el SVG existente
+  if(mode==='thinking'){
+    const frame = _spinFrames[Math.floor(Date.now()/150) % _spinFrames.length];
+    const el = document.getElementById('nf-claude-icon');
+    if(el) el.textContent = frame;
+    const el2 = document.getElementById('nf-dec-icon');
+    if(el2) el2.textContent = frame;
+  }
 },150);
 </script>
 </body>
