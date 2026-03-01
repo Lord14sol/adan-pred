@@ -60,11 +60,16 @@ ADAN [ROOT · GEN1]
 
 Cada hijo es una instancia separada con su propio `pnl.json`, `SOUL.md` y fondo asignado desde el tesoro del padre. Los hijos escanean en paralelo y envían señales al padre via `intel/`. El padre las incorpora en su decisión.
 
-**Reglas de spawn:**
-- LVL 3 + 5 trades + 50% WR → puede crear el primer hijo
-- LVL 4 → hasta 6 hijos directos
-- Cada hijo puede tener hasta 2 nietos cuando el padre alcanza LVL 4+
+**Reglas de spawn (paper phase):**
+- **Trade 10 + LVL 2 + treasury > 0** → primer hijo nace automáticamente
+- Win rate eliminado como requisito: WR < 20 trades es ruido estadístico puro
+- El hijo nace en modo `OBSERVING` — acumula sus primeros 5 trades sin mandar señales
+- Después de 5 trades propios el hijo activa señales → padre las incorpora
+- LVL 4 → hasta 6 hijos directos | cada hijo puede tener hasta 2 nietos (LVL 4+)
 - Máximo 3 generaciones
+
+**¿Por qué hijo desde trade 10 y no desde trade 1?**
+Con 10 trades el padre ya sabe qué activos escanea más → el hijo se especializa en algo real, no aleatorio. Antes de 10 trades cualquier especialización sería ruido. El gate de 50% WR fue eliminado porque obligaba al padre a "demostrar" algo estadísticamente imposible de demostrar con tan pocos datos.
 
 ### El Instinto de Supervivencia
 ```
@@ -166,13 +171,14 @@ node adan-pred.js
 ```
 Modo:       Paper trading ($10,000 virtuales)
 Trades:     16 total · 6W / 10L
-Win rate:   37.5% (objetivo: 55%+)
+Win rate:   37.5% (aprendiendo — objetivo: 55%+ real)
 Fund:       $9,708.79
-Generation: 1 (sin hijos aún)
-EXP:        340
+Level:      3  (340 EXP)
+Generation: 1
+Hijos:      0 → spawn automático al próximo ciclo (condiciones cumplidas)
 ```
 
-ADAN está en fase de aprendizaje. El objetivo no es ganar ahora — es encontrar el patrón que lo haga ganar consistentemente antes de pasar a real.
+ADAN cumplió las condiciones de spawn (trade 10, LVL 2, treasury > 0) y creará su primer hijo en el próximo ciclo. El hijo nacerá como scanner especializado en BTC-5min, observará 5 trades antes de activar señales, y luego comenzará a alimentar inteligencia al padre.
 
 ---
 
@@ -181,9 +187,12 @@ ADAN está en fase de aprendizaje. El objetivo no es ganar ahora — es encontra
 ### Fase 1 — Paper (actual)
 - [x] Core loop: Binance → Claude → Polymarket
 - [x] SOUL.md + calibración + pattern memory
-- [x] Sistema de hijos (dynasty)
-- [x] Dashboard web con Neural Flow SVG en vivo
-- [x] Instinto de supervivencia
+- [x] Sistema de hijos (dynasty) con spawn automático
+- [x] Dashboard web — Neural Pipeline SVG + Dynasty Panel HTML
+- [x] Topbar live: dot pulsante + countdown + barra de progreso de scan
+- [x] Instinto de supervivencia ($200/$50/$5 thresholds)
+- [x] Primer hijo nace en trade 10 (WR gate eliminado para paper phase)
+- [x] Hijo observa 5 trades antes de activar señales
 - [ ] Win rate sostenido 55%+ por 20 trades → avanzar a Fase 2
 
 ### Fase 2 — Real pequeño

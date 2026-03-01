@@ -73,8 +73,8 @@ const TREE_RULES = {
   canSpawnGen3:    false,
   treasuryPct:     0.10,
   childExpToSpawn: 100, // EXP que debe tener un hijo para poder engendrar nietos
-  // Condiciones spawn padre:
-  spawnConditions: { minWinRate: 0.50, minTrades: 5, minLvl: 3, minNetPositive: false }
+  // Condiciones spawn padre (paper phase: WR gate eliminado — 10 trades + LVL 2):
+  spawnConditions: { minWinRate: 0.00, minTrades: 10, minLvl: 2, minNetPositive: false }
 };
 
 // ── Colors ──────────────────────────────────────────────────────────────────
@@ -994,11 +994,11 @@ async function refresh(){
       <span style="color:var(--grey);font-size:10px">Gen\${pnl.generation||1} · ROOT</span>
     </div>\`;
     if(children.length===0){
-      const sc={minLvl:3,minTrades:5,minWR:0.5};
+      const sc={minLvl:2,minTrades:10,minWR:0};
       const needs=[];
-      if(xp.level<3)needs.push('LVL 3');
-      if(pnl.trades<5)needs.push((5-pnl.trades)+' trades');
-      if(pct<50)needs.push('50%+ WR');
+      if(xp.level<sc.minLvl)needs.push('LVL '+sc.minLvl);
+      if(pnl.trades<sc.minTrades)needs.push((sc.minTrades-pnl.trades)+' trades');
+      if(pnl.treasury<=0)needs.push('treasury > 0');
       if(!(pnl.treasury>0))needs.push('treasury>0');
       treeHtml+=\`<div style="padding:8px 28px;color:var(--grey);font-size:11px">└── no children yet\${needs.length?' · need: '+needs.join(', '):' · spawn ready!'}</div>\`;
     } else {
@@ -1398,15 +1398,16 @@ function updateDynastyPanel(d) {
   const lvl      = xp.level || 1;
 
   if(children.length === 0){
+    // Paper phase: LVL 2 + 10 trades (sin gate de WR)
     const reqs = [
-      {label:'LEVEL 3', val:\`\${lvl} / 3\`, pct:Math.min(100,lvl/3*100), done:lvl>=3},
-      {label:'5 TRADES', val:\`\${trades} / 5\`, pct:Math.min(100,trades/5*100), done:trades>=5},
-      {label:'50% WIN RATE', val:\`\${wr}% / 50%\`, pct:Math.min(100,wr/50*100), done:wr>=50},
+      {label:'LEVEL 2', val:lvl+' / 2', pct:Math.min(100,lvl/2*100), done:lvl>=2},
+      {label:'10 TRADES', val:trades+' / 10', pct:Math.min(100,trades/10*100), done:trades>=10},
+      {label:'TREASURY', val:'$'+(pnl.treasury||0).toFixed(0), pct:(pnl.treasury||0)>0?100:0, done:(pnl.treasury||0)>0},
     ];
     const allDone = reqs.every(r=>r.done);
     const doneCount = reqs.filter(r=>r.done).length;
     const badgeCls = allDone?'dyn-badge-ready':doneCount>=2?'dyn-badge-soon':'dyn-badge-wait';
-    const badgeTxt = allDone?'READY TO SPAWN':doneCount>=2?'ALMOST THERE':'LEARNING';
+    const badgeTxt = allDone?'SPAWNING NEXT CYCLE':doneCount>=2?'ALMOST THERE':'LEARNING';
 
     el.innerHTML = \`<div class="dyn-header">
       <span class="dyn-title">🧬 DYNASTY — NO CHILDREN YET</span>
@@ -1420,8 +1421,8 @@ function updateDynastyPanel(d) {
       </div>\`).join('')}
     </div>
     <div class="dyn-note">
-      ADAN tiene \${trades} trade\${trades!==1?'s':''} con \${wr}% WR · necesita 50%+ en 5+ trades para spawnar el primer hijo.
-      Un hijo es un scanner especializado (ej: BTC-5MIN) que opera en paralelo y envía señales al padre.
+      Win rate eliminado como requisito en paper. Primer hijo nace al trade 10 · LVL 2 · treasury > 0.
+      El hijo observa 5 trades antes de mandar señales — aprenden juntos desde el principio.
     </div>\`;
   } else {
     const activeSigs = children.filter(c=>c.intel?.signal && c.intel.signal!=='idle').length;
@@ -3046,10 +3047,12 @@ ${inheritedLines.join('\n')}
     trades:0, wins:0, losses:0, net:0, exp:0,
     fund: parseFloat(capital.toFixed(2)),
     treasury:0, children:[], generation:(pnl.generation||1)+1, streak:0, hourStats:{},
-    parentId: pnl.id||'root', spec:nextSpec, name:childName
+    parentId: pnl.id||'root', spec:nextSpec, name:childName,
+    // Child observes first 5 trades before sending signals (signal quality gate)
+    signalActiveTrades: 5, status:'observing'
   },null,2));
 
-  const child = { id:childId, name:childName, spec:nextSpec, born:new Date().toISOString(), capital, dir:childDir, generation:(pnl.generation||1)+1 };
+  const child = { id:childId, name:childName, spec:nextSpec, born:new Date().toISOString(), capital, dir:childDir, generation:(pnl.generation||1)+1, status:'observing' };
   pnl.children = [...children, child];
   pnl.treasury = parseFloat(((pnl.treasury||0) - capital).toFixed(2));
   savePnL(pnl);
