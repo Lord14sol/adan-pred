@@ -2105,6 +2105,25 @@ function updateNeuralFlow(d) {
 
     // Shadow
     svg += \`<rect x="\${px+2-PARENT_R}" y="\${py+2-PARENT_R}" width="\${PARENT_R*2}" height="\${PARENT_R*2}" fill="\${C_SHD}" rx="0" opacity="0.5"/>\`;
+    
+    // Draw Neural Cord connecting Parent directly to ADAN
+    svg += \`<path d="M\${px},\${py} L\${CX},\${CY}" stroke="\${p.color}" stroke-width="1.2" stroke-dasharray="2 4" fill="none" opacity="0.6"/>\`;
+    const pParts = 3;
+    const durP = 2.5;
+    for (let pt = 0; pt < pParts; pt++) {
+        const ptId = \`padp\${i}_\${pt}\`;
+        const phaseShift = pt * (durP / pParts);
+        const beginTime = - ((tSecGlobal + phaseShift) % durP);
+        
+        svg += \`<circle r="2" fill="\${p.color}" opacity="0.9">
+          <animate motionPath="\${ptId}" attributeName="opacity" values="0;1;1;0" dur="\${durP}s" begin="\${beginTime}s" repeatCount="indefinite"/>
+          <animateMotion dur="\${durP}s" begin="\${beginTime}s" repeatCount="indefinite">
+            <mpath href="#\${ptId}"/>
+          </animateMotion>
+        </circle>
+        <path id="\${ptId}" d="M\${px},\${py} L\${CX},\${CY}" fill="none" stroke="none"/>\`;
+    }
+
     // Node
     svg += \`<g onclick="showParentDetail('\${p.id}')" style="cursor:pointer">
       <rect x="\${px-PARENT_R}" y="\${py-PARENT_R}" width="\${PARENT_R*2}" height="\${PARENT_R*2}" fill="\${C_CARD}" stroke="\${p.color}" stroke-width="2" rx="0" opacity="\${nodeOpacity}"/>
@@ -2161,9 +2180,17 @@ function updateNeuralFlow(d) {
             </circle>\`;
           }
 
-      svg += \`
           <g transform="translate(\${childOrbitR}, 0)">
             <animateTransform attributeName="transform" type="rotate" from="\${-startAngle} 0 0" to="\${-endAngle} 0 0" dur="\${durSec}s" repeatCount="indefinite"/>
+            
+            \${ /* Highlight birth animation for < 5 mins old */
+               (Date.now() - new Date(child.born||0).getTime()) < 300000 ? 
+               \`<circle cx="0" cy="0" r="14" fill="none" stroke="\${C_GRN}" stroke-width="2" opacity="0">
+                  <animate attributeName="opacity" values="1;0" dur="2s" repeatCount="indefinite"/>
+                  <animate attributeName="r" values="8;16" dur="2s" repeatCount="indefinite"/>
+                </circle>\` : '' 
+             }
+            
             <g onclick="showChildDetail(\${globalIdx})" style="cursor:pointer;">
               <circle cx="0" cy="0" r="8" fill="\${C_CARD3}" stroke="\${C_CYA}" stroke-width="1.5"/>
               <text x="0" y="2" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(child.name||child.spec).slice(0,3).toUpperCase()}</text>
