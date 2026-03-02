@@ -314,4 +314,38 @@ print('thought:', (st.get('thought') or '')[:200])
 
 ---
 
+## Neural Pipeline & Golden Round Table Entities
+
+The intelligence network is divided into core parent modules (The Golden Round Table) and their dynamic offspring. Each entity plays a specialized role in the execution of the agent.
+
+### 🧠 ADAN (The Root / Central Brain)
+- **Role**: Core Orchestrator & Ultimate Decision Maker.
+- **Functionality**: Receives all processed intelligence from the lower-level nodes. Does the final heavy lifting using Claude Sonnet 4.6 to cross-reference technical analysis, narrative context, and order book dynamics. ADAN is the only entity that physically executes the `BET` or `SKIP` command.
+- **Direct Offspring**: Elite Nodes (e.g., Hermes, Prometheus). These high-tier direct children bypass the standard sub-hierarchy and orbit closely to ADAN, feeding him hyper-specialized macro data.
+
+### 🍎 APPLE (Context & Narrative Scanner)
+- **Role**: Horizon & Trend Analysis.
+- **Functionality**: Apple is the high-level scanner pulling data from Binance Hub and CryptoPanic. It evaluates the "Fear & Greed" index, global market sentiment, and major news narratives to determine if the macro environment is safe for play. Apple dictates if we are in a broader Bear or Bull trend.
+
+### 🐍 SNAKE (Execution & Micro-Structure)
+- **Role**: Aggressive Technical Execution.
+- **Functionality**: Snake lives in the trenches of the Binance order book. It scans for micro-structure traps (fake buy/sell walls), VWAP deviations, and raw volume acceleration. Its sole purpose is to find the exact entry point where liquidity is unbalanced in our favor.
+
+### 👑 EVA (Risk Guard & Validation)
+- **Role**: Preservation & Capital Oversight.
+- **Functionality**: Eva acts as the final firewall before a signal reaches ADAN. She validates signals against the portfolio's survival parameters. If capital is low, the win rate is dropping, or volatility is too chaotic, Eva will "DENY" the signal, prioritizing the survival of the dynasty over a risky trade. 
+
+### 👁️‍🗨️ ATLAS (The Hyperliquid Oracle)
+- **Role**: Smart Money & Institutional Tracker.
+- **Functionality**: Atlas pulls data exclusively from Hyperliquid L2 order books and perpetual funding rates. If retail is heavily long (high positive funding), Atlas signals ADAN to look for sudden short/squeeze entries. Atlas tracks whale positioning to ensure ADAN isn't trading against institutional momentum.
+
+### 🧬 THE CHILDREN (Scout Nodes)
+- **Role**: Continuous Frontline Scouting.
+- **Functionality**: The children (`A1`, `S2`, `E1`, etc.) are spawned dynamically as the parent agents gain experience (`EXP`). 
+  - **Naming Convention**: Children take the first letter of their parent's faction (e.g., Apple spawns A1, A2; Snake spawns S1, S2). 
+  - **Mutation**: Each child is born with mathematically variations to their DNA (Patience multiplier, Volume Weight, Min Edge threshold).
+  - **Evolution**: They live to scan 5m/15m/1h timeframes continuously. If they prove successful, their DNA is absorbed upwards by ADAN to permanently improve the root algorithm. If they fail (exhausting their tiny capital), they are pruned (killed) and marked as `DEAD` in the visual pipeline, though their genetic history remains in the log for learning purposes.
+
+---
+
 *Paper trading with 0.2% slippage. No real money moved. Genetic evolution is live. 9 AGI layers active.*

@@ -48,7 +48,7 @@ const MIN_EDGE = 0.05;  // más agresivo en paper = más trades = más data
 const PAPER_BET_SIZE = 100;   // $100 por bet = 1% del fondo $10k
 
 // Symbols to track on Binance
-const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT'];
+const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'BNBUSDT'];
 
 // ── Default Strategy ────────────────────────────────────────────────────────
 const DEFAULT_STRATEGY = {
@@ -79,7 +79,7 @@ const TREE_RULES = {
   // Torneo de la Muerte: al trade 20, bottom 50% de hijos muere, capital redistribuído
   tournamentTrades: 20,
   // Condiciones spawn padre (paper phase: WR gate eliminado — 10 trades + LVL 2):
-  spawnConditions: { minWinRate: 0.00, minTrades: 10, minLvl: 2, minNetPositive: false }
+  spawnConditions: { minWinRate: 0.00, minTrades: 0, minLvl: 2, minNetPositive: false }
 };
 
 // ── Colors ──────────────────────────────────────────────────────────────────
@@ -441,7 +441,7 @@ function startDashboard() {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ADAN · Web4 Automaton</title>
+<title>ADAN · Web4 Node</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=JetBrains+Mono:wght@400;600&display=swap');
 :root{
@@ -727,7 +727,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
   <div class="tick"><span class="tick-sym">BTC</span><span class="tick-p">--</span></div>
   <div class="tick"><span class="tick-sym">ETH</span><span class="tick-p">--</span></div>
   <div class="tick"><span class="tick-sym">SOL</span><span class="tick-p">--</span></div>
-  <div class="tick"><span class="tick-sym">XRP</span><span class="tick-p">--</span></div>
+  <div class="tick"><span class="tick-sym">BNB</span><span class="tick-p">--</span></div>
   <div class="tick" style="margin-left:auto;color:var(--grey)" id="fg-tick">F&G: --</div>
 </div>
 
@@ -748,19 +748,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
         </svg></div>
         <div class="avatar-platform"></div>
       </div>
-      <div class="avatar-name">ADAN</div>
-      <div class="avatar-title" id="av-title">Web4 Automaton · Gen 1</div>
-      <div class="avatar-status" id="av-status">
-        <span class="dot dot-green" id="av-dot"></span>
-        <span id="av-status-txt">IDLE</span>
-      </div>
     </div>
 
     <!-- Level & Fund -->
     <div class="card">
       <div class="level-box">
         <div class="level-title">
-          <div><div class="level-num" id="lvl-num">LVL --</div><div class="level-name" id="lvl-name">--</div></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="font-family:var(--pixel);font-size:9px;color:var(--grey)">Web4 Node</div>
+            <div class="level-num" id="lvl-num">LVL --</div>
+            <div class="level-name" id="lvl-name">--</div>
+          </div>
           <div id="treasury-box" style="text-align:right"></div>
         </div>
         <div class="xp-bar"><div class="xp-fill" id="xp-fill" style="width:0%"></div></div>
@@ -799,7 +797,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 
     <!-- Prices -->
     <div class="card">
-      <div class="card-title">Live Intelligence · Binance</div>
+      <div class="card-title">LIVE</div>
       <div class="price-grid" id="price-grid"></div>
     </div>
 
@@ -1093,15 +1091,10 @@ function showAdanDetail() {
       <div class="child-section">
         <div class="child-sec-title" style="color:var(--purple)">EVOLUTION & GENETICS</div>
         <div class="child-grid" style="grid-template-columns:1fr 1fr">
-          <div><span class="lbl">LEVEL</span><div class="val" style="color:var(--purple)">\${xp.lvl}</div></div>
-          <div><span class="lbl">EXP PROGRESS</span>
-            <div class="child-bar-track" style="height:12px;margin-top:2px">
-              <div class="child-bar-fill" style="width:\${xp.pct}%;background:var(--purple)"></div>
-              <div class="child-bar-label">\${xp.pct}%</div>
-            </div>
-          </div>
-          <div><span class="lbl">LIVING CHILDREN</span><div class="val" style="color:var(--green)">\${livingChildren} Active Nodes</div></div>
-          <div><span class="lbl">PRUNED (DEAD)</span><div class="val" style="color:var(--red)">\${deadChildren} Simulated Deaths</div></div>
+          <div><span class="lbl">GENERATION</span><div class="val" style="color:var(--purple)">Gen \${pnl.generation || 1}</div></div>
+          <div><span class="lbl">FACTION PARENT</span><div class="val" style="color:var(--cyan)">\${(ch.faction || 'Adan Direct').toUpperCase()}</div></div>
+          <div><span class="lbl">ROLE</span><div class="val" style="color:var(--green);font-size:9px">Context & Signal Scanning</div></div>
+          <div><span class="lbl">EATING HISTORY</span><div class="val" style="color:var(--yellow);font-size:9px">\${dna.crossoverFrom && dna.crossoverFrom.length > 0 ? 'Absorbed DNA from: ' + dna.crossoverFrom.join(', ') : 'No absorptions yet.'}</div></div>
         </div>
       </div>
 
@@ -1163,6 +1156,7 @@ function showParentDetail(type) {
 
   // Calculate parent-specific stats based on children lineage
   const children = d.children || [];
+  const pIntel = children.find(c => c.spec === type)?.intel || {};
   const lineageChildren = children.filter(c => c.faction?.toLowerCase() === type || c.name?.toLowerCase().includes(type));
   const activeLineage = lineageChildren.filter(c => c.status !== 'dead');
   
@@ -1202,9 +1196,9 @@ function showParentDetail(type) {
         <div class="child-sec-title">DYNAMIC SCANNING / LIVE EDGE</div>
         <div class="child-grid" style="grid-template-columns:1fr 1fr">
           <div><span class="lbl">ACTIVE CHILDREN</span><div class="val" style="color:var(--cyan)">\${activeLineage.length} Nodes</div></div>
-          <div><span class="lbl">TOTAL SPAWNED</span><div class="val">\${lineageChildren.length}</div></div>
+          <div><span class="lbl">PRUNED (DEAD)</span><div class="val" style="color:var(--red)">\${lineageChildren.length - activeLineage.length} Nodes</div></div>
           <div><span class="lbl">LINEAGE WIN RATE</span><div class="val" style="color:\${avgWR>=50?'var(--green)':'var(--red)'}">\${avgWR}%</div></div>
-          <div><span class="lbl">REAL-TIME EDGE</span><div class="val" style="color:var(--green)">+ \${(Math.random() * 2 + 1).toFixed(2)}%</div></div>
+          <div><span class="lbl">REAL-TIME EDGE</span><div class="val" style="color:var(--green)">+ \${((pIntel?.signal?.conf || 0)/10).toFixed(2)}%</div></div>
         </div>
       </div>
       
@@ -1483,7 +1477,7 @@ async function refresh() {
 
     // Ticker
     const prices = st?.prices || {};
-    const tickItems = [['BTC', 'BTCUSDT'], ['ETH', 'ETHUSDT'], ['SOL', 'SOLUSDT'], ['XRP', 'XRPUSDT']];
+    const tickItems = [['BTC', 'BTCUSDT'], ['ETH', 'ETHUSDT'], ['SOL', 'SOLUSDT'], ['BNB', 'BNBUSDT']];
     document.getElementById('ticker').innerHTML = tickItems.map(([sym, key]) => {
       const p = prices[key];
       if (!p) return \`<div class="tick"><span class="tick-sym">\${sym}</span><span class="tick-p" style="color:var(--grey)">--</span></div>\`;
@@ -1781,32 +1775,36 @@ function updateAvatar(d) {
   }
 
   // Status dot + text
-  if (mode==='thinking') {
-    dot.className='dot dot-yellow';
-    stxt.textContent='THINKING';
-    stxt.style.color='var(--yellow)';
-  } else if (openCount>0) {
-    dot.className='dot dot-green';
-    stxt.textContent=openCount+' BET'+(openCount>1?'S':'')+' LIVE';
-    stxt.style.color='var(--green)';
-  } else {
-    const sm = d.state?.survivalMode;
-    if (sm === 'critical') {
-      dot.className='dot dot-red'; stxt.textContent='🚨 CRITICAL'; stxt.style.color='var(--red)';
-    } else if (sm === 'survival') {
-      dot.className='dot dot-red'; stxt.textContent='⚠ SURVIVAL'; stxt.style.color='var(--red)';
-    } else if (sm === 'cautious') {
-      dot.className='dot dot-yellow'; stxt.textContent='CAUTIOUS'; stxt.style.color='var(--yellow)';
+  if (dot && stxt) {
+    if (mode==='thinking') {
+      dot.className='dot dot-yellow';
+      stxt.textContent='THINKING';
+      stxt.style.color='var(--yellow)';
+    } else if (openCount>0) {
+      dot.className='dot dot-green';
+      stxt.textContent=openCount+' BET'+(openCount>1?'S':'')+' LIVE';
+      stxt.style.color='var(--green)';
     } else {
-      dot.className='dot dot-green'; stxt.textContent='SCANNING'; stxt.style.color='var(--text2)';
+      const sm = d.state?.survivalMode;
+      if (sm === 'critical') {
+        dot.className='dot dot-red'; stxt.textContent='🚨 CRITICAL'; stxt.style.color='var(--red)';
+      } else if (sm === 'survival') {
+        dot.className='dot dot-red'; stxt.textContent='⚠ SURVIVAL'; stxt.style.color='var(--red)';
+      } else if (sm === 'cautious') {
+        dot.className='dot dot-yellow'; stxt.textContent='CAUTIOUS'; stxt.style.color='var(--yellow)';
+      } else {
+        dot.className='dot dot-green'; stxt.textContent='SCANNING'; stxt.style.color='var(--text2)';
+      }
     }
   }
 
   // Title evolves with level
-  const titles = {1:'Web4 Automaton · Gen 1',3:'Scout Trader · Gen 1',5:'Intelligence Node',10:'Market Oracle',20:'Apex Predictor',40:'Sovereign Agent'};
-  let tkey = 1;
-  for (const k of Object.keys(titles).map(Number).sort((a,b)=>a-b)) { if ((xp?.level||1)>=k) tkey=k; }
-  title.textContent = (titles[tkey]||'Web4 Automaton') + ' · LVL '+(xp?.level||1);
+  if (title) {
+    const titles = {1:'Web4 Node · Gen 1',3:'Scout Trader · Gen 1',5:'Intelligence Node',10:'Market Oracle',20:'Apex Predictor',40:'Sovereign Agent'};
+    let tkey = 1;
+    for (const k of Object.keys(titles).map(Number).sort((a,b)=>a-b)) { if ((xp?.level||1)>=k) tkey=k; }
+    title.textContent = (titles[tkey]||'Web4 Node') + ' · LVL '+(xp?.level||1);
+  }
 }
 
 // ── Hour Heatmap ──────────────────────────────────────────────────────────────
@@ -1951,11 +1949,11 @@ function updateNeuralFlow(d) {
   const ptColor = isThinking ? C_CYA : isDone ? C_GRN : C_BRD2;
 
   // Radial layout
-  const SVG_W = 720, SVG_H = 280;
+  const SVG_W = 1000, SVG_H = 450;
   const CX = SVG_W / 2, CY = SVG_H / 2;
-  const ORBIT_R = 105;
-  const ADAN_R = 36;
-  const PARENT_R = 28;
+  const ORBIT_R = 150;
+  const ADAN_R = 40;
+  const PARENT_R = 30;
 
   // Read parent intel for summaries
   const children = d.children || [];
@@ -2017,17 +2015,26 @@ function updateNeuralFlow(d) {
     const conf = p.intel?.signal?.conf || 30;
     const lineOpacity = Math.max(0.3, Math.min(1, conf / 100));
 
+    const ptDur   = isThinking ? '0.5s' : '1.5s';
+    
     svg += \`<path id="radp\${i}" d="M\${x1.toFixed(1)},\${y1.toFixed(1)} L\${x2.toFixed(1)},\${y2.toFixed(1)}" stroke="\${p.color}" stroke-width="1.5" stroke-dasharray="4 3" fill="none" opacity="\${lineOpacity}" marker-end="url(#arh-rad)"/>
     <path id="radv\${i}" d="M\${x1.toFixed(1)},\${y1.toFixed(1)} L\${x2.toFixed(1)},\${y2.toFixed(1)}" stroke="none" fill="none"/>
+    
+    <!-- Heavy Flow Particles (Bolitas) -->
     <circle r="3" fill="\${p.color}" opacity="\${lineOpacity}">
-      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="\${(i*0.4).toFixed(2)}s">
-        <mpath href="#radv\${i}"/>
-      </animateMotion>
+      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="0s"><mpath href="#radv\${i}"/></animateMotion>
     </circle>
-    <circle r="2" fill="\${p.color}" opacity="\${lineOpacity * 0.5}">
-      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="\${(i*0.4+0.3).toFixed(2)}s">
-        <mpath href="#radv\${i}"/>
-      </animateMotion>
+    <circle r="2" fill="\${p.color}" opacity="\${lineOpacity * 0.8}">
+      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="0.3s"><mpath href="#radv\${i}"/></animateMotion>
+    </circle>
+    <circle r="2" fill="\${p.color}" opacity="\${lineOpacity * 0.6}">
+      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="0.6s"><mpath href="#radv\${i}"/></animateMotion>
+    </circle>
+    <circle r="1.5" fill="\${p.color}" opacity="\${lineOpacity * 0.4}">
+      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="0.9s"><mpath href="#radv\${i}"/></animateMotion>
+    </circle>
+    <circle r="1.5" fill="\${p.color}" opacity="\${lineOpacity * 0.4}">
+      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="1.2s"><mpath href="#radv\${i}"/></animateMotion>
     </circle>\`;
   });
 
@@ -2052,11 +2059,41 @@ function updateNeuralFlow(d) {
   const adanBorder = isThinking ? C_CYA : isDone ? C_GRN : C_PUR;
   const adanFill = isThinking ? C_CARD3 : C_CARD;
   svg += \`<rect x="\${CX+3-ADAN_R}" y="\${CY+3-ADAN_R}" width="\${ADAN_R*2}" height="\${ADAN_R*2}" fill="\${C_SHD}" rx="0"/>
-  <rect x="\${CX-ADAN_R}" y="\${CY-ADAN_R}" width="\${ADAN_R*2}" height="\${ADAN_R*2}" fill="\${adanFill}" stroke="\${adanBorder}" stroke-width="2.5" rx="0"\${isThinking?' class="nf-thinking"':''}/>
-  <text x="\${CX}" y="\${CY-12}" text-anchor="middle" font-size="7" font-weight="700" fill="\${C_PUR}" font-family="JetBrains Mono,monospace" letter-spacing="1.5">ADAN</text>
+  <rect x="\${CX-ADAN_R}" y="\${CY-ADAN_R}" width="\${ADAN_R*2}" height="\${ADAN_R*2}" fill="\${adanFill}" stroke="\${adanBorder}" stroke-width="2.5" rx="0"\${isThinking?' class="nf-thinking"':''} onclick="showAdanDetail()" style="cursor:pointer"/>
+  <text x="\${CX}" y="\${CY-12}" text-anchor="middle" font-size="7" font-weight="700" fill="\${C_PUR}" font-family="JetBrains Mono,monospace" letter-spacing="1.5" onclick="showAdanDetail()" style="cursor:pointer">ADAN</text>
   <text x="\${CX}" y="\${CY+4}" text-anchor="middle" font-size="18" fill="\${isThinking?C_CYA:C_PUR}" font-family="JetBrains Mono,monospace" font-weight="700" id="nf-claude-icon">\${isThinking?frame:(isDone?'◉':'◈')}</text>
   <text x="\${CX}" y="\${CY+18}" text-anchor="middle" font-size="8" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${isThinking?'analyzing':(isDone?(d.state?.thought?.includes('BET')?'BET':'SKIP'):'idle')}</text>
   <text x="\${CX}" y="\${CY+28}" text-anchor="middle" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" opacity=".6">Sonnet 4.6</text>\`;
+
+  const tSecGlobal = Date.now() / 1000;
+
+  // ── Render orbiting children for ADAN himself (Inner Ring) ──
+  const adanChildren = children.filter(c => (c.faction?.toLowerCase() === 'adan' || c.name?.toLowerCase().includes('ad')) && c.status !== 'dead');
+  const adanOrbitR = ADAN_R + 18;
+  if (adanChildren.length > 0) {
+    svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${adanOrbitR}" fill="none" stroke="\${C_PUR}" stroke-width="0.5" stroke-dasharray="1 3" opacity="0.4"/>\`;
+  }
+  adanChildren.forEach((child, ci) => {
+    const globalIdx = children.indexOf(child);
+    const durSec = 12; // 12s per orbit
+    const baseAngle = (tSecGlobal % durSec) / durSec * 360;
+    const offsetAngle = (ci / adanChildren.length) * 360;
+    const startAngle = -(baseAngle + offsetAngle); // Counter-clockwise
+    const endAngle = startAngle - 360; 
+
+    svg += \`<g transform="translate(\${CX}, \${CY})">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="\${startAngle} 0 0" to="\${endAngle} 0 0" dur="\${durSec}s" repeatCount="indefinite"/>
+        <g transform="translate(\${adanOrbitR}, 0)">
+          <animateTransform attributeName="transform" type="rotate" from="\${-startAngle} 0 0" to="\${-endAngle} 0 0" dur="\${durSec}s" repeatCount="indefinite"/>
+          <g onclick="showChildDetail(\${globalIdx})" style="cursor:pointer;">
+            <rect x="-4" y="-4" width="8" height="8" fill="\${C_CARD}" stroke="\${C_PUR}" stroke-width="1.5" transform="rotate(45)"/>
+            <text x="0" y="2" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(child.name||child.spec).slice(0,2).toUpperCase()}</text>
+          </g>
+        </g>
+      </g>
+    </g>\`;
+  });
 
   // ── Parent orbital nodes ──────────────────────────────────────────────
   parentDefs.forEach((p, i) => {
@@ -2078,42 +2115,109 @@ function updateNeuralFlow(d) {
     </g>\`;
 
     // ── Render orbiting children for this parent ─────────────────────
-    const pChildren = children.filter(c => 
-      (c.faction?.toLowerCase() === p.id || c.name?.toLowerCase().includes(p.id)) && 
-      !['apple','snake','eva','atlas'].includes(c.spec) // Exclude actual parents
-    );
+    // Note: c.name is 'A1', 'S1', 'E1', 'AT1'. c.faction is 'apple', 'snake', 'eva', 'atlas', 'adan'
+    const pChildren = children.filter(c => {
+      if (['apple','snake','eva','atlas'].includes(c.spec)) return false; // Exclude parent specs themselves
+      if (c.status === 'dead') return false; // Hide dead children from visual orbit
+      const f = (c.faction || '').toLowerCase();
+      // Match explicit faction or prefix match
+      return f === p.id || (c.name && c.name.toLowerCase().startsWith(p.id.charAt(0))); 
+    });
     
     // Orbit radius for children
-    const childOrbitR = PARENT_R + 25;
+    const childOrbitR = PARENT_R + 35;
     
+    if (pChildren.length > 0) {
+      svg += \`<circle cx="\${px}" cy="\${py}" r="\${childOrbitR}" fill="none" stroke="\${p.color}" stroke-width="0.5" stroke-dasharray="2 4" opacity="0.3"/>\`;
+    }
+
     pChildren.forEach((child, ci) => {
       const globalIdx = children.indexOf(child);
-      const childRad = (Date.now()/3000 + (ci * Math.PI * 2 / pChildren.length)) % (Math.PI * 2);
-      const cx = px + childOrbitR * Math.cos(childRad);
-      const cy = py + childOrbitR * Math.sin(childRad);
-      
       const isDead = child.status === 'dead';
-      const cColor = isDead ? C_RED : C_CYA;
-      const cOpacity = isDead ? 0.3 : 1;
-      
-      if (ci === 0) {
-        svg += \`<circle cx="\${px}" cy="\${py}" r="\${childOrbitR}" fill="none" stroke="\${p.color}" stroke-width="0.5" stroke-dasharray="2 4" opacity="0.3"/>\`;
-      }
-      
-      svg += \`<g onclick="showChildDetail(\${globalIdx})" style="cursor:pointer; opacity:\${cOpacity}">
-        <circle cx="\${cx}" cy="\${cy}" r="8" fill="\${C_CARD3}" stroke="\${cColor}" stroke-width="1.5"/>
-        <text x="\${cx}" y="\${cy+2}" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(child.name||child.spec).slice(0,2).toUpperCase()}</text>
-        \${isDead ? \`<line x1="\${cx-4}" y1="\${cy-4}" x2="\${cx+4}" y2="\${cy+4}" stroke="\${C_RED}" stroke-width="1.5"/><line x1="\${cx+4}" y1="\${cy-4}" x2="\${cx-4}" y2="\${cy+4}" stroke="\${C_RED}" stroke-width="1.5"/>\` : ''}
+      if (isDead) return;
+
+      const durSec = 16; 
+      const baseAngle = (tSecGlobal % durSec) / durSec * 360;
+      const offsetAngle = (ci / pChildren.length) * 360;
+      const startAngle = baseAngle + offsetAngle;
+      const endAngle = startAngle + 360;
+
+      svg += \`<g transform="translate(\${px}, \${py})">
+        <g>
+          <animateTransform attributeName="transform" type="rotate" from="\${startAngle} 0 0" to="\${endAngle} 0 0" dur="\${durSec}s" repeatCount="indefinite"/>
+          
+          <line x1="0" y1="0" x2="\${childOrbitR}" y2="0" stroke="\${p.color}" stroke-width="0.8" stroke-dasharray="1 2" opacity="0.6"/>
+          \`;
+          
+          const parts = 2;
+          const durP = 1.2;
+          for (let pt = 0; pt < parts; pt++) {
+            const phaseShift = pt * (durP / parts);
+            const beginTime = - ((tSecGlobal + phaseShift) % durP);
+            // Particles flow from child (R, 0) to parent (0, 0)
+            svg += \`<circle cy="0" r="1.5" fill="\${C_TXT}" opacity="0.8">
+              <animate attributeName="cx" from="\${childOrbitR}" to="0" dur="\${durP}s" begin="\${beginTime}s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0;1;0" dur="\${durP}s" begin="\${beginTime}s" repeatCount="indefinite"/>
+            </circle>\`;
+          }
+
+      svg += \`
+          <g transform="translate(\${childOrbitR}, 0)">
+            <animateTransform attributeName="transform" type="rotate" from="\${-startAngle} 0 0" to="\${-endAngle} 0 0" dur="\${durSec}s" repeatCount="indefinite"/>
+            <g onclick="showChildDetail(\${globalIdx})" style="cursor:pointer;">
+              <circle cx="0" cy="0" r="8" fill="\${C_CARD3}" stroke="\${C_CYA}" stroke-width="1.5"/>
+              <text x="0" y="2" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(child.name||child.spec).slice(0,3).toUpperCase()}</text>
+            </g>
+          </g>
+        </g>
       </g>\`;
     });
+  });
+
+  // ── Fixed ADAN Direct Children (Hermes, Prometheus, etc) ────────────────
+  const directChildrenCount = adanChildren.length;
+  // Placed as 3 on the left, 3 on the right in vertical formation
+  const sideX_L = CX - (ORBIT_R + 110);
+  const sideX_R = CX + (ORBIT_R + 110);
+  
+  adanChildren.forEach((child, ci) => {
+    const sideX = (ci % 2 === 0) ? sideX_L : sideX_R;
+    const vOffset = (Math.floor(ci / 2) - 1) * 45; 
+    const sideY = CY + vOffset;
+    const globalIdx = children.indexOf(child);
+    
+    svg += \`<path d="M\${sideX},\${sideY} L\${CX},\${CY}" stroke="\${C_PUR}" stroke-width="0.8" stroke-dasharray="1 3" fill="none" opacity="0.6"/>\`;
+    
+    const parts = 3;
+    const durP = 2.0;
+    for (let pt = 0; pt < parts; pt++) {
+        const ptId = \`adcp\${ci}_\${pt}\`;
+        const phaseShift = pt * (durP / parts);
+        const beginTime = - ((tSecGlobal + phaseShift) % durP);
+        
+        svg += \`<circle r="1.5" fill="\${C_PUR}" opacity="0.8">
+          <animate motionPath="\${ptId}" attributeName="opacity" values="0;1;0" dur="\${durP}s" begin="\${beginTime}s" repeatCount="indefinite"/>
+          <animateMotion dur="\${durP}s" begin="\${beginTime}s" repeatCount="indefinite">
+            <mpath href="#\${ptId}"/>
+          </animateMotion>
+        </circle>\`;
+        svg += \`<path id="\${ptId}" d="M\${sideX},\${sideY} L\${CX},\${CY}" fill="none" stroke="none"/>\`;
+    }
+
+    svg += \`<g onclick="showChildDetail(\${globalIdx})" style="cursor:pointer">
+      <rect x="\${sideX-18}" y="\${sideY-12}" width="36" height="24" fill="\${C_CARD}" stroke="\${C_PUR}" stroke-width="1.5" rx="3"/>
+      <text x="\${sideX}" y="\${sideY-16}" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-weight="700" font-family="JetBrains Mono,monospace">\${child.name.toUpperCase()}</text>
+      <text x="\${sideX}" y="\${sideY+3}" text-anchor="middle" font-size="10">\${['⚡','🛡️','🧭','🧬','🔮','⚙️'][ci%6]}</text>
+      <text x="\${sideX}" y="\${sideY+15}" text-anchor="middle" font-size="5" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${(child.spec||'').slice(0,6)}</text>
+    </g>\`;
   });
 
   // ── Data Sources (Binance, Hyperliquid, Jupiter) ────────────────────
   const srcY = 15;
   const dataSources = [
-    { label: 'BINANCE HUB', color: C_YEL, nx: Math.cos(-45 * Math.PI/180), ny: Math.sin(-45 * Math.PI/180) }, // Above Apple/Snake approx
-    { label: 'HYPERLIQUID', color: C_PUR, nx: Math.cos(-135 * Math.PI/180), ny: Math.sin(-135 * Math.PI/180) }, // Above Atlas
-    { label: 'JUPITER DEX', color: C_GRN, nx: Math.cos(225 * Math.PI/180), ny: Math.sin(225 * Math.PI/180) } // Arbitrary placing for design
+    { label: 'BINANCE HUB', color: C_YEL, nx: Math.cos(-45 * Math.PI/180), ny: Math.sin(-45 * Math.PI/180) }, // Apple
+    { label: 'HYPERLIQUID', color: C_PUR, nx: Math.cos(-135 * Math.PI/180), ny: Math.sin(-135 * Math.PI/180) }, // Atlas
+    { label: 'JUPITER DEX', color: C_GRN, nx: Math.cos(45 * Math.PI/180), ny: Math.sin(45 * Math.PI/180) } // Snake
   ];
 
   dataSources.forEach((src, i) => {
@@ -5265,14 +5369,15 @@ async function spawnChild(client, pnl, specialization) {
   const nextSpec = specialization || SPECS.find(s => !taken.includes(s)) || 'BTC-5min';
 
   // Name the child based on Faction balancing
-  pnl.factionSpawnCounts = pnl.factionSpawnCounts || { apple: 0, snake: 0, eva: 0, adan: 0 };
-  const factions = ['apple', 'snake', 'eva', 'adan'];
-  const factionKeys = { apple: 'a', snake: 's', eva: 'e', adan: 'ad' };
+  pnl.factionSpawnCounts = pnl.factionSpawnCounts || { apple: 0, snake: 0, eva: 0, atlas: 0, adan: 0 };
+  const factions = ['apple', 'snake', 'eva', 'atlas', 'adan'];
+  const factionKeys = { apple: 'a', snake: 's', eva: 'e', atlas: 'at', adan: 'ad' };
 
   // Count only alive children for balancing
   const aliveChildren = children.filter(c => c.status !== 'dead');
-  const aliveCounts = { apple: 0, snake: 0, eva: 0, adan: 0 };
+  const aliveCounts = { apple: 0, snake: 0, eva: 0, atlas: 0, adan: 0 };
   aliveChildren.forEach(c => { if (c.faction && aliveCounts[c.faction] !== undefined) aliveCounts[c.faction]++; });
+
 
   let chosenFaction = factions[0];
   let minC = aliveCounts[chosenFaction];
