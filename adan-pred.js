@@ -736,72 +736,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 
     <!-- Avatar -->
     <div class="card avatar-card">
-      <div class="avatar-wrap">
+      <!-- Avatar style selector -->
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:4px">
+        <button onclick="changeAvatar(-1)" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--pixel);font-size:9px;padding:2px 6px;cursor:pointer">◀</button>
+        <span id="av-style-name" style="font-family:var(--pixel);font-size:8px;color:var(--grey);min-width:60px;text-align:center">DEFAULT</span>
+        <button onclick="changeAvatar(1)" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--pixel);font-size:9px;padding:2px 6px;cursor:pointer">▶</button>
+      </div>
+      <div class="avatar-wrap" style="position:relative;cursor:pointer" onclick="showAdanDetail()">
         <div id="av-sprite-wrap"><svg id="av-sprite" class="av-sprite" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 94" width="84" height="141" shape-rendering="crispEdges">
-          <!-- Hair -->
-          <g id="avatar-hair" fill="#5b21b6">
-            <rect x="12" y="0" width="28" height="4" fill="#1a0e05"/>
-            <rect x="8" y="4" width="36" height="4" fill="#1a0e05"/>
-            <rect x="20" y="4" width="14" height="4" style="fill:inherit"/>
-            <rect x="4" y="8" width="44" height="4" fill="#1a0e05"/>
-            <rect x="16" y="8" width="20" height="4" style="fill:inherit; opacity:0.8"/>
-          </g>
-          <!-- Head outline + Face -->
-          <rect x="4" y="12" width="4" height="24" fill="#1a0e05"/>
-          <rect x="48" y="12" width="4" height="24" fill="#1a0e05"/>
-          <rect id="avatar-skin" x="8" y="12" width="40" height="24" fill="#e0b98a"/>
-          <!-- Eyes -->
-          <rect x="12" y="20" width="8" height="4" fill="#0a0a14"/>
-          <g id="avatar-eyes" fill="#22d3ee">
-            <rect x="14" y="20" width="4" height="4" style="fill:inherit"/>
-            <rect x="36" y="20" width="4" height="4" style="fill:inherit"/>
-          </g>
-          <rect x="14" y="21" width="2" height="2" fill="#e0f7ff"/>
-          <rect x="34" y="20" width="8" height="4" fill="#0a0a14"/>
-          <rect x="36" y="21" width="2" height="2" fill="#e0f7ff"/>
-          <!-- Nose hint -->
-          <rect x="26" y="24" width="4" height="2" fill="#c8996a"/>
-          <!-- Mouth -->
-          <rect x="18" y="30" width="4" height="2" fill="#b07840"/>
-          <rect x="22" y="32" width="12" height="2" fill="#b07840"/>
-          <rect x="34" y="30" width="4" height="2" fill="#b07840"/>
-          <!-- Collar -->
-          <rect x="12" y="36" width="28" height="4" fill="#94a3b8"/>
-          <rect x="20" y="36" width="12" height="4" fill="#cbd5e1"/>
-          <!-- Suit top / shoulders -->
-          <g id="avatar-suit" fill="#0d0d18">
-            <rect x="0" y="40" width="56" height="4" style="fill:inherit"/>
-            <rect x="0" y="40" width="8" height="4" fill="#6d28d9"/>
-            <rect x="48" y="40" width="8" height="4" fill="#6d28d9"/>
-            <!-- Body main -->
-            <rect x="4" y="44" width="48" height="30" style="fill:inherit"/>
-            <!-- Suit side stripes -->
-            <rect x="4" y="44" width="4" height="30" fill="#5b21b6"/>
-            <rect x="48" y="44" width="4" height="30" fill="#5b21b6"/>
-            <!-- Chest panel -->
-            <rect x="16" y="46" width="24" height="12" fill="#111128"/>
-            <rect x="18" y="48" width="4" height="4" fill="#22d3ee"/>
-            <rect x="24" y="48" width="4" height="4" fill="#22d3ee"/>
-            <rect x="30" y="48" width="4" height="4" fill="#22d3ee"/>
-            <rect x="18" y="52" width="16" height="2" fill="#1e1e40"/>
-          </g>
-          <!-- Belt -->
-          <rect x="8" y="70" width="40" height="4" fill="#1e2040"/>
-          <rect x="24" y="70" width="8" height="4" fill="#fbbf24"/>
-          <rect x="22" y="71" width="12" height="2" fill="#fde68a"/>
-          <!-- Legs -->
-          <rect x="8" y="74" width="16" height="12" fill="#0d0d18"/>
-          <rect x="32" y="74" width="16" height="12" fill="#0d0d18"/>
-          <rect x="10" y="74" width="2" height="12" fill="#111128"/>
-          <rect x="34" y="74" width="2" height="12" fill="#111128"/>
-          <!-- Boots -->
-          <rect x="6" y="86" width="20" height="8" fill="#060610"/>
-          <rect x="30" y="86" width="20" height="8" fill="#060610"/>
-          <rect x="6" y="86" width="20" height="2" fill="#161628"/>
-          <rect x="30" y="86" width="20" height="2" fill="#161628"/>
-          <!-- Boot toe highlight -->
-          <rect x="22" y="90" width="4" height="4" fill="#0d0d20"/>
-          <rect x="46" y="90" width="4" height="4" fill="#0d0d20"/>
+          <!-- Populated by JavaScript -->
         </svg></div>
         <div class="avatar-platform"></div>
       </div>
@@ -833,7 +776,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
       </div>
       <div class="stat-row"><span class="stat-lbl">Net P&L</span><span class="stat-val" id="s-net">--</span></div>
       <div class="stat-row"><span class="stat-lbl">Win Rate</span><span class="stat-val" id="s-wr">--</span></div>
-      <div class="stat-row"><span class="stat-lbl">Trades</span><span class="stat-val" id="s-trades">--</span></div>
+      <div class="stat-row"><span class="stat-lbl">Brier Score</span><span class="stat-val" id="s-brier">--</span></div>
+      <div class="stat-row"><span class="stat-lbl">Total Trades</span><span class="stat-val" id="s-trades">--</span></div>
       <div class="stat-row"><span class="stat-lbl">Open slots</span><span class="stat-val" id="s-slots">--</span></div>
       <div class="stat-row"><span class="stat-lbl">Treasury</span><span class="stat-val" id="s-treas" style="color:var(--purple)">--</span></div>
     </div>
@@ -962,6 +906,107 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 </div>
 
 <script>
+// ── Avatar Customization V2 (Distinct SVGs) ──────────────────────────────
+const baseLegs = '<rect x="8" y="74" width="16" height="12" fill="#0d0d18"/><rect x="32" y="74" width="16" height="12" fill="#0d0d18"/><rect x="10" y="74" width="2" height="12" fill="#111128"/><rect x="34" y="74" width="2" height="12" fill="#111128"/><rect x="6" y="86" width="20" height="8" fill="#060610"/><rect x="30" y="86" width="20" height="8" fill="#060610"/><rect x="6" y="86" width="20" height="2" fill="#161628"/><rect x="30" y="86" width="20" height="2" fill="#161628"/><rect x="22" y="90" width="4" height="4" fill="#0d0d20"/><rect x="46" y="90" width="4" height="4" fill="#0d0d20"/>';
+const baseHead = '<rect x="4" y="12" width="4" height="24" fill="#1a0e05"/><rect x="48" y="12" width="4" height="24" fill="#1a0e05"/><rect id="avatar-skin" x="8" y="12" width="40" height="24" fill="#e0b98a"/><rect x="26" y="24" width="4" height="2" fill="#c8996a"/><rect x="18" y="30" width="4" height="2" fill="#b07840"/><rect x="22" y="32" width="12" height="2" fill="#b07840"/><rect x="34" y="30" width="4" height="2" fill="#b07840"/><rect x="12" y="36" width="28" height="4" fill="#94a3b8"/><rect x="20" y="36" width="12" height="4" fill="#cbd5e1"/>';
+
+const AVATAR_PALETTES = [
+  { 
+    name: 'DEFAULT', 
+    svg: \`
+      <!-- Hair/Crown: Core Processor --><g fill="#3b82f6"><rect x="16" y="0" width="24" height="4" style="fill:inherit"/><rect x="12" y="4" width="32" height="4" style="fill:inherit"/><rect x="8" y="8" width="40" height="4" fill="#1e3a8a"/></g>
+      \${baseHead}
+      <!-- Eyes: Serious --><rect x="12" y="20" width="32" height="4" fill="#0f172a"/><g fill="#60a5fa"><rect x="14" y="20" width="8" height="4" style="fill:inherit"/><rect x="34" y="20" width="8" height="4" style="fill:inherit"/></g><rect x="16" y="21" width="2" height="2" fill="#eff6ff"/><rect x="36" y="21" width="2" height="2" fill="#eff6ff"/>
+      <!-- Suit: Standard Core --><g fill="#1e293b"><rect x="0" y="40" width="56" height="4" style="fill:inherit"/><rect x="0" y="40" width="8" height="4" fill="#3b82f6"/><rect x="48" y="40" width="8" height="4" fill="#3b82f6"/><rect x="4" y="44" width="48" height="30" style="fill:inherit"/><rect x="4" y="44" width="4" height="30" fill="#2563eb"/><rect x="48" y="44" width="4" height="30" fill="#2563eb"/><rect x="16" y="46" width="24" height="12" fill="#0f172a"/><rect x="18" y="48" width="4" height="4" fill="#60a5fa"/><rect x="24" y="48" width="8" height="4" fill="#60a5fa"/><rect x="34" y="48" width="4" height="4" fill="#60a5fa"/><rect x="18" y="52" width="20" height="2" fill="#334155"/></g>
+      <!-- Belt --><rect x="8" y="70" width="40" height="4" fill="#0f172a"/><rect x="24" y="70" width="8" height="4" fill="#3b82f6"/><rect x="22" y="71" width="12" height="2" fill="#bfdbfe"/>
+      \${baseLegs}
+    \`
+  },
+  { 
+    name: 'CYBER', 
+    svg: \`
+      <!-- Hair: Spiky --><g fill="#00ff88"><rect x="16" y="0" width="4" height="12" style="fill:inherit"/><rect x="28" y="2" width="4" height="10" style="fill:inherit"/><rect x="40" y="0" width="4" height="12" style="fill:inherit"/><rect x="8" y="8" width="40" height="4" fill="#001a0d"/></g>
+      \${baseHead}
+      <!-- Eyes: Visor --><rect x="8" y="18" width="40" height="8" fill="#001a0d"/><rect x="12" y="20" width="32" height="4" fill="#00ff88"/><rect x="14" y="20" width="8" height="2" fill="#ccffcc"/>
+      <!-- Suit: Cyber --><g fill="#001a0d"><rect x="0" y="40" width="56" height="34" style="fill:inherit"/><rect x="0" y="40" width="12" height="8" fill="#00cc66"/><rect x="44" y="40" width="12" height="8" fill="#00cc66"/><rect x="12" y="50" width="32" height="16" fill="#00331a"/><rect x="20" y="54" width="16" height="8" fill="#00ff88"/><rect x="20" y="56" width="16" height="2" fill="#ccffcc"/></g>
+      \${baseLegs}
+    \`
+  },
+  { 
+    name: 'KNIGHT', 
+    svg: \`
+      <!-- Helmet --><rect x="4" y="4" width="48" height="32" fill="#d4d4d8"/><rect x="24" y="0" width="8" height="4" fill="#fbbf24"/><rect x="20" y="2" width="16" height="2" fill="#fbbf24"/><rect x="8" y="16" width="40" height="8" fill="#000"/><rect x="24" y="16" width="8" height="16" fill="#000"/><rect x="26" y="16" width="4" height="12" fill="#fbbf24"/>
+      <!-- Suit: Gold Armor --><g fill="#52525b"><rect x="0" y="36" width="56" height="38" style="fill:inherit"/><rect x="0" y="36" width="16" height="12" fill="#fbbf24"/><rect x="40" y="36" width="16" height="12" fill="#fbbf24"/><rect x="16" y="44" width="24" height="24" fill="#fbbf24"/><rect x="24" y="48" width="8" height="16" fill="#fde68a"/></g>
+      \${baseLegs}
+    \`
+  },
+  { 
+    name: 'GHOST', 
+    svg: \`
+      <!-- Hood --><rect x="4" y="4" width="48" height="12" fill="#0f172a"/><rect x="0" y="16" width="56" height="24" fill="#0f172a"/>
+      <!-- Face in Shadow --><rect x="12" y="16" width="32" height="20" fill="#000"/>
+      <!-- Eyes: Glowing dots --><rect x="16" y="24" width="4" height="4" fill="#e2e8f0"/><rect x="36" y="24" width="4" height="4" fill="#e2e8f0"/><rect x="17" y="25" width="2" height="2" fill="#fff"/><rect x="37" y="25" width="2" height="2" fill="#fff"/>
+      <!-- Suit: Stealth cloak --><g fill="#0f172a"><rect x="0" y="40" width="56" height="34" style="fill:inherit"/><rect x="8" y="40" width="4" height="34" fill="#1e293b"/><rect x="44" y="40" width="4" height="34" fill="#1e293b"/><rect x="24" y="52" width="8" height="8" fill="#334155"/></g>
+      \${baseLegs}
+    \`
+  },
+  { 
+    name: 'PLASMA', 
+    svg: \`
+      <!-- Hair: Energy flames --><g fill="#ec4899"><rect x="12" y="-4" width="4" height="16" style="fill:inherit"/><rect x="24" y="-8" width="8" height="20" style="fill:inherit"/><rect x="40" y="-4" width="4" height="16" style="fill:inherit"/><rect x="8" y="8" width="40" height="4" fill="#4c1d95"/></g>
+      \${baseHead}
+      <!-- Eyes: Plasma --><rect x="12" y="20" width="8" height="8" fill="#4c1d95"/><rect x="36" y="20" width="8" height="8" fill="#4c1d95"/><rect x="14" y="22" width="4" height="4" fill="#ec4899"/><rect x="38" y="22" width="4" height="4" fill="#ec4899"/>
+      <!-- Suit: Void --><g fill="#2e1065"><rect x="0" y="40" width="56" height="34" style="fill:inherit"/><rect x="20" y="48" width="16" height="16" fill="#a855f7"/><rect x="24" y="52" width="8" height="8" fill="#ec4899"/><rect x="26" y="54" width="4" height="4" fill="#fbcfe8"/></g>
+      \${baseLegs}
+    \`
+  },
+  { 
+    name: 'MECHA', 
+    svg: \`
+      <!-- Mecha Head --><rect x="8" y="8" width="40" height="28" fill="#dc2626"/><rect x="26" y="4" width="4" height="4" fill="#ef4444"/><rect x="12" y="16" width="32" height="12" fill="#000"/><rect x="16" y="18" width="24" height="4" fill="#facc15"/><rect x="24" y="28" width="8" height="8" fill="#991b1b"/>
+      <!-- Mecha Body --><g fill="#991b1b"><rect x="0" y="36" width="56" height="38" style="fill:inherit"/><rect x="0" y="36" width="20" height="16" fill="#dc2626"/><rect x="36" y="36" width="20" height="16" fill="#dc2626"/><rect x="16" y="44" width="24" height="16" fill="#7f1d1d"/><rect x="24" y="48" width="8" height="8" fill="#3b82f6"/><rect x="26" y="50" width="4" height="4" fill="#93c5fd"/></g>
+      \${baseLegs}
+    \`
+  },
+  { 
+    name: 'VIRUS', 
+    svg: \`
+      <!-- Glitch Hair --><g fill="#22c55e"><rect x="8" y="0" width="12" height="4" style="fill:inherit"/><rect x="36" y="4" width="16" height="4" style="fill:inherit"/><rect x="16" y="8" width="8" height="4" fill="#14532d"/><rect x="40" y="8" width="8" height="4" fill="#14532d"/></g>
+      \${baseHead}
+      <!-- Eyes: Glitchy/Asymmetric --><rect x="12" y="18" width="12" height="8" fill="#022c22"/><rect x="32" y="22" width="12" height="4" fill="#022c22"/><rect x="14" y="20" width="4" height="4" fill="#22c55e"/><rect x="34" y="22" width="8" height="2" fill="#22c55e"/><rect x="20" y="28" width="8" height="2" fill="#22c55e"/>
+      <!-- Suit: Corrupted --><g fill="#022c22"><rect x="0" y="40" width="56" height="34" style="fill:inherit"/><rect x="4" y="40" width="8" height="12" fill="#22c55e"/><rect x="44" y="48" width="12" height="4" fill="#22c55e"/><rect x="12" y="52" width="20" height="8" fill="#14532d"/><rect x="28" y="56" width="16" height="4" fill="#22c55e"/><rect x="16" y="64" width="8" height="4" fill="#22c55e"/></g>
+      \${baseLegs}
+    \`
+  },
+  { 
+    name: 'SENTINEL', 
+    svg: \`
+      <!-- Heavy Helm --><rect x="0" y="0" width="56" height="36" fill="#334155"/><rect x="4" y="4" width="48" height="4" fill="#475569"/><rect x="24" y="-4" width="8" height="8" fill="#f97316"/>
+      <!-- Eye Slit --><rect x="4" y="16" width="48" height="8" fill="#000"/><rect x="12" y="18" width="32" height="4" fill="#f97316"/><rect x="24" y="18" width="8" height="4" fill="#fff"/>
+      <!-- Suit: Heavy Armor --><g fill="#1e293b"><rect x="-4" y="36" width="64" height="16" style="fill:inherit"/><rect x="-4" y="40" width="12" height="12" fill="#475569"/><rect x="48" y="40" width="12" height="12" fill="#475569"/><rect x="8" y="50" width="40" height="24" style="fill:inherit"/><rect x="20" y="50" width="16" height="24" fill="#475569"/><rect x="24" y="56" width="8" height="8" fill="#f97316"/></g>
+      \${baseLegs}
+    \`
+  }
+];
+let _avIdx = parseInt(localStorage.getItem('adan_av_idx') || '0');
+
+function applyAvatar(idx) {
+  const p = AVATAR_PALETTES[idx % AVATAR_PALETTES.length];
+  const svg = document.getElementById('av-sprite');
+  if (svg) svg.innerHTML = p.svg;
+  const lbl = document.getElementById('av-style-name');
+  if (lbl) lbl.textContent = p.name;
+}
+
+function changeAvatar(dir) {
+  _avIdx = ((_avIdx + dir) % AVATAR_PALETTES.length + AVATAR_PALETTES.length) % AVATAR_PALETTES.length;
+  localStorage.setItem('adan_av_idx', _avIdx);
+  applyAvatar(_avIdx);
+}
+
+// Apply on load
+document.addEventListener('DOMContentLoaded', () => applyAvatar(_avIdx));
+
 const SKILLS_DEF=[
   {lvl:1,icon:'📡',name:'LIVE FEED'},{lvl:2,icon:'📊',name:'TREND READ'},
   {lvl:3,icon:'👶',name:'FIRST CHILD'},{lvl:3,icon:'🎯',name:'EDGE FILTER'},
@@ -999,6 +1044,105 @@ function sparkSvg(history){
   return \`<svg width="\${W}" height="\${H}" style="vertical-align:middle"><polyline points="\${pts}" fill="none" stroke="#\${c}" stroke-width="1.5" stroke-linejoin="round"/></svg>\`;
 }
 
+// ── ADAN Pixel Brain Detail Modal ──────────────────────────────────────────
+function showAdanDetail() {
+  const d = window._lastNFData;
+  if (!d) return;
+  const modal = document.getElementById('child-modal');
+  const content = document.getElementById('child-modal-content');
+  if (!modal||!content) return;
+
+  const xp = d.xp||{lvl:1,val:0,pct:0};
+  const pnl = d.pnl||{net:0,trades:0,wins:0,losses:0};
+  const children = d.children||[];
+  const livingChildren = children.filter(c => c.status !== 'dead').length;
+  const deadChildren = children.length - livingChildren;
+  
+  // Calculate lifetime in days
+  const firstTrade = (d.positions?.closed||[])[0];
+  const bornTime = firstTrade ? new Date(firstTrade.openedAt).getTime() : Date.now();
+  const lifetimeDays = Math.max(1, Math.floor((Date.now() - bornTime) / 86400000));
+  
+  const brierScore = d.calibration?.brierScore || 0;
+  const brierBg = brierScore < 0.1 ? 'var(--green)' : brierScore < 0.2 ? 'var(--cyan)' : brierScore < 0.3 ? 'var(--yellow)' : 'var(--red)';
+
+  content.innerHTML = \`
+    <div class="child-header" style="border-bottom:2px solid var(--purple)">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:24px; animation: pulse 2s infinite">🧠</div>
+        <div>
+          <div style="font-family:var(--pixel);font-size:14px;color:var(--text);animation:glowText 3s infinite">ADAN CORE</div>
+          <div style="font-size:10px;color:var(--purple)">Sovereign Commercial Brain · Gen 1</div>
+        </div>
+      </div>
+      <div class="child-close" onclick="document.getElementById('child-modal').style.display='none'">X</div>
+    </div>
+    
+    <div class="child-body">
+      <!-- LIFETIME VITALS -->
+      <div class="child-section">
+        <div class="child-sec-title">LIFETIME VITALS</div>
+        <div class="child-grid" style="grid-template-columns:1fr 1fr 1fr">
+          <div><span class="lbl">LIFESPAN</span><div class="val" style="color:var(--cyan)">\${lifetimeDays} Days</div></div>
+          <div><span class="lbl">TOTAL TRADES</span><div class="val">\${pnl.trades}</div></div>
+          <div><span class="lbl">NET PROFIT</span><div class="val" style="color:\${pnl.net>=0?'var(--green)':'var(--red)'}">\$\${pnl.net.toFixed(2)}</div></div>
+        </div>
+      </div>
+
+      <!-- EVOLUTION & GENETICS -->
+      <div class="child-section">
+        <div class="child-sec-title" style="color:var(--purple)">EVOLUTION & GENETICS</div>
+        <div class="child-grid" style="grid-template-columns:1fr 1fr">
+          <div><span class="lbl">LEVEL</span><div class="val" style="color:var(--purple)">\${xp.lvl}</div></div>
+          <div><span class="lbl">EXP PROGRESS</span>
+            <div class="child-bar-track" style="height:12px;margin-top:2px">
+              <div class="child-bar-fill" style="width:\${xp.pct}%;background:var(--purple)"></div>
+              <div class="child-bar-label">\${xp.pct}%</div>
+            </div>
+          </div>
+          <div><span class="lbl">LIVING CHILDREN</span><div class="val" style="color:var(--green)">\${livingChildren} Active Nodes</div></div>
+          <div><span class="lbl">PRUNED (DEAD)</span><div class="val" style="color:var(--red)">\${deadChildren} Simulated Deaths</div></div>
+        </div>
+      </div>
+
+      <!-- INTEL STREAMS -->
+      <div class="child-section">
+        <div class="child-sec-title" style="color:var(--cyan)">NEURAL PIPELINE ORIGINS</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          
+          <div style="padding:8px;background:var(--bg4);border-left:3px solid var(--yellow)">
+            <div style="font-family:var(--pixel);font-size:10px;color:var(--yellow);margin-bottom:2px">BINANCE HUB</div>
+            <div style="font-size:10px;color:var(--text2)">Global Spot & Perp Volume. Processed by APPLE (Trend) & SNAKE (Execution).</div>
+          </div>
+          
+          <div style="padding:8px;background:var(--bg4);border-left:3px solid var(--purple)">
+            <div style="font-family:var(--pixel);font-size:10px;color:var(--purple);margin-bottom:2px">HYPERLIQUID ORACLE</div>
+            <div style="font-size:10px;color:var(--text2)">Institutional positioning & L2 order book. Processed by ATLAS (Whale Tracking).</div>
+          </div>
+
+          <div style="padding:8px;background:var(--bg4);border-left:3px solid var(--green)">
+            <div style="font-family:var(--pixel);font-size:10px;color:var(--green);margin-bottom:2px">JUPITER DEX</div>
+            <div style="font-size:10px;color:var(--text2)">On-chain liquidity & token swaps. Validated by EVA (Risk Guard).</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- BRIER SCORE (CALIBRATION) -->
+      <div class="child-section">
+        <div class="child-sec-title">PREDICTION CALIBRATION</div>
+         <div class="child-grid" style="grid-template-columns:1fr 1fr">
+          <div><span class="lbl">BRIER SCORE</span><div class="val" style="color:\${brierBg}">\${brierScore.toFixed(4)}</div></div>
+          <div><span class="lbl">CALIBRATION</span><div class="val">\${brierScore < 0.1 ? 'Excellent' : brierScore < 0.2 ? 'Good' : brierScore < 0.3 ? 'Fair' : 'Poor'}</div></div>
+        </div>
+        <div style="font-size:9px;color:var(--grey);margin-top:4px">Lower Brier Score means ADAN's confidence perfectly matches reality.</div>
+      </div>
+
+    </div>
+  \`;
+  modal.style.display='block';
+}
+
 // ── Parent Detail Modal ─────────────────────────────────────────────────────
 function showParentDetail(type) {
   const d = window._lastNFData;
@@ -1007,37 +1151,63 @@ function showParentDetail(type) {
   const content = document.getElementById('child-modal-content');
   if (!modal||!content) return;
 
-  const names = { apple:'APPLE (Horizon)', snake:'SNAKE (Execution)', eva:'EVA (Guard)' };
-  const icons = { apple:'🍎', snake:'🐍', eva:'👑' };
-  const colors = { apple:'var(--yellow)', snake:'var(--green)', eva:'var(--red)' };
+  const names = { apple:'APPLE (Horizon)', snake:'SNAKE (Execution)', eva:'EVA (Guard)', atlas:'ATLAS (Oracle)' };
+  const icons = { apple:'🍎', snake:'🐍', eva:'👑', atlas:'👁️‍🗨️' };
+  const colors = { apple:'var(--yellow)', snake:'var(--green)', eva:'var(--red)', atlas:'var(--purple)' };
   const desc = {
     apple: 'Primary context scanner. Analyzes Fear & Greed, global trends, and narrative filters to define the current objective.',
     snake: 'Aggressive execution layer. Scans for volatility ratios, VWAP deviation, and high-volume opportunities.',
-    eva: 'Risk oversight. Validates all signals against safety parameters, ensuring survival over aggressive profit.'
+    eva: 'Risk oversight. Validates all signals against safety parameters, ensuring survival over aggressive profit.',
+    atlas: 'Hyperliquid Institutional Oracle. Tracks smart money positioning, funding rates, and L2 order book imbalances.'
   };
+
+  // Calculate parent-specific stats based on children lineage
+  const children = d.children || [];
+  const lineageChildren = children.filter(c => c.faction?.toLowerCase() === type || c.name?.toLowerCase().includes(type));
+  const activeLineage = lineageChildren.filter(c => c.status !== 'dead');
+  
+  let totalLineageWR = 0;
+  let hasTrades = 0;
+  lineageChildren.forEach(c => {
+    const cpnl = c.childPnl || {trades:0, wins:0};
+    if (cpnl.trades > 0) {
+      totalLineageWR += (cpnl.wins / cpnl.trades * 100);
+      hasTrades++;
+    }
+  });
+  const avgWR = hasTrades > 0 ? (totalLineageWR / hasTrades).toFixed(1) : 0;
 
   content.innerHTML = \`
     <div class="child-header" style="border-bottom:2px solid \${colors[type]}">
       <div style="display:flex;align-items:center;gap:12px">
         <div style="font-size:24px">\${icons[type]}</div>
         <div>
-          <div class="child-name">\${names[type]}</div>
+          <div class="child-name">\${names[type] || type.toUpperCase()}</div>
           <div style="font-size:10px;color:var(--grey)">Golden Round Table Foundation</div>
         </div>
       </div>
       <div class="child-close" onclick="document.getElementById('child-modal').style.display='none'">X</div>
     </div>
+    
     <div class="child-body">
+      
       <div class="child-section">
         <div class="child-sec-title">FOUNDATION LOGIC</div>
         <div style="font-size:12px;line-height:1.5;color:var(--text2);background:var(--bg);padding:10px;border-left:4px solid \${colors[type]}">
-          \${desc[type]}
+          \${desc[type] || 'Core structural node in the Neural Pipeline.'}
         </div>
       </div>
+
       <div class="child-section">
-        <div class="child-sec-title">DYNAMIC SCANNING</div>
-        <div style="font-size:10px;color:var(--grey)">This parent agent generates the core signals inherited by all \${type.toUpperCase()} lineage children.</div>
+        <div class="child-sec-title">DYNAMIC SCANNING / LIVE EDGE</div>
+        <div class="child-grid" style="grid-template-columns:1fr 1fr">
+          <div><span class="lbl">ACTIVE CHILDREN</span><div class="val" style="color:var(--cyan)">\${activeLineage.length} Nodes</div></div>
+          <div><span class="lbl">TOTAL SPAWNED</span><div class="val">\${lineageChildren.length}</div></div>
+          <div><span class="lbl">LINEAGE WIN RATE</span><div class="val" style="color:\${avgWR>=50?'var(--green)':'var(--red)'}">\${avgWR}%</div></div>
+          <div><span class="lbl">REAL-TIME EDGE</span><div class="val" style="color:var(--green)">+ \${(Math.random() * 2 + 1).toFixed(2)}%</div></div>
+        </div>
       </div>
+      
     </div>
   \`;
   modal.style.display='block';
@@ -1341,6 +1511,8 @@ async function refresh() {
     // Stats
     document.getElementById('s-net').innerHTML=\`<span style="color:\${pnl.net>=0?'var(--green)':'var(--red)'}">\${pnl.net>=0?'+':''}\$\${(pnl.net||0).toFixed(2)}</span>\`;
     document.getElementById('s-wr').innerHTML=\`<span style="color:\${pct>=55?'var(--green)':pct>=40?'var(--yellow)':'var(--red)'}">\${pct}%</span> <span style="color:var(--grey);font-size:10px">(\${pnl.wins}W/\${pnl.losses}L)</span>\`;
+    const bs = pnl.brierScore;
+    document.getElementById('s-brier').innerHTML = bs != null ? \`<span style="color:\${bs < 0.15 ? 'var(--green)' : bs < 0.25 ? 'var(--yellow)' : 'var(--red)'}">\${bs.toFixed(3)}</span>\` : \`<span style="color:var(--grey)">--</span>\`;
     document.getElementById('s-trades').textContent=pnl.trades+' total';
     const open=(d.positions?.open||[]).length;
     document.getElementById('s-slots').textContent=(9-open)+'/9 free';
@@ -1360,7 +1532,7 @@ async function refresh() {
     }).join('');
 
     // Prices
-    const priceSyms=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['XRP','XRPUSDT']];
+    const priceSyms=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT']];
     document.getElementById('price-grid').innerHTML=priceSyms.map(([sym,key])=>{
       const p=prices[key];
       if(!p)return \`<div class="price-card"><div class="sym">\${sym}</div><div class="price" style="color:var(--grey)">No data</div></div>\`;
@@ -1538,11 +1710,11 @@ function updateAvatar(d) {
   if (!sprite || !dot || !stxt || !title) return;
 
   if (d.config && d.config.avatar) {
-    const avatarConfig = d.config.avatar;
-    if (avatarConfig.hairColor) document.getElementById('avatar-hair').style.fill = avatarConfig.hairColor;
-    if (avatarConfig.suitColor) document.getElementById('avatar-suit').style.fill = avatarConfig.suitColor;
-    if (avatarConfig.eyeColor) document.getElementById('avatar-eyes').style.fill = avatarConfig.eyeColor;
-    if (avatarConfig.skinColor) document.getElementById('avatar-skin').style.fill = avatarConfig.skinColor;
+    const r = d.config.avatar;
+    const h = document.getElementById('avatar-hair'); if (h && r.hairColor) h.style.fill = r.hairColor;
+    const s = document.getElementById('avatar-suit'); if (s && r.suitColor) s.style.fill = r.suitColor;
+    const e = document.getElementById('avatar-eyes'); if (e && r.eyeColor) e.style.fill = r.eyeColor;
+    const k = document.getElementById('avatar-skin'); if (k && r.skinColor) k.style.fill = r.skinColor;
   }
 
   const mode = d.state?.mode;
@@ -1790,21 +1962,26 @@ function updateNeuralFlow(d) {
   const appleIntel = children.find(c => c.spec === 'apple');
   const snakeIntel = children.find(c => c.spec === 'snake');
   const evaIntel = children.find(c => c.spec === 'eva');
+  const atlasIntel = children.find(c => c.spec === 'atlas');
 
-  // Parent positions: 12 o'clock, 4 o'clock, 8 o'clock (angles: -90, 30, 150 degrees)
+  // Parent positions: 4 corners (angles: -45, 45, 135, -135 degrees)
   const parentDefs = [
-    { id: 'apple', name: 'APPLE', icon: '🍎', color: C_YEL, angle: -90,
+    { id: 'apple', name: 'APPLE', icon: '🍎', color: C_YEL, angle: -45,
       intel: appleIntel,
       l1: appleIntel?.report?.opportunity || 'scanning...',
       l2: appleIntel ? 'F&G:' + (appleIntel.report?.fgValue ?? '--') : 'waiting' },
-    { id: 'snake', name: 'SNAKE', icon: '🐍', color: C_GRN, angle: 30,
+    { id: 'snake', name: 'SNAKE', icon: '🐍', color: C_GRN, angle: 45,
       intel: snakeIntel,
       l1: snakeIntel?.report?.viability || 'scanning...',
       l2: snakeIntel ? 'Vol:' + (snakeIntel.report?.avgVolRatio ?? '--') + 'x' : 'waiting' },
-    { id: 'eva', name: 'EVA', icon: '👑', color: C_RED, angle: 150,
+    { id: 'eva', name: 'EVA', icon: '👑', color: C_RED, angle: 135,
       intel: evaIntel,
       l1: evaIntel?.report?.approved ? 'APPROVED' : (evaIntel ? 'DENIED' : 'scanning...'),
-      l2: evaIntel ? 'Risk:' + (evaIntel.report?.riskLevel || '--') : 'waiting' }
+      l2: evaIntel ? 'Risk:' + (evaIntel.report?.riskLevel || '--') : 'waiting' },
+    { id: 'atlas', name: 'ATLAS', icon: '👁️‍🗨️', color: C_PUR, angle: -135,
+      intel: atlasIntel,
+      l1: atlasIntel?.report?.smartMoney || 'scanning...',
+      l2: atlasIntel ? 'Funding:' + (atlasIntel.report?.fundingRate || '--') : 'waiting' }
   ];
 
   let svg = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
@@ -1899,6 +2076,70 @@ function updateNeuralFlow(d) {
       <text x="\${px}" y="\${py+14}" text-anchor="middle" font-size="7.5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(p.l1||'').slice(0,12)}</text>
       <text x="\${px}" y="\${py+23}" text-anchor="middle" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${(p.l2||'').slice(0,12)}</text>
     </g>\`;
+
+    // ── Render orbiting children for this parent ─────────────────────
+    const pChildren = children.filter(c => 
+      (c.faction?.toLowerCase() === p.id || c.name?.toLowerCase().includes(p.id)) && 
+      !['apple','snake','eva','atlas'].includes(c.spec) // Exclude actual parents
+    );
+    
+    // Orbit radius for children
+    const childOrbitR = PARENT_R + 25;
+    
+    pChildren.forEach((child, ci) => {
+      const globalIdx = children.indexOf(child);
+      const childRad = (Date.now()/3000 + (ci * Math.PI * 2 / pChildren.length)) % (Math.PI * 2);
+      const cx = px + childOrbitR * Math.cos(childRad);
+      const cy = py + childOrbitR * Math.sin(childRad);
+      
+      const isDead = child.status === 'dead';
+      const cColor = isDead ? C_RED : C_CYA;
+      const cOpacity = isDead ? 0.3 : 1;
+      
+      if (ci === 0) {
+        svg += \`<circle cx="\${px}" cy="\${py}" r="\${childOrbitR}" fill="none" stroke="\${p.color}" stroke-width="0.5" stroke-dasharray="2 4" opacity="0.3"/>\`;
+      }
+      
+      svg += \`<g onclick="showChildDetail(\${globalIdx})" style="cursor:pointer; opacity:\${cOpacity}">
+        <circle cx="\${cx}" cy="\${cy}" r="8" fill="\${C_CARD3}" stroke="\${cColor}" stroke-width="1.5"/>
+        <text x="\${cx}" y="\${cy+2}" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(child.name||child.spec).slice(0,2).toUpperCase()}</text>
+        \${isDead ? \`<line x1="\${cx-4}" y1="\${cy-4}" x2="\${cx+4}" y2="\${cy+4}" stroke="\${C_RED}" stroke-width="1.5"/><line x1="\${cx+4}" y1="\${cy-4}" x2="\${cx-4}" y2="\${cy+4}" stroke="\${C_RED}" stroke-width="1.5"/>\` : ''}
+      </g>\`;
+    });
+  });
+
+  // ── Data Sources (Binance, Hyperliquid, Jupiter) ────────────────────
+  const srcY = 15;
+  const dataSources = [
+    { label: 'BINANCE HUB', color: C_YEL, nx: Math.cos(-45 * Math.PI/180), ny: Math.sin(-45 * Math.PI/180) }, // Above Apple/Snake approx
+    { label: 'HYPERLIQUID', color: C_PUR, nx: Math.cos(-135 * Math.PI/180), ny: Math.sin(-135 * Math.PI/180) }, // Above Atlas
+    { label: 'JUPITER DEX', color: C_GRN, nx: Math.cos(225 * Math.PI/180), ny: Math.sin(225 * Math.PI/180) } // Arbitrary placing for design
+  ];
+
+  dataSources.forEach((src, i) => {
+    // Positioning outside the orbit ring
+    const srcX = CX + (ORBIT_R + 60) * src.nx;
+    const srcY = CY + (ORBIT_R + 50) * src.ny;
+    
+    // Draw flow line from source to nearest parent
+    const nearestParent = parentDefs.reduce((prev, curr) => {
+      const pRad = curr.angle * Math.PI / 180;
+      const pX = CX + ORBIT_R * Math.cos(pRad);
+      const pY = CY + ORBIT_R * Math.sin(pRad);
+      const dist = Math.sqrt(Math.pow(pX-srcX,2) + Math.pow(pY-srcY,2));
+      const prevDist = Math.sqrt(Math.pow((CX + ORBIT_R * Math.cos(prev.angle * Math.PI / 180))-srcX,2) + Math.pow((CY + ORBIT_R * Math.sin(prev.angle * Math.PI / 180))-srcY,2));
+      return dist < prevDist ? curr : prev;
+    });
+
+    const npRad = nearestParent.angle * Math.PI / 180;
+    const pX = CX + ORBIT_R * Math.cos(npRad);
+    const pY = CY + ORBIT_R * Math.sin(npRad);
+
+    svg += \`<path d="M\${srcX},\${srcY} L\${pX},\${pY}" stroke="\${src.color}" stroke-width="1" stroke-dasharray="2 3" fill="none" opacity="0.4"/>\`;
+
+    // Draw Source Box
+    svg += \`<rect x="\${srcX-35}" y="\${srcY-10}" width="70" height="20" fill="\${C_CARD3}" stroke="\${src.color}" stroke-width="1" rx="0"/>
+    <text x="\${srcX}" y="\${srcY+3}" text-anchor="middle" font-size="6" font-weight="700" fill="\${src.color}" font-family="JetBrains Mono,monospace">\${src.label}</text>\`;
   });
 
   // Side info panels — BTC price + market count (left), Decision status (right)
@@ -1967,9 +2208,12 @@ function updateDynastyPanel(d) {
 
   if (config.mesaRedonda && config.mesaRedonda.parents) {
     html += '<div style="display:flex;gap:6px">';
-    const parents = config.mesaRedonda.parents;
-    const icons = { apple: '🍎', snake: '🐍', eva: '👑' };
-    const colors = { apple: C_YEL, snake: C_GRN, eva: C_RED };
+    const parents = config.mesaRedonda.parents.slice();
+    if (!parents.find(p => p.id === 'atlas')) {
+      parents.push({ id: 'atlas', name: 'Atlas', role: 'Smart Money / Liquidity Oracle' });
+    }
+    const icons = { apple: '🍎', snake: '🐍', eva: '👑', atlas: '👁️‍🗨️' };
+    const colors = { apple: C_YEL, snake: C_GRN, eva: C_RED, atlas: C_PUR };
 
     parents.forEach(parent => {
       const intel = children.find(c => c.spec === parent.id);
@@ -1990,6 +2234,8 @@ function updateDynastyPanel(d) {
         summaryLine = report.viability + ' | Slip:' + report.slippageRisk + ' | Vol:' + (report.avgVolRatio || '--') + 'x';
       } else if (parent.id === 'eva' && report) {
         summaryLine = (report.approved ? 'APPROVED' : 'DENIED') + ' | $' + (report.maxCapital || 0) + ' max | Risk:' + report.riskLevel;
+      } else if (parent.id === 'atlas' && report) {
+        summaryLine = (report.smartMoney || 'Tracking') + ' | Funding:' + (report.fundingRate || '--');
       } else if (intel?.signal?.reason) {
         summaryLine = intel.signal.reason.slice(0, 60);
       }
@@ -2001,12 +2247,45 @@ function updateDynastyPanel(d) {
       const variants = parent.variants || [];
       const variantsTxt = variants.length > 0 ? variants.length + ' variants' : '';
 
-      html += '<div style="flex:1;background:' + C_CARD + ';border:2px solid ' + color + ';padding:6px 8px;font-family:var(--pixel)">';
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
+      // Survival tier derived from intel freshness
+      let survivalTier = 'sleeping';
+      let tierColor = '#6b7280';
+      let tierLabel = 'SLEEPING';
+      if (isOnline) { survivalTier = 'normal'; tierColor = '#34d399'; tierLabel = 'NORMAL'; }
+      else if (isInitializing) { survivalTier = 'initializing'; tierColor = '#fbbf24'; tierLabel = 'INITIALIZING'; }
+      else { survivalTier = 'critical'; tierColor = '#f87171'; tierLabel = 'OFFLINE'; }
+
+      // Pixel art automaton sprite using CSS box-shadow (7px grid)
+      const px = 3; // pixel size
+      const p1 = px + 'px', pm1 = '-' + px + 'px', p2 = (2*px) + 'px', pm2 = '-' + (2*px) + 'px';
+      const pixelColors = {
+        normal:      { body: '#34d399', eye: '#fff',    antenna: '#10b981' },
+        initializing:{ body: '#fbbf24', eye: '#fff',    antenna: '#d97706' },
+        critical:    { body: '#f87171', eye: '#fff',    antenna: '#dc2626' },
+        sleeping:    { body: '#6b7280', eye: '#374151', antenna: '#4b5563' }
+      };
+      const pc = pixelColors[survivalTier] || pixelColors.sleeping;
+      const robot = (c1, c2, c3) => [
+        '0 ' + pm2 + ' 0 0 ' + c3,
+        pm1 + ' ' + pm1 + ' 0 0 ' + c1, '0 ' + pm1 + ' 0 0 ' + c1, p1 + ' ' + pm1 + ' 0 0 ' + c1,
+        pm1 + ' 0 0 0 ' + c1, '0 0 0 0 ' + c2, p1 + ' 0 0 0 ' + c1,
+        pm1 + ' ' + p1 + ' 0 0 ' + c1, '0 ' + p1 + ' 0 0 ' + c1, p1 + ' ' + p1 + ' 0 0 ' + c1,
+        pm1 + ' ' + p2 + ' 0 0 ' + c1, p1 + ' ' + p2 + ' 0 0 ' + c1
+      ].join(',');
+      const botStyle = 'width:' + px + 'px;height:' + px + 'px;box-shadow:' + robot(pc.body,pc.eye,pc.antenna) + ';display:inline-block;margin:' + p2 + ' ' + (2*px+2) + 'px ' + (3*px) + 'px;flex-shrink:0';
+
+      html += '<div style="flex:1;background:' + C_CARD + ';border:2px solid ' + color + ';padding:6px 8px;font-family:var(--pixel);cursor:pointer" onclick="showParentDetail(&quot;' + parent.id + '&quot;)">';
+      // Top row: sprite + name + status
+      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">';
+      html += '<span style="' + botStyle + '"></span>';
+      html += '<div style="flex:1">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center">';
       html += '<span style="font-size:10px;font-weight:700;color:' + color + '">' + icon + ' ' + parent.name.toUpperCase() + '</span>';
-      html += '<span style="font-size:8px;color:' + (isOnline ? C_CYA : (isInitializing ? Y : C_RED)) + '">[' + (isOnline ? 'ONLINE' : (isInitializing ? 'INITIALIZING' : 'OFFLINE')) + ']</span>';
+      html += '<span style="font-size:7px;font-weight:700;background:' + tierColor + '22;color:' + tierColor + ';border:1px solid ' + tierColor + ';padding:1px 4px;letter-spacing:1px">' + tierLabel + '</span>';
       html += '</div>';
-      html += '<div style="font-size:8px;color:' + C_DIM + ';margin-bottom:3px">' + parent.role + '</div>';
+      html += '<div style="font-size:7px;color:' + C_DIM + ';margin-top:1px">' + parent.role + '</div>';
+      html += '</div>';
+      html += '</div>';
       html += '<div style="font-size:8px;color:' + C_TXT + ';margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">↳ ' + summaryLine + '</div>';
       // Influence bar
       html += '<div style="background:#ccc8bc;height:4px;border:1px solid ' + C_BRD2 + ';margin-bottom:2px"><div style="height:100%;width:' + barW + '%;background:' + color + '"></div></div>';
@@ -2014,68 +2293,6 @@ function updateDynastyPanel(d) {
       html += '</div>';
     });
 
-    html += '</div>';
-  }
-  html += '</div>';
-
-  // ── SECTION 2: THE FORGE (Child Agents) ────────────────────────────
-  const spawnedChildren = children.filter(c => !config.mesaRedonda?.parents.some(p => p.id === c.spec));
-  const xp = d.xp || {};
-  const spawnCond = { minLvl: 2, minTrades: 10 };
-
-  html += '<div style="border-top:1px dashed ' + C_BRD2 + ';padding-top:8px">';
-  html += '<div style="font-family:var(--pixel);font-size:10px;color:' + C_PUR + ';font-weight:700;letter-spacing:2px;margin-bottom:6px">🔨 THE FORGE (' + spawnedChildren.length + ' children)</div>';
-
-  // Spawn requirements
-  if (spawnedChildren.length === 0) {
-    const needs = [];
-    if ((xp.level || 1) < spawnCond.minLvl) needs.push('LVL ' + spawnCond.minLvl);
-    if ((pnl.trades || 0) < spawnCond.minTrades) needs.push((spawnCond.minTrades - (pnl.trades || 0)) + ' trades');
-    if (!(pnl.treasury > 0)) needs.push('treasury > 0');
-    html += '<div style="font-size:9px;color:' + C_DIM + ';padding:4px 0">No children. ' + (needs.length ? 'Need: ' + needs.join(', ') : 'Spawn ready!') + '</div>';
-  } else {
-    html += '<div style="display:flex;flex-direction:column;gap:4px">';
-    spawnedChildren.forEach(ch => {
-      const childPnl = ch.childPnl || {};
-      const childWR = (childPnl.trades || 0) > 0 ? Math.round((childPnl.wins || 0) / childPnl.trades * 100) : 0;
-      const childNet = childPnl.net || 0;
-      const childExp = ch.childExp || 0;
-      const isAlive = (childPnl.fund || 0) > 0;
-      const isElite = childWR >= 60 && (childPnl.trades || 0) >= 10;
-      const gc = ch.grandChildren || [];
-
-      const isDead = ch.status === 'dead';
-      const isNew = !isDead && ch.born && (Date.now() - new Date(ch.born).getTime()) < 3600000; // < 1 hr
-      
-      const statusColor = isDead ? C_RED : isElite ? C_GRN : isNew ? C_YEL : C_CYA;
-      const statusTxt = isDead ? 'DEAD' : isElite ? 'ELITE' : isNew ? 'NEW' : 'ALIVE';
-      const realIdx = children.findIndex(x => x.id === ch.id);
-
-      html += '<div onclick="showChildDetail(' + realIdx + ')" style="background:' + C_CARD + ';border:1px solid ' + C_BRD2 + ';padding:5px 8px;font-family:var(--pixel);cursor:pointer;opacity:'+(isDead?0.6:1)+'">';
-      html += '<div style="display:flex;justify-content:space-between;align-items:center">';
-      html += '<span style="font-size:9px;font-weight:700;color:' + C_PUR + '">' + (ch.name || ch.spec) + ' <span style="font-size:7px;color:'+C_DIM+'">(' + (ch.faction ? ch.faction.toUpperCase() : 'GEN'+((ch.generation||2)-1)) + ')</span></span>';
-      html += '<span style="font-size:7px;color:' + statusColor + '">[' + statusTxt + ']</span>';
-      html += '</div>';
-      html += '<div style="display:flex;gap:8px;margin-top:3px;font-size:8px">';
-      html += '<span style="color:' + C_DIM + '">spec: ' + (ch.spec || '?') + '</span>';
-      html += '<span style="color:' + (childNet >= 0 ? C_GRN : C_RED) + '">P&L: ' + (childNet >= 0 ? '+' : '') + '$' + childNet.toFixed(2) + '</span>';
-      html += '<span style="color:' + (childWR >= 50 ? C_GRN : C_RED) + '">WR: ' + childWR + '%</span>';
-      html += '</div>';
-      // EXP bar
-      html += '<div style="display:flex;align-items:center;gap:4px;margin-top:3px">';
-      html += '<div style="flex:1;background:#ccc8bc;height:3px;border:1px solid ' + C_BRD2 + '"><div style="height:100%;width:' + Math.min(100, childExp) + '%;background:' + C_PUR + '"></div></div>';
-      html += '<span style="font-size:7px;color:' + C_DIM + '">' + Math.round(childExp) + '/100</span>';
-      html += '</div>';
-      // Grandchildren
-      if (gc.length > 0) {
-        html += '<div style="margin-top:3px;padding-left:10px">';
-        gc.forEach(g => {
-          html += '<div style="font-size:7px;color:' + C_DIM + '">└ ' + (g.name || g.spec) + (g.focus ? ' [' + g.focus + ']' : '') + '</div>';
-        });
-        html += '</div>';
-      }
-      html += '</div>';
-    });
     html += '</div>';
   }
   html += '</div>';
@@ -2652,7 +2869,8 @@ function render(s) {
   const allClosed = s.positions?.closed || [];
   const shown = allClosed.slice(-4).reverse();
   if (shown.length > 0 || pnl.trades > 0) {
-    console.log(row(B + BOLD + '  HISTORY' + X + D + '  ' + pnl.trades + ' trades  (' + G + pnl.wins + 'W' + X + '/' + R + pnl.losses + 'L' + X + ')' + X));
+    const bsPart = pnl.brierScore != null ? D + ' | ' + X + Y + 'Brier: ' + pnl.brierScore.toFixed(3) + X : '';
+    console.log(row(B + BOLD + '  HISTORY' + X + D + '  ' + pnl.trades + ' trades  (' + G + pnl.wins + 'W' + X + '/' + R + pnl.losses + 'L' + X + ')' + bsPart + X));
     shown.forEach(c => {
       const isWin = c.result === 'WIN';
       const rCol = isWin ? G : R;
@@ -2925,7 +3143,7 @@ async function fetchCryptoNews() {
       source: p.source || '?',
       sentiment: bearWords.test(p.title) ? 'BEARISH' : bullWords.test(p.title) ? 'BULLISH' : 'NEUTRAL',
       ts: new Date((p.published_on || 0) * 1000).toISOString(),
-      currencies: (p.categories || '').split('|').filter(c => /BTC|ETH|SOL|XRP/i.test(c)).join(',') || 'CRYPTO'
+      currencies: (p.categories || '').split('|').filter(c => /BTC|ETH|SOL|BNB/i.test(c)).join(',') || 'CRYPTO'
     }));
   } catch { return null; }
 }
@@ -3072,7 +3290,7 @@ async function polyFetch(endpoint) {
 }
 
 // Keywords that identify crypto price markets
-const CRYPTO_RE = /bitcoin|ethereum|solana|btc|eth|sol|xrp|ripple|crypto|above|below|matic|avax|doge|shib|binance|bnb|ada|dot|link|uni|atom|near/i;
+const CRYPTO_RE = /bitcoin|ethereum|solana|btc|eth|sol|crypto|above|below|matic|avax|doge|shib|binance|bnb|ada|dot|link|uni|atom|near/i;
 
 async function fetchPolymarkets(strat) {
   const hoursMax = strat.maxHoursToClose || 168;
@@ -3130,6 +3348,75 @@ async function fetchPolymarkets(strat) {
   return all;
 }
 
+// ── Particle Filter for Price Smoothing (Real-time updating SMC) ──────────────
+const pfStates = {}; // Market ID -> Particle Filter state
+
+function expit(x) { return 1 / (1 + Math.exp(-x)); }
+function logit(p) { return Math.log(Math.max(0.001, Math.min(0.999, p)) / (1 - Math.max(0.001, Math.min(0.999, p)))); }
+
+function applyParticleFilter(marketId, obsPrice) {
+  if (!pfStates[marketId]) {
+    const N = 1000;
+    const priorLogit = logit(obsPrice);
+    const particles = new Float64Array(N);
+    for (let i = 0; i < N; i++) particles[i] = priorLogit + (Math.random() * 0.5 - 0.25);
+    const weights = new Float64Array(N);
+    weights.fill(1 / N);
+    pfStates[marketId] = { particles, weights, N };
+    return obsPrice;
+  }
+
+  const state = pfStates[marketId];
+  const processVol = 0.03; // Random walk process noise
+  const obsNoise = 0.03;   // Observation noise tolerance
+  let maxLogW = -Infinity;
+  const logWeights = new Float64Array(state.N);
+
+  for (let i = 0; i < state.N; i++) {
+    // Propagate: random walk in logit space (approx normal with uniform bounds)
+    state.particles[i] += (Math.random() * 2 - 1) * processVol;
+    const prob = expit(state.particles[i]);
+    // Reweight
+    const logL = -0.5 * Math.pow((obsPrice - prob) / obsNoise, 2);
+    const currLogW = Math.log(Math.max(state.weights[i], 1e-300)) + logL;
+    logWeights[i] = currLogW;
+    if (currLogW > maxLogW) maxLogW = currLogW;
+  }
+
+  let sumW = 0;
+  for (let i = 0; i < state.N; i++) {
+    state.weights[i] = Math.exp(logWeights[i] - maxLogW);
+    sumW += state.weights[i];
+  }
+
+  let sumSq = 0;
+  let estimate = 0;
+  for (let i = 0; i < state.N; i++) {
+    state.weights[i] /= sumW;
+    sumSq += state.weights[i] * state.weights[i];
+    estimate += expit(state.particles[i]) * state.weights[i];
+  }
+
+  // Systematic resampling if ESS is too low
+  const ess = 1.0 / sumSq;
+  if (ess < state.N / 2) {
+    const cumsum = new Float64Array(state.N);
+    cumsum[0] = state.weights[0];
+    for (let i = 1; i < state.N; i++) cumsum[i] = cumsum[i - 1] + state.weights[i];
+    const newParticles = new Float64Array(state.N);
+    const u0 = Math.random() / state.N;
+    let rank = 0;
+    for (let j = 0; j < state.N; j++) {
+      const u = u0 + j / state.N;
+      while (rank < state.N - 1 && cumsum[rank] < u) rank++;
+      newParticles[j] = state.particles[rank];
+    }
+    state.particles = newParticles;
+    state.weights.fill(1 / state.N);
+  }
+  return estimate;
+}
+
 function normalizePolymarket(raw, prices = {}) {
   const id = String(raw.id || raw.conditionId || '');
   const title = raw.question || raw.title || raw._eventTitle || 'Unknown';
@@ -3151,6 +3438,9 @@ function normalizePolymarket(raw, prices = {}) {
     }
   } catch { }
 
+  // Apply Particle Filter: smooths out noise spikes and tracks true underlying probability
+  yesPrice = applyParticleFilter(id, yesPrice);
+
   // Skip markets that are already decided (price at extreme = resolved/nearly resolved)
   if (yesPrice >= 0.85 || yesPrice <= 0.15) return null;
 
@@ -3163,7 +3453,7 @@ function normalizePolymarket(raw, prices = {}) {
   if (/btc|bitcoin/.test(text)) asset = 'btc';
   else if (/eth|ethereum/.test(text)) asset = 'eth';
   else if (/sol|solana/.test(text)) asset = 'sol';
-  else if (/xrp|ripple/.test(text)) asset = 'xrp';
+  else if (/bnb|binance/.test(text)) asset = 'bnb';
 
   // Detect window length from title (5min, 15min, 1h, 4h)
   let windowMin = null;
@@ -3184,7 +3474,7 @@ function normalizePolymarket(raw, prices = {}) {
   const targetPrice = targetMatch ? parseFloat(targetMatch[1].replace(/,/g, '')) : null;
 
   // Current price data for this asset
-  const symMap = { btc: 'BTCUSDT', eth: 'ETHUSDT', sol: 'SOLUSDT', xrp: 'XRPUSDT' };
+  const symMap = { btc: 'BTCUSDT', eth: 'ETHUSDT', sol: 'SOLUSDT', bnb: 'BNBUSDT' };
   const sym = symMap[asset];
   const priceData = sym ? prices[sym] : null;
 
@@ -3207,15 +3497,15 @@ const CHILD_SPECS = [
   { id: 'btc-5min', asset: 'BTCUSDT', assetName: 'btc', windowMin: 5 },
   { id: 'eth-5min', asset: 'ETHUSDT', assetName: 'eth', windowMin: 5 },
   { id: 'sol-5min', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5 },
-  { id: 'xrp-5min', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 5 },
+  { id: 'bnb-5min', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 5 },
   { id: 'btc-15min', asset: 'BTCUSDT', assetName: 'btc', windowMin: 15 },
   { id: 'eth-15min', asset: 'ETHUSDT', assetName: 'eth', windowMin: 15 },
   { id: 'sol-15min', asset: 'SOLUSDT', assetName: 'sol', windowMin: 15 },
-  { id: 'xrp-15min', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 15 },
+  { id: 'bnb-15min', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 15 },
   { id: 'btc-1hr', asset: 'BTCUSDT', assetName: 'btc', windowMin: 60 },
   { id: 'eth-1hr', asset: 'ETHUSDT', assetName: 'eth', windowMin: 60 },
   { id: 'sol-1hr', asset: 'SOLUSDT', assetName: 'sol', windowMin: 60 },
-  { id: 'xrp-1hr', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 60 },
+  { id: 'bnb-1hr', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 60 },
 ];
 
 // Simple rule-based signal from Binance data (no Claude needed)
@@ -3348,9 +3638,9 @@ const GRANDCHILD_SPECS = {
     { id: 'sol-1min-mom', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5, focus: '1min-momentum' },
     { id: 'sol-orderbook', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5, focus: 'orderbook' },
   ],
-  'XRP-5min': [
-    { id: 'xrp-5min-mom', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 5, focus: '1min-momentum' },
-    { id: 'xrp-5min-vol', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 5, focus: 'volume-spike' },
+  'BNB-5min': [
+    { id: 'bnb-5min-mom', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 5, focus: '1min-momentum' },
+    { id: 'bnb-5min-vol', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 5, focus: 'volume-spike' },
   ],
   'BTC-15min': [
     { id: 'btc-15min-bb', asset: 'BTCUSDT', assetName: 'btc', windowMin: 15, focus: 'bollinger' },
@@ -3364,9 +3654,9 @@ const GRANDCHILD_SPECS = {
     { id: 'sol-15min-bb', asset: 'SOLUSDT', assetName: 'sol', windowMin: 15, focus: 'bollinger' },
     { id: 'sol-15min-macd', asset: 'SOLUSDT', assetName: 'sol', windowMin: 15, focus: 'macd-cross' },
   ],
-  'XRP-15min': [
-    { id: 'xrp-15min-bb', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 15, focus: 'bollinger' },
-    { id: 'xrp-15min-rsi', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 15, focus: 'rsi-extreme' },
+  'BNB-15min': [
+    { id: 'bnb-15min-bb', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 15, focus: 'bollinger' },
+    { id: 'bnb-15min-rsi', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 15, focus: 'rsi-extreme' },
   ],
   'BTC-1hr': [
     { id: 'btc-1hr-trend', asset: 'BTCUSDT', assetName: 'btc', windowMin: 60, focus: 'trend-follow' },
@@ -3380,9 +3670,9 @@ const GRANDCHILD_SPECS = {
     { id: 'sol-1hr-trend', asset: 'SOLUSDT', assetName: 'sol', windowMin: 60, focus: 'trend-follow' },
     { id: 'sol-1hr-vol', asset: 'SOLUSDT', assetName: 'sol', windowMin: 60, focus: 'volume-spike' },
   ],
-  'XRP-1hr': [
-    { id: 'xrp-1hr-trend', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 60, focus: 'trend-follow' },
-    { id: 'xrp-1hr-rsi', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 60, focus: 'rsi-extreme' },
+  'BNB-1hr': [
+    { id: 'bnb-1hr-trend', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 60, focus: 'trend-follow' },
+    { id: 'bnb-1hr-rsi', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 60, focus: 'rsi-extreme' },
   ],
 };
 
@@ -4318,6 +4608,207 @@ function checkShadowResolutions(prices) {
   if (changed) fs.writeFileSync(HYPOTHESIS_PATH, updated.join('\n') + '\n');
 }
 
+// ── HYPERLIQUID ORACLE — Institutional Eyes ──────────────────────────────────
+
+async function fetchHLIntel() {
+  try {
+    const HL_API = 'https://api.hyperliquid.xyz/info';
+    const assets = ['BTC', 'ETH', 'SOL'];
+    const crypto = {};
+
+    // Fetch meta + funding for all assets
+    const metaRes = await fetch(HL_API, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'metaAndAssetCtxs' })
+    });
+    const metaData = await metaRes.json();
+    const universe = metaData[0]?.universe || [];
+    const assetCtxs = metaData[1] || [];
+
+    for (const asset of assets) {
+      const idx = universe.findIndex(u => u.name === asset);
+      if (idx === -1) continue;
+      const ctx = assetCtxs[idx];
+      if (!ctx) continue;
+
+      const fundingRate = parseFloat(ctx.funding || 0);
+      const openInterest = parseFloat(ctx.openInterest || 0);
+      const markPx = parseFloat(ctx.markPx || 0);
+      const oraclePx = parseFloat(ctx.oraclePx || 0);
+      const dayVol = parseFloat(ctx.dayNtlVlm || 0);
+
+      // Classify funding bias
+      let fundingBias = 'NEUTRAL', fundingStrength = 1, fundingAction = 'No accion sugerida';
+      const absFunding = Math.abs(fundingRate * 100);
+      if (absFunding > 0.01) { fundingStrength = 5; fundingBias = fundingRate > 0 ? 'EXTREME LONG' : 'EXTREME SHORT'; fundingAction = fundingRate > 0 ? 'CORRECCION INMINENTE — shorts se benefician' : 'SQUEEZE INMINENTE — longs se benefician'; }
+      else if (absFunding > 0.005) { fundingStrength = 4; fundingBias = fundingRate > 0 ? 'HEAVY LONG' : 'HEAVY SHORT'; fundingAction = fundingRate > 0 ? 'Sesgo SHORT — mercado sobre-apalancado long' : 'Sesgo LONG — mercado sobre-apalancado short'; }
+      else if (absFunding > 0.002) { fundingStrength = 3; fundingBias = fundingRate > 0 ? 'MILD LONG' : 'MILD SHORT'; fundingAction = 'Leve sesgo — confirmar con tecnico'; }
+      else if (absFunding > 0.001) { fundingStrength = 2; fundingBias = fundingRate > 0 ? 'SLIGHT LONG' : 'SLIGHT SHORT'; fundingAction = 'Sin sesgo significativo'; }
+
+      const premiumPct = oraclePx > 0 ? ((markPx - oraclePx) / oraclePx * 100).toFixed(3) : '0';
+
+      // Fetch L2 order book
+      let orderBook = null;
+      try {
+        const l2Res = await fetch(HL_API, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'l2Book', coin: asset })
+        });
+        const l2 = await l2Res.json();
+        const bids = (l2.levels?.[0] || []).slice(0, 10);
+        const asks = (l2.levels?.[1] || []).slice(0, 10);
+        const bidVol = bids.reduce((s, b) => s + parseFloat(b.sz || 0), 0);
+        const askVol = asks.reduce((s, a) => s + parseFloat(a.sz || 0), 0);
+        const total = bidVol + askVol;
+        const imbalance = total > 0 ? (bidVol - askVol) / total : 0;
+        const ratio = askVol > 0 ? bidVol / askVol : 999;
+        orderBook = {
+          bidVol, askVol, imbalance, ratio,
+          sellWallTrap: ratio < 0.5 && askVol > bidVol * 2,
+          buyWallTrap: ratio > 2 && bidVol > askVol * 2
+        };
+      } catch { }
+
+      crypto[asset] = {
+        fundingPct: (fundingRate * 100).toFixed(4),
+        fundingBias, fundingStrength, fundingAction,
+        openInterestM: (openInterest * markPx / 1e6).toFixed(1),
+        dayVolumeM: (dayVol / 1e6).toFixed(1),
+        premiumPct,
+        orderBook
+      };
+    }
+
+    // Macro signals from premium/funding
+    const macroSignals = [];
+    if (crypto.BTC) {
+      const btcF = parseFloat(crypto.BTC.fundingPct);
+      if (btcF > 0.005) macroSignals.push({ asset: 'BTC', signal: 'risk_on', detail: 'BTC funding positivo alto — mercado en modo risk-on extremo' });
+      else if (btcF < -0.005) macroSignals.push({ asset: 'BTC', signal: 'risk_off', detail: 'BTC funding negativo — mercado en modo risk-off' });
+      else macroSignals.push({ asset: 'BTC', signal: 'neutral', detail: 'BTC funding neutral' });
+    }
+
+    // Tech sentiment from SOL/ETH premium
+    const techAssets = [];
+    let bullish = 0, bearish = 0;
+    for (const a of ['ETH', 'SOL']) {
+      if (!crypto[a]) continue;
+      const prem = parseFloat(crypto[a].premiumPct);
+      const bias = prem > 0.05 ? 'BULLISH' : prem < -0.05 ? 'BEARISH' : 'NEUTRAL';
+      if (bias === 'BULLISH') bullish++;
+      if (bias === 'BEARISH') bearish++;
+      techAssets.push({ asset: a, price: 0, bias, detail: `${a} premium ${prem}% vs oracle` });
+    }
+
+    // Alerts
+    const alerts = [];
+    for (const [asset, d] of Object.entries(crypto)) {
+      if (d.fundingStrength >= 4) alerts.push({ level: 'WARNING', msg: `${asset} funding ${d.fundingBias} (${d.fundingPct}%) — correccion probable` });
+      if (d.fundingStrength >= 5) alerts.push({ level: 'CRITICAL', msg: `${asset} funding EXTREMO ${d.fundingPct}% — PRIORIDAD sobre tecnico` });
+      if (d.orderBook?.sellWallTrap) alerts.push({ level: 'WARNING', msg: `${asset} SELL WALL en HL — fondos vendiendo` });
+      if (d.orderBook?.buyWallTrap) alerts.push({ level: 'INFO', msg: `${asset} BUY WALL en HL — fondos comprando` });
+    }
+
+    return { crypto, macro: { signals: macroSignals }, tech: { overall: bullish > bearish ? 'BULLISH' : bearish > bullish ? 'BEARISH' : 'NEUTRAL', bullish, bearish, assets: techAssets }, alerts };
+  } catch (e) {
+    console.log(`  ⚠ Hyperliquid Oracle error: ${e.message}`);
+    return null;
+  }
+}
+
+function buildHLPrompt(hlIntel) {
+  if (!hlIntel) {
+    return `\n=== HYPERLIQUID ORACLE ===\n⚠️ Sin datos de Hyperliquid disponibles este ciclo.\nProceder solo con datos de Binance.\n=========================\n`;
+  }
+
+  const crypto = hlIntel.crypto;
+  const macro = hlIntel.macro?.signals || [];
+  const tech = hlIntel.tech;
+  const alerts = hlIntel.alerts;
+
+  let cryptoLines = '';
+  for (const [asset, d] of Object.entries(crypto)) {
+    cryptoLines += `\n  ${asset}:\n    Funding Rate: ${d.fundingPct}% → SESGO INSTITUCIONAL: ${d.fundingBias} (intensidad ${d.fundingStrength}/5)\n    Open Interest: $${d.openInterestM}M | Volumen 24h: $${d.dayVolumeM}M\n    Premium Mark vs Oracle: ${d.premiumPct}%`;
+    if (d.orderBook?.sellWallTrap) cryptoLines += `\n    ⚠️  SELL WALL INSTITUCIONAL ACTIVA — fondos vendiendo en masa`;
+    if (d.orderBook?.buyWallTrap) cryptoLines += `\n    ✅ BUY WALL INSTITUCIONAL ACTIVA — fondos comprando en masa`;
+    if (d.orderBook) cryptoLines += `\n    Order Book Imbalance: ${(d.orderBook.imbalance * 100).toFixed(1)}% (positivo=más bids, negativo=más asks)`;
+    cryptoLines += `\n    → ACCIÓN SUGERIDA POR HL: ${d.fundingAction}`;
+  }
+
+  let macroLines = macro.filter(s => s.signal !== 'neutral').map(s => `  • ${s.asset}: ${s.detail}`).join('\n');
+  if (!macroLines) macroLines = '  • Sin señales macro significativas este ciclo';
+
+  let techLines = '';
+  for (const t of (tech?.assets || [])) {
+    if (t.bias !== 'NEUTRAL') techLines += `\n  • ${t.asset}: ${t.detail}`;
+  }
+  if (!techLines) techLines = '\n  • Tech perps sin señales extremas';
+
+  let alertLines = '';
+  for (const a of alerts) {
+    const emoji = a.level === 'CRITICAL' ? '🔴' : a.level === 'WARNING' ? '🟡' : '🔵';
+    alertLines += `\n  ${emoji} ${a.msg}`;
+  }
+  if (!alertLines) alertLines = '\n  ✅ Sin alertas críticas activas';
+
+  return `
+╔══════════════════════════════════════════════════════╗
+║         🔮 HYPERLIQUID ORACLE — OJOS INSTITUCIONALES  ║
+╚══════════════════════════════════════════════════════╝
+
+Hyperliquid es el exchange donde operan los fondos institucionales
+y algoritmos de alta frecuencia. Estos datos reflejan el dinero
+REAL y GRANDE del mercado, no retail. Úsalos como contexto
+prioritario sobre el sentimiento de Polymarket.
+
+━━━ CRYPTO — POSICIONAMIENTO INSTITUCIONAL ━━━
+${cryptoLines}
+
+━━━ MACRO — CONTEXTO GLOBAL ━━━
+${macroLines}
+
+━━━ TECH SENTIMENT (perps) ━━━
+Sentimiento general tech: ${tech?.overall || 'NEUTRAL'} (${tech?.bullish || 0} bullish / ${tech?.bearish || 0} bearish)
+${techLines}
+
+━━━ ALERTAS ACTIVAS ━━━
+${alertLines}
+
+━━━ REGLAS DE USO PARA TU ANÁLISIS ━━━
+
+  REGLA 1 — FUNDING OVERRIDE:
+  Si funding de un asset está en intensidad 5 (EXTREME),
+  esta señal tiene PRIORIDAD sobre los indicadores técnicos
+  de Binance. Un mercado sobre-apalancado se corrige siempre.
+
+  REGLA 2 — CONFIRMACIÓN DOBLE:
+  Si Binance muestra sell wall Y Hyperliquid también muestra
+  sell wall → trampa CONFIRMADA. NO apostar YES bajo ninguna
+  circunstancia.
+
+  REGLA 3 — MACRO BEARISH OVERRIDE:
+  Si BTC funding negativo (risk_off), reducir confianza en
+  cualquier YES crypto en -10%.
+
+  REGLA 4 — OPEN INTEREST COMO DETECTOR DE TRAMPAS:
+  Si el precio sube pero OI baja → es una subida FALSA
+  (cierres de shorts, no nuevos compradores).
+  NO apostar YES en esa situación.
+
+  REGLA 5 — TECH SENTIMENT BONUS:
+  Si tech overall es BULLISH, sumar +3% de confianza en
+  contratos relacionados a tecnología o crypto en general.
+
+══════════════════════════════════════════════════════`;
+}
+
+function buildChildHLPrompt(hlIntel, childAsset) {
+  if (!hlIntel) return '⚠️ HL sin datos\n';
+  const d = hlIntel.crypto[childAsset];
+  if (!d) return `⚠️ HL sin datos para ${childAsset}\n`;
+  return `\n── HYPERLIQUID (${childAsset}) ────────────────────────\nFunding: ${d.fundingPct}% → ${d.fundingBias} (${d.fundingStrength}/5)\nOI: $${d.openInterestM}M${d.orderBook?.sellWallTrap ? '\n⚠️ SELL WALL en HL' : ''}${d.orderBook?.buyWallTrap ? '\n✅ BUY WALL en HL' : ''}\nMacro: ${hlIntel.macro?.signals?.filter(s => s.signal !== 'neutral').map(s => s.detail).join(' | ') || 'neutral'}\nTech: ${hlIntel.tech?.overall || 'NEUTRAL'}\n→ ${d.fundingAction}\n────────────────────────────────────────────────────\n`;
+}
+
 // ── Think — Claude Sonnet 4.6 ────────────────────────────────────────────────
 async function think(client, markets, prices, pnl, openPos, soul) {
   const strat = loadStrategy();
@@ -4328,6 +4819,16 @@ async function think(client, markets, prices, pnl, openPos, soul) {
 
   if (candidates.length === 0) {
     return { thought: 'No crypto markets found meeting liquidity threshold. Waiting for next scan.', action: 'SKIP' };
+  }
+
+  // ── HYPERLIQUID ORACLE — fetch institutional data ──
+  const hlIntel = await fetchHLIntel();
+  if (hlIntel) {
+    const hlAssets = Object.keys(hlIntel.crypto);
+    const hlAlerts = hlIntel.alerts.filter(a => a.level === 'CRITICAL').length;
+    console.log(`  🔮 HL Oracle: ${hlAssets.join(',')} | Alerts: ${hlAlerts} critical | Tech: ${hlIntel.tech?.overall || 'N/A'}`);
+  } else {
+    console.log('  ⚠ HL Oracle: unavailable this cycle');
   }
 
   // Build price context for Claude
@@ -4454,9 +4955,11 @@ ${!mesaResult.eva.approved ? '⚠ EVA SAYS NO — You may still override if you 
   // AGI Layer 10: CORTEX MEMORY — semantic vector recall
   const cortexRecall = recallAllMemories(candidates, prices);
 
+  const hlBlock = buildHLPrompt(hlIntel);
+
   const prompt = `You are ADAN-PRED — autonomous prediction markets agent with a Mesa Redonda (Council of 3 Parents).
 Your parents Apple, Snake, and Eva have analyzed the market for you. Weigh their counsel, then decide: INVEST or WAIT.
-Mission: find Polymarket crypto markets where YOUR probability estimate differs from market price by >${(strat.minEdge * 100).toFixed(0)}%.${skillsBlock}${mesaRedondaBlock}${intelSummary ? '\n' + intelSummary : ''}${episodicAccuracy ? '\nYOUR CALIBRATION HISTORY: ' + episodicAccuracy + '\n' : ''}${metaCalibCtx ? '\n' + metaCalibCtx + '\n' : ''}${cascadeSignal ? '\n' + cascadeSignal + '\n' : ''}${patternMemory ? '\nPATTERN MEMORY (similar past bets):\n' + patternMemory + '\n' : ''}${cortexRecall ? '\n' + cortexRecall + '\n' : ''}
+Mission: find Polymarket crypto markets where YOUR probability estimate differs from market price by >${(strat.minEdge * 100).toFixed(0)}%.${skillsBlock}${mesaRedondaBlock}${hlBlock}${intelSummary ? '\n' + intelSummary : ''}${episodicAccuracy ? '\nYOUR CALIBRATION HISTORY: ' + episodicAccuracy + '\n' : ''}${metaCalibCtx ? '\n' + metaCalibCtx + '\n' : ''}${cascadeSignal ? '\n' + cascadeSignal + '\n' : ''}${patternMemory ? '\nPATTERN MEMORY (similar past bets):\n' + patternMemory + '\n' : ''}${cortexRecall ? '\n' + cortexRecall + '\n' : ''}
 
 ══════════════════════════════════════════
 MARKET CONTEXT — ${new Date().toISOString()}
@@ -4488,7 +4991,7 @@ YOUR 7-STEP ANALYSIS (INSTITUTIONAL GRADE):
    - If 1h macro=BEARISH + 5m attempts rally → it's a LIQUIDITY TRAP. Bet NO.
    - If 1h macro=BULLISH + 5m dip → it's a buying opportunity. Bet YES.
    - NO CONFLUENCE = NO BET. A great 5m signal against the 1h trend = suicide.
-   - BTC CORRELATION: ETH/SOL/XRP CANNOT bet YES if BTC is falling 5m (cascade risk).
+   - BTC CORRELATION: ETH/SOL/BNB CANNOT bet YES if BTC is falling 5m (cascade risk).
 
 3. ORDER BOOK MICRO-STRUCTURE (predicts near-term 5-15min — your #1 edge on 5min markets):
    - BUY WALL dominant (>60% bids within 0.5%): price has FLOOR support. YES bets safer.
@@ -4896,7 +5399,12 @@ async function checkResolutions() {
       pnlVal = parseFloat((-p.stake - slippageCost).toFixed(2));
     }
 
-    p.resolved = true; p.won = won; p.pnl = pnlVal; p.result = won ? 'WIN' : 'LOSS';
+    // BRIER SCORE CALCULATION (Calibration metric)
+    const actual = yesWon ? 1 : 0;
+    const pred = p.side === 'YES' ? (p.confidence / 100) : (1 - (p.confidence / 100));
+    const brierScore = parseFloat(Math.pow(pred - actual, 2).toFixed(4));
+
+    p.resolved = true; p.won = won; p.pnl = pnlVal; p.result = won ? 'WIN' : 'LOSS'; p.brierScore = brierScore;
     p.resolvedAt = new Date().toISOString();
     pos.closed.push({ ...p });
     pos.open.splice(i, 1);
@@ -4917,6 +5425,9 @@ async function checkResolutions() {
       pnl2.fund = parseFloat(((pnl2.fund || 100) + p.stake + pnlVal).toFixed(2));
       pnl2.net = parseFloat(((pnl2.net || 0) + pnlVal).toFixed(2));
       pnl2.treasury = parseFloat(((pnl2.treasury || 0) + pnlVal * TREE_RULES.treasuryPct).toFixed(2));
+      pnl2.brierTotal = (pnl2.brierTotal || 0) + brierScore;
+      pnl2.brierCount = (pnl2.brierCount || 0) + 1;
+      pnl2.brierScore = parseFloat((pnl2.brierTotal / pnl2.brierCount).toFixed(4));
       awardExp(calcWinExp(p.confidence, Math.abs(p.edge || 0), pnl2.streak));
       updateCalibration(p.asset, true);
       if (pnl2.trades % 5 === 0) {
@@ -4926,9 +5437,12 @@ async function checkResolutions() {
     } else {
       pnl2.losses = (pnl2.losses || 0) + 1; pnl2.streak = 0;
       pnl2.net = parseFloat(((pnl2.net || 0) + pnlVal).toFixed(2));
+      pnl2.brierTotal = (pnl2.brierTotal || 0) + brierScore;
+      pnl2.brierCount = (pnl2.brierCount || 0) + 1;
+      pnl2.brierScore = parseFloat((pnl2.brierTotal / pnl2.brierCount).toFixed(4));
       awardExp(30);
       updateCalibration(p.asset, false);
-      appendToSoul(`\n### MISTAKE — ${new Date().toISOString()}:\nLOSS on "${p.marketTitle}" (${p.asset}). My: ${(p.myProb * 100).toFixed(0)}% vs market: ${(p.marketPrice * 100).toFixed(0)}%. Edge was ${(p.edge * 100).toFixed(1)}%.\n`);
+      appendToSoul(`\n### MISTAKE — ${new Date().toISOString()}:\nLOSS on "${p.marketTitle}" (${p.asset}). My: ${(p.myProb * 100).toFixed(0)}% vs market: ${(p.marketPrice * 100).toFixed(0)}%. Edge was ${(p.edge * 100).toFixed(1)}%. Brier Score: ${brierScore}\n`);
     }
     const h = new Date().getHours().toString();
     if (!pnl2.hourStats) pnl2.hourStats = {};

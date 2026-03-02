@@ -181,11 +181,19 @@ Gen3 WR > parent Gen2 WR + 12% (both 10+ trades) → parent eliminated, grandchi
 ## Dashboard UI
 
 - **Neural Pipeline** — animated SVG: Binance → Technical → Polymarket → Claude → Decision
+- **Avatar Customization V2** — Clickable avatar with distinct SVG geometries and style selectors
 - **Brain Log** — live Claude thought (cyan=thinking, green=BET, yellow=SKIP)
 - **Genetic Dynasty** — clickable SVG nodes. Click any child to see: DNA genome, intel signal, score history, EXP bar, grandchildren, trade history
 - **Dynasty Layout** — auto 2-row layout when >4 children. Grandchild mini-nodes below parents
 - **Status dot** — yellow pulsing = thinking | green = monitoring
+- **Agent Statistics** — Live tracking of Win Rate, Net P&L, Brier Score, and Trade counts
 - **Hour Heatmap** — UTC hours x historical win rate
+
+---
+
+## Conway Automaton Dashboard
+
+A standalone React + Vite tamagotchi-style monitoring dashboard for testing and visualizing the agent as a Conway automaton is available in the `conway-dashboard/` directory. It visualizes survival tiers, credit vitals, transaction feeds, and marketplace stats.
 
 ---
 
@@ -245,6 +253,7 @@ Gen3 WR > parent Gen2 WR + 12% (both 10+ trades) → parent eliminated, grandchi
 ```
 adam-skill/
 ├── adan-pred.js          # Full agent (~4200 lines)
+├── conway-dashboard/     # React Tamagotchi-style dashboard
 └── README.md
 
 ~/.adan-pred/

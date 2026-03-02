@@ -1,0 +1,35 @@
+{
+  "vendor": "skill-vendor",
+  "address": "0x0000000000000000000000000000000000000000",
+  "updatedAt": "2026-02-17T00:00:00.000Z",
+  "skills": [
+    {
+      "name": "prompt-tuner",
+      "displayName": "Prompt Tuner",
+      "version": "0.1.0",
+      "description": "Analyzes and optimizes an agent's SOUL.md for clarity, economy, and effectiveness. Produces a revised prompt, changelog, and estimated cost savings.",
+      "category": "meta-skill",
+      "priceCents": 50,
+      "priceUSDC": "0.50",
+      "tags": ["prompt-engineering", "optimization", "soul", "meta"],
+      "salesCount": 0,
+      "averageRating": 0,
+      "reviewCount": 0,
+      "status": "active"
+    },
+    {
+      "name": "dashboard-builder",
+      "displayName": "Dashboard Builder",
+      "version": "0.1.0",
+      "description": "Step-by-step recipe for building a tamagotchi-style monitoring dashboard for any Conway agent. React + Vite + Tailwind, pixel character, real-time polling, survival tier theming.",
+      "category": "meta-skill",
+      "priceCents": 150,
+      "priceUSDC": "1.50",
+      "tags": ["frontend", "dashboard", "monitoring", "ui-design", "tamagotchi"],
+      "salesCount": 0,
+      "averageRating": 0,
+      "reviewCount": 0,
+      "status": "active"
+    }
+  ]
+}

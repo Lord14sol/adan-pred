@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.mcp.json
+.claude/
+*.db
+*.jpeg
+*.mov
+CLAUDE.md

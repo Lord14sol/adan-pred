@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  /* Dark theme — inspired by Conway's deep navy + purple pixel aesthetic */
+  --color-cream: #0d0e1a;
+  --color-cream-dark: #1a1b2e;
+  --color-ink: #e8e8f0;
+  --color-ink-light: #b0b0c8;
+  --color-ink-muted: #6b6b8a;
+
+  --color-tier-normal: #22c55e;
+  --color-tier-normal-light: #86efac;
+  --color-tier-low: #eab308;
+  --color-tier-low-light: #fde047;
+  --color-tier-critical: #ef4444;
+  --color-tier-critical-light: #fca5a5;
+  --color-tier-dead: #6b7280;
+  --color-tier-dead-light: #9ca3af;
+
+  --color-green-accent: #22c55e;
+  --color-red-accent: #ef4444;
+  --color-purple-accent: #818cf8;
+
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+@keyframes bounce-gentle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes bounce-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
+@keyframes blink {
+  0%, 90%, 100% { opacity: 1; }
+  95% { opacity: 0; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+body {
+  font-family: var(--font-mono);
+  background-color: var(--color-cream);
+  color: var(--color-ink);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-muted);
+  border-radius: 3px;
+}
