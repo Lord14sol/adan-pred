@@ -15,6 +15,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
+import { BrainTransitionManager, runBrainCycle, ATLAS, APPLE, SNAKE, EVA } from './adan-brain-complete.js';
+
+const brainManager = new BrainTransitionManager();
 
 // ── Anti-crash: ignore broken pipes + catch unhandled errors ─────────────────
 process.stdout.on('error', e => { if (e.code === 'EPIPE') process.exit(0); });
@@ -87,6 +90,35 @@ const G = '\x1b[32m', Y = '\x1b[33m', R = '\x1b[31m';
 const B = '\x1b[34m', C = '\x1b[36m', M = '\x1b[35m';
 const W = '\x1b[97m', D = '\x1b[2m', X = '\x1b[0m';
 const BOLD = '\x1b[1m';
+
+function loadEnv() {
+  const envPath = path.join(process.cwd(), '.env');
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+    lines.forEach(l => {
+      const match = l.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+      if (match) {
+        const key = match[1];
+        let value = (match[2] || '').trim();
+        // Remove surrounding quotes if they exist
+        if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+        else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+
+        // Only set if not already set or if it's currently a placeholder
+        if (!process.env[key] || process.env[key] === 'FROM_ENV' || process.env[key] === '') {
+          process.env[key] = value;
+        }
+      }
+    });
+  }
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (key && key.startsWith('sk-ant')) {
+    console.log(G + '✅ API Key Loaded: ' + key.slice(0, 10) + '...' + key.slice(-4) + X);
+  } else {
+    console.log(R + '❌ API Key Error: Not found or invalid in .env' + X);
+  }
+}
+loadEnv();
 
 function cls() { process.stdout.write('\x1b[2J\x1b[H'); }
 function ensureDir() { if (!fs.existsSync(DIR)) fs.mkdirSync(DIR, { mode: 0o700, recursive: true }); }
@@ -1450,6 +1482,14 @@ async function refresh() {
   try {
     const r = await fetch('/api/state');
     const d = await r.json();
+    
+    // Fetch brain data
+    let brainData = null;
+    try {
+      const br = await fetch('/api/brains');
+      brainData = await br.json();
+    } catch(e) {}
+
     window._lastNFData = d; // for fast neural-flow spinner
     const pnl = d.pnl, xp = d.xp;
     const pct = pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0;
@@ -1677,7 +1717,7 @@ async function refresh() {
     }
 
     // Avatar
-    updateAvatar(d);
+    updateAvatar(d, brainData);
 
     // ADAN World Conway
     updateAdanWorld(d.children || [], d.config || {});
@@ -1696,14 +1736,28 @@ async function refresh() {
 }
 
 // ── Avatar update ─────────────────────────────────────────────────────────────
-function updateAvatar(d) {
+function updateAvatar(d, brainData) {
   const sprite = document.getElementById('av-sprite');
   const dot    = document.getElementById('av-dot');
   const stxt   = document.getElementById('av-status-txt');
   const title  = document.getElementById('av-title');
   if (!sprite || !dot || !stxt || !title) return;
 
-  if (d.config && d.config.avatar) {
+  // Render Golden Round Table Active Brain SVG
+  const activeBrain = brainData?.activeBrain || 'DEFAULT';
+  let pal = AVATAR_PALETTES.find(p => p.name === activeBrain);
+  if (!pal) pal = AVATAR_PALETTES.find(p => p.name === 'DEFAULT');
+  const svgWrap = document.getElementById('avatar-svg');
+  if (svgWrap && pal) {
+    // Check if we need to swap the inner SVG completely
+    if (!svgWrap.dataset.currentBrain || svgWrap.dataset.currentBrain !== activeBrain) {
+       svgWrap.innerHTML = pal.svg;
+       svgWrap.dataset.currentBrain = activeBrain;
+    }
+  }
+
+  // Fallback to legacy colors if Golden Table fails
+  if (!brainData && d.config && d.config.avatar) {
     const r = d.config.avatar;
     const h = document.getElementById('avatar-hair'); if (h && r.hairColor) h.style.fill = r.hairColor;
     const s = document.getElementById('avatar-suit'); if (s && r.suitColor) s.style.fill = r.suitColor;
@@ -1803,7 +1857,10 @@ function updateAvatar(d) {
     const titles = {1:'Web4 Node · Gen 1',3:'Scout Trader · Gen 1',5:'Intelligence Node',10:'Market Oracle',20:'Apex Predictor',40:'Sovereign Agent'};
     let tkey = 1;
     for (const k of Object.keys(titles).map(Number).sort((a,b)=>a-b)) { if ((xp?.level||1)>=k) tkey=k; }
-    title.textContent = (titles[tkey]||'Web4 Node') + ' · LVL '+(xp?.level||1);
+    
+    // Inject Active Brain prefix if present
+    const prefix = brainData ? '['+ activeBrain +'] ' : '';
+    title.textContent = prefix + (titles[tkey]||'Web4 Node') + ' · LVL '+(xp?.level||1);
   }
 }
 
@@ -1914,75 +1971,53 @@ function updateDecisionsLog(d) {
 
 // ── Neural Pipeline Visualization — RADIAL with ADAN center + 3 Parents orbiting ──
 function updateNeuralFlow(d) {
-  const wrap = document.getElementById('nf-wrap');
-  if (!wrap) return;
-  const isThinking = d.state?.mode === 'thinking';
-  const isDone     = d.state?.mode === 'result';
-  const isIdle     = !isThinking && !isDone;
+    const wrap = document.getElementById('nf-wrap');
+    if (!wrap) return;
+    const isThinking = d.state?.mode === 'thinking';
+    const isDone = d.state?.mode === 'result';
 
-  const prices  = d.state?.prices || {};
-  const markets = (d.state?.markets || []).slice(0,5);
-  const btc = prices['BTCUSDT'], eth = prices['ETHUSDT'], sol = prices['SOLUSDT'];
-  const hasPrices = !!btc;
+    const prices = d.state?.prices || {};
+    const btc = prices['BTCUSDT'];
 
-  const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
-  const frame  = frames[Math.floor(Date.now()/150) % frames.length];
-  const fmt    = (v,dp=2) => v!=null ? v.toFixed(dp) : '--';
-  const chgTxt = (p) => p ? (p.chg>=0?'+':'')+fmt(p.chg,1)+'%' : '--';
+    const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    const frame = frames[Math.floor(Date.now() / 150) % frames.length];
+    const fmt = (v, dp = 2) => v != null ? v.toFixed(dp) : '--';
+    const chgTxt = (p) => p ? (p.chg >= 0 ? '+' : '') + fmt(p.chg, 1) + '%' : '--';
 
-  const C_BG    = '#ccc8bc';
-  const C_CARD  = '#ddd9cc';
-  const C_CARD3 = '#e8e4d8';
-  const C_BRD   = '#1a1a1a';
-  const C_BRD2  = '#3a3a2a';
-  const C_TXT   = '#1a1a1a';
-  const C_DIM   = '#888878';
-  const C_SHD   = '#1a1a1a';
-  const C_CYA   = '#1a4a8a';
-  const C_GRN   = '#1a5a1a';
-  const C_PUR   = '#5a1a8a';
-  const C_YEL   = '#7a5a10';
-  const C_RED   = '#8a1a1a';
+    const C_CARD = '#ddd9cc';
+    const C_CARD3 = '#e8e4d8';
+    const C_BRD2 = '#3a3a2a';
+    const C_TXT = '#1a1a1a';
+    const C_DIM = '#888878';
+    const C_SHD = '#1a1a1a';
+    const C_CYA = '#1a4a8a';
+    const C_GRN = '#1a5a1a';
+    const C_PUR = '#5a1a8a';
+    const C_YEL = '#7a5a10';
+    const C_RED = '#8a1a1a';
 
-  const lnColor = isThinking ? C_CYA : isDone ? C_GRN : C_BRD2;
-  const ptDur   = isThinking ? '0.8s' : '2.5s';
-  const ptColor = isThinking ? C_CYA : isDone ? C_GRN : C_BRD2;
+    const lnColor = isThinking ? C_CYA : isDone ? C_GRN : C_BRD2;
 
-  // Radial layout
-  const SVG_W = 1000, SVG_H = 450;
-  const CX = SVG_W / 2, CY = SVG_H / 2;
-  const ORBIT_R = 150;
-  const ADAN_R = 40;
-  const PARENT_R = 30;
+    const SVG_W = 1000, SVG_H = 450;
+    const CX = SVG_W / 2, CY = SVG_H / 2;
+    const ORBIT_R = 150;
+    const ADAN_R = 40;
+    const PARENT_R = 30;
 
-  // Read parent intel for summaries
-  const children = d.children || [];
-  const appleIntel = children.find(c => c.spec === 'apple');
-  const snakeIntel = children.find(c => c.spec === 'snake');
-  const evaIntel = children.find(c => c.spec === 'eva');
-  const atlasIntel = children.find(c => c.spec === 'atlas');
+    const children = d.children || [];
+    const appleIntel = children.find(c => c.spec === 'apple');
+    const snakeIntel = children.find(c => c.spec === 'snake');
+    const evaIntel = children.find(c => c.spec === 'eva');
+    const atlasIntel = children.find(c => c.spec === 'atlas');
 
-  // Parent positions: 4 corners (angles: -45, 45, 135, -135 degrees)
-  const parentDefs = [
-    { id: 'apple', name: 'APPLE', icon: '🍎', color: C_YEL, angle: -45,
-      intel: appleIntel,
-      l1: appleIntel?.report?.opportunity || 'scanning...',
-      l2: appleIntel ? 'F&G:' + (appleIntel.report?.fgValue ?? '--') : 'waiting' },
-    { id: 'snake', name: 'SNAKE', icon: '🐍', color: C_GRN, angle: 45,
-      intel: snakeIntel,
-      l1: snakeIntel?.report?.viability || 'scanning...',
-      l2: snakeIntel ? 'Vol:' + (snakeIntel.report?.avgVolRatio ?? '--') + 'x' : 'waiting' },
-    { id: 'eva', name: 'EVA', icon: '👑', color: C_RED, angle: 135,
-      intel: evaIntel,
-      l1: evaIntel?.report?.approved ? 'APPROVED' : (evaIntel ? 'DENIED' : 'scanning...'),
-      l2: evaIntel ? 'Risk:' + (evaIntel.report?.riskLevel || '--') : 'waiting' },
-    { id: 'atlas', name: 'ATLAS', icon: '👁️‍🗨️', color: C_PUR, angle: -135,
-      intel: atlasIntel,
-      l1: atlasIntel?.report?.smartMoney || 'scanning...',
-      l2: atlasIntel ? 'Funding:' + (atlasIntel.report?.fundingRate || '--') : 'waiting' }
-  ];
+    const parentDefs = [
+        { id: 'apple', name: 'APPLE', icon: '🍎', color: C_YEL, angle: -45, intel: appleIntel, l1: appleIntel?.report?.opportunity || 'scanning...', l2: appleIntel ? 'F&G:' + (appleIntel.report?.fgValue ?? '--') : 'waiting' },
+        { id: 'snake', name: 'SNAKE', icon: '🐍', color: C_GRN, angle: 45, intel: snakeIntel, l1: snakeIntel?.report?.viability || 'scanning...', l2: snakeIntel ? 'Vol:' + (snakeIntel.report?.avgVolRatio ?? '--') + 'x' : 'waiting' },
+        { id: 'eva', name: 'EVA', icon: '👑', color: C_RED, angle: 135, intel: evaIntel, l1: evaIntel?.report?.approved ? 'APPROVED' : (evaIntel ? 'DENIED' : 'scanning...'), l2: evaIntel ? 'Risk:' + (evaIntel.report?.riskLevel || '--') : 'waiting' },
+        { id: 'atlas', name: 'ATLAS', icon: '👁️‍🗨️', color: C_PUR, angle: -135, intel: atlasIntel, l1: atlasIntel?.report?.smartMoney || 'scanning...', l2: atlasIntel ? 'Funding:' + (atlasIntel.report?.fundingRate || '--') : 'waiting' }
+    ];
 
-  let svg = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
+    let svg = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
   <defs>
     <marker id="arh-rad" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
       <path d="M0,0 L0,6 L6,3 z" fill="\${lnColor}"/>
@@ -1991,337 +2026,90 @@ function updateNeuralFlow(d) {
       <stop offset="0%" stop-color="\${C_PUR}" stop-opacity="0.3"/>
       <stop offset="100%" stop-color="\${C_PUR}" stop-opacity="0"/>
     </radialGradient>
-    <filter id="glow-f"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  </defs>
-  <rect width="\${SVG_W}" height="\${SVG_H}" fill="none"/>\`;
+  </defs>\`;
 
-  // Orbit ring (subtle)
-  svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ORBIT_R}" fill="none" stroke="\${C_BRD2}" stroke-width="1" stroke-dasharray="4 4" opacity="0.3"/>\`;
+    svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ORBIT_R}" fill="none" stroke="\${C_BRD2}" stroke-width="1" stroke-dasharray="4 4" opacity="0.3"/>\`;
 
-  // ── Connection lines + animated particles from Parents → ADAN ─────────
-  parentDefs.forEach((p, i) => {
-    const rad = p.angle * Math.PI / 180;
-    const px = CX + ORBIT_R * Math.cos(rad);
-    const py = CY + ORBIT_R * Math.sin(rad);
-    // Line from parent to ADAN center
-    const dx = CX - px, dy = CY - py;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    const nx = dx/dist, ny = dy/dist;
-    const x1 = px + nx * PARENT_R;
-    const y1 = py + ny * PARENT_R;
-    const x2 = CX - nx * ADAN_R;
-    const y2 = CY - ny * ADAN_R;
-    // Confidence opacity for line
-    const conf = p.intel?.signal?.conf || 30;
-    const lineOpacity = Math.max(0.3, Math.min(1, conf / 100));
+    parentDefs.forEach((p, i) => {
+        const rad = p.angle * Math.PI / 180;
+        const px = CX + ORBIT_R * Math.cos(rad);
+        const py = CY + ORBIT_R * Math.sin(rad);
+        const distC = Math.sqrt(Math.pow(CX - px, 2) + Math.pow(CY - py, 2));
+        const x1 = px + (CX - px) / distC * PARENT_R;
+        const y1 = py + (CY - py) / distC * PARENT_R;
+        const x2 = CX - (CX - px) / distC * ADAN_R;
+        const y2 = CY - (CY - py) / distC * ADAN_R;
+        const lineOpacity = Math.max(0.3, Math.min(1, (p.intel?.signal?.conf || 30) / 100));
+        const ptDur = isThinking ? '0.5s' : '1.5s';
 
-    const ptDur   = isThinking ? '0.5s' : '1.5s';
-    
-    svg += \`<path id="radp\${i}" d="M\${x1.toFixed(1)},\${y1.toFixed(1)} L\${x2.toFixed(1)},\${y2.toFixed(1)}" stroke="\${p.color}" stroke-width="1.5" stroke-dasharray="4 3" fill="none" opacity="\${lineOpacity}" marker-end="url(#arh-rad)"/>
-    <path id="radv\${i}" d="M\${x1.toFixed(1)},\${y1.toFixed(1)} L\${x2.toFixed(1)},\${y2.toFixed(1)}" stroke="none" fill="none"/>
-    
-    <!-- Heavy Flow Particles (Bolitas) -->
-    <circle r="3" fill="\${p.color}" opacity="\${lineOpacity}">
-      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="0s"><mpath href="#radv\${i}"/></animateMotion>
-    </circle>
-    <circle r="2" fill="\${p.color}" opacity="\${lineOpacity * 0.8}">
-      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="0.3s"><mpath href="#radv\${i}"/></animateMotion>
-    </circle>
-    <circle r="2" fill="\${p.color}" opacity="\${lineOpacity * 0.6}">
-      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="0.6s"><mpath href="#radv\${i}"/></animateMotion>
-    </circle>
-    <circle r="1.5" fill="\${p.color}" opacity="\${lineOpacity * 0.4}">
-      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="0.9s"><mpath href="#radv\${i}"/></animateMotion>
-    </circle>
-    <circle r="1.5" fill="\${p.color}" opacity="\${lineOpacity * 0.4}">
-      <animateMotion dur="\${ptDur}" repeatCount="indefinite" begin="1.2s"><mpath href="#radv\${i}"/></animateMotion>
-    </circle>\`;
-  });
-
-  // ── ADAN central node (large) ─────────────────────────────────────────
-  // Glow background
-  svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 15}" fill="url(#adan-glow)"/>\`;
-
-  // Pulse rings when thinking
-  if (isThinking) {
-    svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 8}" fill="none" stroke="\${C_CYA}" stroke-width="1.5" opacity=".3" class="nf-pulse"/>
-    <circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 18}" fill="none" stroke="\${C_CYA}" stroke-width=".8" opacity=".15" class="nf-pulse" style="animation-delay:.3s"/>
-    <circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 28}" fill="none" stroke="\${C_CYA}" stroke-width=".5" opacity=".07" class="nf-pulse" style="animation-delay:.6s"/>\`;
-  }
-
-  // Decision shockwave
-  if (isDone) {
-    svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 5}" fill="none" stroke="\${d.state?.thought?.includes('BET') ? C_GRN : C_RED}" stroke-width="2" opacity=".5" class="nf-pulse"/>
-    <circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 20}" fill="none" stroke="\${d.state?.thought?.includes('BET') ? C_GRN : C_RED}" stroke-width="1" opacity=".2" class="nf-pulse" style="animation-delay:.2s"/>\`;
-  }
-
-  // ADAN circle
-  const adanBorder = isThinking ? C_CYA : isDone ? C_GRN : C_PUR;
-  const adanFill = isThinking ? C_CARD3 : C_CARD;
-  svg += \`<rect x="\${CX+3-ADAN_R}" y="\${CY+3-ADAN_R}" width="\${ADAN_R*2}" height="\${ADAN_R*2}" fill="\${C_SHD}" rx="0"/>
-  <rect x="\${CX-ADAN_R}" y="\${CY-ADAN_R}" width="\${ADAN_R*2}" height="\${ADAN_R*2}" fill="\${adanFill}" stroke="\${adanBorder}" stroke-width="2.5" rx="0"\${isThinking?' class="nf-thinking"':''} onclick="showAdanDetail()" style="cursor:pointer"/>
-  <text x="\${CX}" y="\${CY-12}" text-anchor="middle" font-size="7" font-weight="700" fill="\${C_PUR}" font-family="JetBrains Mono,monospace" letter-spacing="1.5" onclick="showAdanDetail()" style="cursor:pointer">ADAN</text>
-  <text x="\${CX}" y="\${CY+4}" text-anchor="middle" font-size="18" fill="\${isThinking?C_CYA:C_PUR}" font-family="JetBrains Mono,monospace" font-weight="700" id="nf-claude-icon">\${isThinking?frame:(isDone?'◉':'◈')}</text>
-  <text x="\${CX}" y="\${CY+18}" text-anchor="middle" font-size="8" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${isThinking?'analyzing':(isDone?(d.state?.thought?.includes('BET')?'BET':'SKIP'):'idle')}</text>
-  <text x="\${CX}" y="\${CY+28}" text-anchor="middle" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" opacity=".6">Sonnet 4.6</text>\`;
-
-  const tSecGlobal = Date.now() / 1000;
-
-  // ── Render orbiting children for ADAN himself (Inner Ring) ──
-  const adanChildren = children.filter(c => (c.faction?.toLowerCase() === 'adan' || c.name?.toLowerCase().includes('ad')) && c.status !== 'dead');
-  const adanOrbitR = ADAN_R + 18;
-  if (adanChildren.length > 0) {
-    svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${adanOrbitR}" fill="none" stroke="\${C_PUR}" stroke-width="0.5" stroke-dasharray="1 3" opacity="0.4"/>\`;
-  }
-  adanChildren.forEach((child, ci) => {
-    const globalIdx = children.indexOf(child);
-    const durSec = 12; // 12s per orbit
-    const baseAngle = (tSecGlobal % durSec) / durSec * 360;
-    const offsetAngle = (ci / adanChildren.length) * 360;
-    const startAngle = -(baseAngle + offsetAngle); // Counter-clockwise
-    const endAngle = startAngle - 360; 
-
-    svg += \`<g transform="translate(\${CX}, \${CY})">
-      <g>
-        <animateTransform attributeName="transform" type="rotate" from="\${startAngle} 0 0" to="\${endAngle} 0 0" dur="\${durSec}s" repeatCount="indefinite"/>
-        <g transform="translate(\${adanOrbitR}, 0)">
-          <animateTransform attributeName="transform" type="rotate" from="\${-startAngle} 0 0" to="\${-endAngle} 0 0" dur="\${durSec}s" repeatCount="indefinite"/>
-          <g onclick="showChildDetail(\${globalIdx})" style="cursor:pointer;">
-            <rect x="-4" y="-4" width="8" height="8" fill="\${C_CARD}" stroke="\${C_PUR}" stroke-width="1.5" transform="rotate(45)"/>
-            <text x="0" y="2" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(child.name||child.spec).slice(0,2).toUpperCase()}</text>
-          </g>
-        </g>
-      </g>
-    </g>\`;
-  });
-
-  // ── Parent orbital nodes ──────────────────────────────────────────────
-  parentDefs.forEach((p, i) => {
-    const rad = p.angle * Math.PI / 180;
-    const px = CX + ORBIT_R * Math.cos(rad);
-    const py = CY + ORBIT_R * Math.sin(rad);
-    const conf = p.intel?.signal?.conf || 30;
-    const nodeOpacity = Math.max(0.3, Math.min(1, conf / 100));
-
-    // Shadow
-    svg += \`<rect x="\${px+2-PARENT_R}" y="\${py+2-PARENT_R}" width="\${PARENT_R*2}" height="\${PARENT_R*2}" fill="\${C_SHD}" rx="0" opacity="0.5"/>\`;
-    
-    // Draw Neural Cord connecting Parent directly to ADAN
-    svg += \`<path d="M\${px},\${py} L\${CX},\${CY}" stroke="\${p.color}" stroke-width="1.2" stroke-dasharray="2 4" fill="none" opacity="0.6"/>\`;
-    const pParts = 3;
-    const durP = 2.5;
-    for (let pt = 0; pt < pParts; pt++) {
-        const ptId = \`padp\${i}_\${pt}\`;
-        const phaseShift = pt * (durP / pParts);
-        const beginTime = - ((tSecGlobal + phaseShift) % durP);
-        
-        svg += \`<circle r="2" fill="\${p.color}" opacity="0.9">
-          <animate motionPath="\${ptId}" attributeName="opacity" values="0;1;1;0" dur="\${durP}s" begin="\${beginTime}s" repeatCount="indefinite"/>
-          <animateMotion dur="\${durP}s" begin="\${beginTime}s" repeatCount="indefinite">
-            <mpath href="#\${ptId}"/>
-          </animateMotion>
-        </circle>
-        <path id="\${ptId}" d="M\${px},\${py} L\${CX},\${CY}" fill="none" stroke="none"/>\`;
-    }
-
-    // Node
-    svg += \`<g onclick="showParentDetail('\${p.id}')" style="cursor:pointer">
-      <rect x="\${px-PARENT_R}" y="\${py-PARENT_R}" width="\${PARENT_R*2}" height="\${PARENT_R*2}" fill="\${C_CARD}" stroke="\${p.color}" stroke-width="2" rx="0" opacity="\${nodeOpacity}"/>
-      <text x="\${px}" y="\${py-10}" text-anchor="middle" font-size="6.5" font-weight="700" fill="\${p.color}" font-family="JetBrains Mono,monospace" letter-spacing="1">\${p.name}</text>
-      <text x="\${px}" y="\${py+2}" text-anchor="middle" font-size="12">\${p.icon}</text>
-      <text x="\${px}" y="\${py+14}" text-anchor="middle" font-size="7.5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(p.l1||'').slice(0,12)}</text>
-      <text x="\${px}" y="\${py+23}" text-anchor="middle" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${(p.l2||'').slice(0,12)}</text>
-    </g>\`;
-
-    // ── Render orbiting children for this parent ─────────────────────
-    // Note: c.name is 'A1', 'S1', 'E1', 'AT1'. c.faction is 'apple', 'snake', 'eva', 'atlas', 'adan'
-    const pChildren = children.filter(c => {
-      if (['apple','snake','eva','atlas'].includes(c.spec)) return false; // Exclude parent specs themselves
-      if (c.status === 'dead') return false; // Hide dead children from visual orbit
-      const f = (c.faction || '').toLowerCase();
-      // Match explicit faction or prefix match
-      return f === p.id || (c.name && c.name.toLowerCase().startsWith(p.id.charAt(0))); 
+        svg += \`<path d="M\${x1.toFixed(1)},\${y1.toFixed(1)} L\${x2.toFixed(1)},\${y2.toFixed(1)}" stroke="\${p.color}" stroke-width="1.5" stroke-dasharray="4 3" fill="none" opacity="\${lineOpacity}" marker-end="url(#arh-rad)"/>\`;
+        for (let pt = 0; pt < 5; pt++) {
+            svg += \`<circle r="2" fill="\${p.color}" opacity="\${lineOpacity * (1 - pt / 10)}">
+        <animateMotion path="M\${x1.toFixed(1)},\${y1.toFixed(1)} L\${x2.toFixed(1)},\${y2.toFixed(1)}" dur="\${ptDur}" begin="\${pt * 0.3}s" repeatCount="indefinite"/>
+      </circle>\`;
+        }
     });
-    
-    // Orbit radius for children
-    const childOrbitR = PARENT_R + 35;
-    
-    if (pChildren.length > 0) {
-      svg += \`<circle cx="\${px}" cy="\${py}" r="\${childOrbitR}" fill="none" stroke="\${p.color}" stroke-width="0.5" stroke-dasharray="2 4" opacity="0.3"/>\`;
+
+    svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 15}" fill="url(#adan-glow)"/>\`;
+    if (isThinking) {
+        svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 8}" fill="none" stroke="\${C_CYA}" stroke-width="1.5" opacity=".3" class="nf-pulse"/>\`;
     }
 
-    pChildren.forEach((child, ci) => {
-      const globalIdx = children.indexOf(child);
-      const isDead = child.status === 'dead';
-      if (isDead) return;
+    const adanBorder = isThinking ? C_CYA : isDone ? C_GRN : C_PUR;
+    svg += \`<rect x="\${CX - ADAN_R}" y="\${CY - ADAN_R}" width="\${ADAN_R * 2}" height="\${ADAN_R * 2}" fill="\${C_CARD}" stroke="\${adanBorder}" stroke-width="2.5" onclick="showAdanDetail()" style="cursor:pointer"/>
+  <text x="\${CX}" y="\${CY - 12}" text-anchor="middle" font-size="7" font-weight="700" fill="\${C_PUR}" font-family="JetBrains Mono,monospace" letter-spacing="1.5">ADAN</text>
+  <text x="\${CX}" y="\${CY + 4}" text-anchor="middle" font-size="18" fill="\${isThinking ? C_CYA : C_PUR}" font-family="JetBrains Mono,monospace" font-weight="700">\${isThinking ? frame : (isDone ? '◉' : '◈')}</text>
+  <text x="\${CX}" y="\${CY + 18}" text-anchor="middle" font-size="8" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${isThinking ? 'analyzing' : (isDone ? (d.state?.thought?.includes('BET') ? 'BET' : 'SKIP') : 'idle')}</text>\`;
 
-      const durSec = 16; 
-      const baseAngle = (tSecGlobal % durSec) / durSec * 360;
-      const offsetAngle = (ci / pChildren.length) * 360;
-      const startAngle = baseAngle + offsetAngle;
-      const endAngle = startAngle + 360;
+    const tSecGlobal = Date.now() / 1000;
+    parentDefs.forEach((p) => {
+        const rad = p.angle * Math.PI / 180;
+        const px = CX + ORBIT_R * Math.cos(rad);
+        const py = CY + ORBIT_R * Math.sin(rad);
 
-      svg += \`<g transform="translate(\${px}, \${py})">
+        svg += \`<g onclick="showParentDetail('\${p.id}')" style="cursor:pointer">
+      <rect x="\${px - PARENT_R}" y="\${py - PARENT_R}" width="\${PARENT_R * 2}" height="\${PARENT_R * 2}" fill="\${C_CARD}" stroke="\${p.color}" stroke-width="2"/>
+      <text x="\${px}" y="\${py - 10}" text-anchor="middle" font-size="6.5" font-weight="700" fill="\${p.color}" font-family="JetBrains Mono,monospace">\${p.name}</text>
+      <text x="\${px}" y="\${py + 2}" text-anchor="middle" font-size="12">\${p.icon}</text>
+    </g>\`;
+
+        const pChildren = children.filter(c => c.status !== 'dead' && (c.faction?.toLowerCase() === p.id || (c.name && c.name.toLowerCase().startsWith(p.id.charAt(0)))));
+        const childOrbitR = PARENT_R + 35;
+        if (pChildren.length > 0) {
+            svg += \`<circle cx="\${px}" cy="\${py}" r="\${childOrbitR}" fill="none" stroke="\${p.color}" stroke-width="0.5" stroke-dasharray="2 4" opacity="0.3"/>\`;
+        }
+
+        pChildren.forEach((child, ci) => {
+            const globalIdx = children.indexOf(child);
+            const startAngle = (tSecGlobal % 16) / 16 * 360 + (ci / pChildren.length) * 360;
+            svg += \`<g transform="translate(\${px}, \${py})">
         <g>
-          <animateTransform attributeName="transform" type="rotate" from="\${startAngle} 0 0" to="\${endAngle} 0 0" dur="\${durSec}s" repeatCount="indefinite"/>
-          
-          <line x1="0" y1="0" x2="\${childOrbitR}" y2="0" stroke="\${p.color}" stroke-width="0.8" stroke-dasharray="1 2" opacity="0.6"/>
-          \`;
-          
-          const parts = 2;
-          const durP = 1.2;
-          for (let pt = 0; pt < parts; pt++) {
-            const phaseShift = pt * (durP / parts);
-            const beginTime = - ((tSecGlobal + phaseShift) % durP);
-            // Particles flow from child (R, 0) to parent (0, 0)
-            svg += \`<circle cy="0" r="1.5" fill="\${C_TXT}" opacity="0.8">
-              <animate attributeName="cx" from="\${childOrbitR}" to="0" dur="\${durP}s" begin="\${beginTime}s" repeatCount="indefinite"/>
-              <animate attributeName="opacity" values="0;1;0" dur="\${durP}s" begin="\${beginTime}s" repeatCount="indefinite"/>
-            </circle>\`;
-          }
-
+          <animateTransform attributeName="transform" type="rotate" from="\${startAngle} 0 0" to="\${startAngle + 360} 0 0" dur="16s" repeatCount="indefinite" />
           <g transform="translate(\${childOrbitR}, 0)">
             <g>
-              <animateTransform attributeName="transform" type="rotate" from="\${-startAngle} 0 0" to="\${-(startAngle+360)} 0 0" dur="\${durSec}s" repeatCount="indefinite"/>
-              
-              \${ /* Highlight birth animation for < 5 mins old */
-                 (Date.now() - new Date(child.born||0).getTime()) < 300000 ? 
-                 \`<circle cx="0" cy="0" r="14" fill="none" stroke="\${C_GRN}" stroke-width="2" opacity="0">
-                    <animate attributeName="opacity" values="1;0" dur="2s" repeatCount="indefinite"/>
-                    <animate attributeName="r" values="8;16" dur="2s" repeatCount="indefinite"/>
-                  </circle>\` : '' 
-               }
-              
+              <animateTransform attributeName="transform" type="rotate" from="\${-startAngle} 0 0" to="\${-(startAngle + 360)} 0 0" dur="16s" repeatCount="indefinite" />
               <g onclick="showChildDetail(\${globalIdx})" style="cursor:pointer;">
-                <circle cx="0" cy="0" r="8" fill="\${C_CARD3}" stroke="\${C_CYA}" stroke-width="1.5"/>
-                <text x="0" y="2" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(child.name||child.spec).slice(0,3).toUpperCase()}</text>
+                <circle cx="0" cy="0" r="8" fill="\${C_CARD3}" stroke="\${C_CYA}" stroke-width="1.5" />
+                <text x="0" y="2" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(child.name || child.spec).slice(0, 3).toUpperCase()}</text>
               </g>
             </g>
           </g>
         </g>
       </g>\`;
+        });
     });
-  });
 
-  // ── Fixed ADAN Direct Children (Hermes, Prometheus, etc) ────────────────
-  const directChildrenCount = adanChildren.length;
-  // Placed as 3 on the left, 3 on the right in vertical formation
-  const sideX_L = CX - (ORBIT_R + 110);
-  const sideX_R = CX + (ORBIT_R + 110);
-  
-  adanChildren.forEach((child, ci) => {
-    const sideX = (ci % 2 === 0) ? sideX_L : sideX_R;
-    const vOffset = (Math.floor(ci / 2) - 1) * 45; 
-    const sideY = CY + vOffset;
-    const globalIdx = children.indexOf(child);
-    
-    svg += \`<path d="M\${sideX},\${sideY} L\${CX},\${CY}" stroke="\${C_PUR}" stroke-width="0.8" stroke-dasharray="1 3" fill="none" opacity="0.6"/>\`;
-    
-    const parts = 3;
-    const durP = 2.0;
-    for (let pt = 0; pt < parts; pt++) {
-        const ptId = \`adcp\${ci}_\${pt}\`;
-        const phaseShift = pt * (durP / parts);
-        const beginTime = - ((tSecGlobal + phaseShift) % durP);
-        
-        svg += \`<circle r="1.5" fill="\${C_PUR}" opacity="0.8">
-          <animate motionPath="\${ptId}" attributeName="opacity" values="0;1;0" dur="\${durP}s" begin="\${beginTime}s" repeatCount="indefinite"/>
-          <animateMotion dur="\${durP}s" begin="\${beginTime}s" repeatCount="indefinite">
-            <mpath href="#\${ptId}"/>
-          </animateMotion>
-        </circle>\`;
-        svg += \`<path id="\${ptId}" d="M\${sideX},\${sideY} L\${CX},\${CY}" fill="none" stroke="none"/>\`;
+    svg += '</svg>';
+    wrap.innerHTML = svg;
+
+    const dot = document.getElementById('cmd-live-dot');
+    const txt = document.getElementById('cmd-live-txt');
+    if (dot) dot.className = 'cmd-live-dot' + (isThinking ? ' thinking' : (btc ? '' : ' idle'));
+    if (txt) {
+        txt.textContent = isThinking ? 'THINKING — Sonnet 4.6 analyzing' : isDone ? 'DECISION MADE' : (btc ? 'MONITORING · live prices' : 'INITIALIZING');
+        txt.style.color = isThinking ? 'var(--cyan)' : isDone ? 'var(--green)' : 'var(--text2)';
     }
-
-    svg += \`<g onclick="showChildDetail(\${globalIdx})" style="cursor:pointer">
-      <rect x="\${sideX-18}" y="\${sideY-12}" width="36" height="24" fill="\${C_CARD}" stroke="\${C_PUR}" stroke-width="1.5" rx="3"/>
-      <text x="\${sideX}" y="\${sideY-16}" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-weight="700" font-family="JetBrains Mono,monospace">\${child.name.toUpperCase()}</text>
-      <text x="\${sideX}" y="\${sideY+3}" text-anchor="middle" font-size="10">\${['⚡','🛡️','🧭','🧬','🔮','⚙️'][ci%6]}</text>
-      <text x="\${sideX}" y="\${sideY+15}" text-anchor="middle" font-size="5" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${(child.spec||'').slice(0,6)}</text>
-    </g>\`;
-  });
-
-  // ── Data Sources (Binance, Hyperliquid, Jupiter) ────────────────────
-  const srcY = 15;
-  const dataSources = [
-    { label: 'BINANCE HUB', color: C_YEL, nx: Math.cos(-45 * Math.PI/180), ny: Math.sin(-45 * Math.PI/180) }, // Apple
-    { label: 'HYPERLIQUID', color: C_PUR, nx: Math.cos(-135 * Math.PI/180), ny: Math.sin(-135 * Math.PI/180) }, // Atlas
-    { label: 'JUPITER DEX', color: C_GRN, nx: Math.cos(45 * Math.PI/180), ny: Math.sin(45 * Math.PI/180) } // Snake
-  ];
-
-  dataSources.forEach((src, i) => {
-    // Positioning outside the orbit ring
-    const srcX = CX + (ORBIT_R + 60) * src.nx;
-    const srcY = CY + (ORBIT_R + 50) * src.ny;
-    
-    // Draw flow line from source to nearest parent
-    const nearestParent = parentDefs.reduce((prev, curr) => {
-      const pRad = curr.angle * Math.PI / 180;
-      const pX = CX + ORBIT_R * Math.cos(pRad);
-      const pY = CY + ORBIT_R * Math.sin(pRad);
-      const dist = Math.sqrt(Math.pow(pX-srcX,2) + Math.pow(pY-srcY,2));
-      const prevDist = Math.sqrt(Math.pow((CX + ORBIT_R * Math.cos(prev.angle * Math.PI / 180))-srcX,2) + Math.pow((CY + ORBIT_R * Math.sin(prev.angle * Math.PI / 180))-srcY,2));
-      return dist < prevDist ? curr : prev;
-    });
-
-    const npRad = nearestParent.angle * Math.PI / 180;
-    const pX = CX + ORBIT_R * Math.cos(npRad);
-    const pY = CY + ORBIT_R * Math.sin(npRad);
-
-    svg += \`<path d="M\${srcX},\${srcY} L\${pX},\${pY}" stroke="\${src.color}" stroke-width="1" stroke-dasharray="2 3" fill="none" opacity="0.4"/>\`;
-
-    // Draw Source Box
-    svg += \`<rect x="\${srcX-35}" y="\${srcY-10}" width="70" height="20" fill="\${C_CARD3}" stroke="\${src.color}" stroke-width="1" rx="0"/>
-    <text x="\${srcX}" y="\${srcY+3}" text-anchor="middle" font-size="6" font-weight="700" fill="\${src.color}" font-family="JetBrains Mono,monospace">\${src.label}</text>\`;
-  });
-
-  // Side info panels — BTC price + market count (left), Decision status (right)
-  const leftX = 10, rightX = SVG_W - 160;
-  // Left: live data
-  svg += \`<rect x="\${leftX}" y="10" width="140" height="70" fill="\${C_CARD}" stroke="\${C_BRD2}" stroke-width="1" rx="0"/>
-  <text x="\${leftX+8}" y="24" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" font-weight="700" letter-spacing="1">LIVE DATA</text>
-  <text x="\${leftX+8}" y="38" font-size="9" fill="\${C_YEL}" font-family="JetBrains Mono,monospace">BTC \${btc?chgTxt(btc):'--'}</text>
-  <text x="\${leftX+8}" y="50" font-size="8" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">RSI \${btc?fmt(btc.rsi,0):'--'} | Vol \${btc?.vol?.ratio?.toFixed(1)||'--'}x</text>
-  <text x="\${leftX+8}" y="62" font-size="8" fill="\${C_CYA}" font-family="JetBrains Mono,monospace">\${markets.length} markets</text>\`;
-
-  // Right: decision
-  svg += \`<rect x="\${rightX}" y="10" width="150" height="70" fill="\${C_CARD}" stroke="\${isDone?(d.state?.thought?.includes('BET')?C_GRN:C_RED):C_BRD2}" stroke-width="\${isDone?'2':'1'}" rx="0"/>
-  <text x="\${rightX+8}" y="24" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" font-weight="700" letter-spacing="1">DECISION</text>
-  <text x="\${rightX+8}" y="40" font-size="11" fill="\${isDone?(d.state?.thought?.includes('BET')?C_GRN:C_RED):C_DIM}" font-family="JetBrains Mono,monospace" font-weight="700" id="nf-dec-icon">\${isDone?(d.state?.thought?.includes('BET')?'● BET':'● SKIP'):(isThinking?frame:'○ WAIT')}</text>
-  <text x="\${rightX+8}" y="54" font-size="8" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${isDone&&d.state?.thought?.includes('BET')?'position open':(isThinking?'analyzing...':'monitoring')}</text>
-  <text x="\${rightX+8}" y="66" font-size="7" fill="\${C_DIM}" font-family="JetBrains Mono,monospace" opacity=".6">\${prices._meta?.fearGreed?'F&G: '+prices._meta.fearGreed.value:''}</text>\`;
-
-  // Bottom label
-  const nextAt = d.state?.nextScanAt;
-  let countdown = '';
-  if(nextAt && isIdle){
-    const rem = Math.max(0, Math.round((nextAt-Date.now())/1000));
-    countdown = \`\${Math.floor(rem/60)}:\${String(rem%60).padStart(2,'0')}\`;
-  }
-  const stLabel = isThinking?'◈ ANALYZING':isDone?'✓ DECIDED':(hasPrices&&countdown?'NEXT '+countdown:(hasPrices?'MONITORING':'INIT'));
-  const stColor = isThinking?C_CYA:isDone?C_GRN:C_DIM;
-  svg+=\`<text x="\${SVG_W/2}" y="\${SVG_H-6}" text-anchor="middle" font-size="7" fill="\${stColor}" font-family="JetBrains Mono,monospace" letter-spacing="1.5">\${stLabel}</text>\`;
-
-  svg+='</svg>';
-  wrap.innerHTML = svg;
-
-  // Topbar state
-  const dot = document.getElementById('cmd-live-dot');
-  const txt = document.getElementById('cmd-live-txt');
-  const bar = document.getElementById('cmd-scan-bar');
-  if(dot) dot.className = 'cmd-live-dot'+(isThinking?' thinking':(hasPrices?'':' idle'));
-  if(txt){
-    txt.textContent = isThinking?'THINKING — Sonnet 4.6 analyzing':isDone?'DECISION MADE':(hasPrices?'MONITORING · live prices':'INITIALIZING');
-    txt.style.color = isThinking?'var(--cyan)':isDone?'var(--green)':'var(--text2)';
-  }
-  if(bar && (isThinking||isDone)){
-    bar.style.width = isThinking?'98%':'100%';
-    bar.style.background = isThinking?'var(--cyan)':'var(--green)';
-    const eta = document.getElementById('cmd-scan-eta');
-    if(eta) eta.textContent = isThinking?'scanning now...':isDone?'done':'';
-  }
 }
-
 // ── Dynasty Network — Golden Round Table + The Forge ───────────────────────────────
 function updateDynastyPanel(d) {
   const el = document.getElementById('dynasty-panel');
@@ -2354,7 +2142,7 @@ function updateDynastyPanel(d) {
       const icon = icons[parent.id] || '◈';
       const report = intel?.report;
       const conf = intel?.signal?.conf || 0;
-      
+
       const lastSeen = new Date(intel?.ts || 0).getTime();
       const isOnline = !!intel && (Date.now() - lastSeen) < 1800000; // 30 min threshold
       const isInitializing = !intel || lastSeen === 0;
@@ -2390,12 +2178,12 @@ function updateDynastyPanel(d) {
 
       // Pixel art automaton sprite using CSS box-shadow (7px grid)
       const px = 3; // pixel size
-      const p1 = px + 'px', pm1 = '-' + px + 'px', p2 = (2*px) + 'px', pm2 = '-' + (2*px) + 'px';
+      const p1 = px + 'px', pm1 = '-' + px + 'px', p2 = (2 * px) + 'px', pm2 = '-' + (2 * px) + 'px';
       const pixelColors = {
-        normal:      { body: '#34d399', eye: '#fff',    antenna: '#10b981' },
-        initializing:{ body: '#fbbf24', eye: '#fff',    antenna: '#d97706' },
-        critical:    { body: '#f87171', eye: '#fff',    antenna: '#dc2626' },
-        sleeping:    { body: '#6b7280', eye: '#374151', antenna: '#4b5563' }
+        normal: { body: '#34d399', eye: '#fff', antenna: '#10b981' },
+        initializing: { body: '#fbbf24', eye: '#fff', antenna: '#d97706' },
+        critical: { body: '#f87171', eye: '#fff', antenna: '#dc2626' },
+        sleeping: { body: '#6b7280', eye: '#374151', antenna: '#4b5563' }
       };
       const pc = pixelColors[survivalTier] || pixelColors.sleeping;
       const robot = (c1, c2, c3) => [
@@ -2405,7 +2193,7 @@ function updateDynastyPanel(d) {
         pm1 + ' ' + p1 + ' 0 0 ' + c1, '0 ' + p1 + ' 0 0 ' + c1, p1 + ' ' + p1 + ' 0 0 ' + c1,
         pm1 + ' ' + p2 + ' 0 0 ' + c1, p1 + ' ' + p2 + ' 0 0 ' + c1
       ].join(',');
-      const botStyle = 'width:' + px + 'px;height:' + px + 'px;box-shadow:' + robot(pc.body,pc.eye,pc.antenna) + ';display:inline-block;margin:' + p2 + ' ' + (2*px+2) + 'px ' + (3*px) + 'px;flex-shrink:0';
+      const botStyle = 'width:' + px + 'px;height:' + px + 'px;box-shadow:' + robot(pc.body, pc.eye, pc.antenna) + ';display:inline-block;margin:' + p2 + ' ' + (2 * px + 2) + 'px ' + (3 * px) + 'px;flex-shrink:0';
 
       html += '<div style="flex:1;background:' + C_CARD + ';border:2px solid ' + color + ';padding:6px 8px;font-family:var(--pixel);cursor:pointer" onclick="showParentDetail(&quot;' + parent.id + '&quot;)">';
       // Top row: sprite + name + status
@@ -2434,35 +2222,35 @@ function updateDynastyPanel(d) {
 }
 
 refresh();
-setInterval(refresh,4000);
+setInterval(refresh, 4000);
 // Fast-refresh: solo actualiza countdown + spinner via DOM — NO reconstruye el SVG
-const _spinFrames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
-setInterval(()=>{
+const _spinFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+setInterval(() => {
   const d = window._lastNFData;
-  if(!d) return;
-  const mode   = d.state?.mode;
+  if (!d) return;
+  const mode = d.state?.mode;
   const nextAt = d.state?.nextScanAt;
-  const isIdle = !mode || mode===null;
+  const isIdle = !mode || mode === null;
 
   // Countdown en topbar (no toca el SVG)
   const eta = document.getElementById('cmd-scan-eta');
   const bar = document.getElementById('cmd-scan-bar');
-  if(nextAt && isIdle && eta){
-    const rem = Math.max(0, Math.round((nextAt-Date.now())/1000));
-    const mm=Math.floor(rem/60), ss=String(rem%60).padStart(2,'0');
-    if(eta) eta.textContent = mm+':'+ss+' to scan';
-    if(bar){ bar.style.width=Math.min(100,Math.round((300-rem)/300*100))+'%'; bar.style.background='var(--cyan)'; }
+  if (nextAt && isIdle && eta) {
+    const rem = Math.max(0, Math.round((nextAt - Date.now()) / 1000));
+    const mm = Math.floor(rem / 60), ss = String(rem % 60).padStart(2, '0');
+    if (eta) eta.textContent = mm + ':' + ss + ' to scan';
+    if (bar) { bar.style.width = Math.min(100, Math.round((300 - rem) / 300 * 100)) + '%'; bar.style.background = 'var(--cyan)'; }
   }
 
   // Braille spinner: solo actualiza el textContent del nodo CLAUDE en el SVG existente
-  if(mode==='thinking'){
-    const frame = _spinFrames[Math.floor(Date.now()/150) % _spinFrames.length];
+  if (mode === 'thinking') {
+    const frame = _spinFrames[Math.floor(Date.now() / 150) % _spinFrames.length];
     const el = document.getElementById('nf-claude-icon');
-    if(el) el.textContent = frame;
+    if (el) el.textContent = frame;
     const el2 = document.getElementById('nf-dec-icon');
-    if(el2) el2.textContent = frame;
+    if (el2) el2.textContent = frame;
   }
-},150);
+}, 150);
 
 // ── ADAN World Conway Grid ──────────────────────────────────────────────────
 let cw_grid = [];
@@ -2471,65 +2259,65 @@ let cw_rows = 25;
 let cw_agents = []; // Array of {id, x, y, state}
 
 function drawCell(ctx, x, y, state, glowRadius) {
-    const cellSize = 8;
-    const px = x * cellSize, py = y * cellSize;
-    // State: 0=dead, 1=alive(profitable child), 2=parent-adan, 3=parent-apple, 4=parent-snake, 5=parent-eva, 6=dead-child
-    const colors = {
-      0: '#ddd9cc',   // dead — bg2
-      1: '#1a5a1a',   // alive child — green
-      2: '#8b5cf6',   // ADAN — bright purple
-      3: '#eab308',   // APPLE — yellow
-      4: '#22c55e',   // SNAKE — green
-      5: '#ef4444',   // EVA — red
-      6: '#4a4a3a'    // dead child — dark grey
-    };
-    ctx.fillStyle = colors[state] || colors[0];
-    ctx.fillRect(px, py, cellSize - 1, cellSize - 1);
+  const cellSize = 8;
+  const px = x * cellSize, py = y * cellSize;
+  // State: 0=dead, 1=alive(profitable child), 2=parent-adan, 3=parent-apple, 4=parent-snake, 5=parent-eva, 6=dead-child
+  const colors = {
+    0: '#ddd9cc',   // dead — bg2
+    1: '#1a5a1a',   // alive child — green
+    2: '#8b5cf6',   // ADAN — bright purple
+    3: '#eab308',   // APPLE — yellow
+    4: '#22c55e',   // SNAKE — green
+    5: '#ef4444',   // EVA — red
+    6: '#4a4a3a'    // dead child — dark grey
+  };
+  ctx.fillStyle = colors[state] || colors[0];
+  ctx.fillRect(px, py, cellSize - 1, cellSize - 1);
 
-    // Glow effect for parent cells
-    if (state >= 2 && state <= 5 && glowRadius) {
-      ctx.save();
-      ctx.globalAlpha = 0.15;
-      ctx.fillStyle = colors[state];
-      const gr = glowRadius * cellSize;
-      ctx.beginPath();
-      ctx.arc(px + cellSize/2, py + cellSize/2, gr, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-    // ADAN is 2x size
-    if (state === 2) {
-      ctx.fillStyle = colors[2];
-      ctx.fillRect(px - cellSize/2, py - cellSize/2, cellSize * 2 - 1, cellSize * 2 - 1);
-    }
+  // Glow effect for parent cells
+  if (state >= 2 && state <= 5 && glowRadius) {
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = colors[state];
+    const gr = glowRadius * cellSize;
+    ctx.beginPath();
+    ctx.arc(px + cellSize / 2, py + cellSize / 2, gr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  // ADAN is 2x size
+  if (state === 2) {
+    ctx.fillStyle = colors[2];
+    ctx.fillRect(px - cellSize / 2, py - cellSize / 2, cellSize * 2 - 1, cellSize * 2 - 1);
+  }
 }
 
 function placeAgentOnGrid(agentId) {
-    if (cw_agents.has(agentId)) {
-        return cw_agents.get(agentId);
-    }
+  if (cw_agents.has(agentId)) {
+    return cw_agents.get(agentId);
+  }
 
-    // Find a random empty spot
-    for (let i = 0; i < 100; i++) { // Try 100 times to find an empty spot
-        const x = Math.floor(Math.random() * cw_cols);
-        const y = Math.floor(Math.random() * cw_rows);
-        let isOccupied = false;
-        for (const agent of cw_agents.values()) {
-            if (agent.x === x && agent.y === y) {
-                isOccupied = true;
-                break;
-            }
-        }
-        if (!isOccupied) {
-            const newPos = { x, y, state: 1 };
-            cw_agents.set(agentId, newPos);
-            return newPos;
-        }
+  // Find a random empty spot
+  for (let i = 0; i < 100; i++) { // Try 100 times to find an empty spot
+    const x = Math.floor(Math.random() * cw_cols);
+    const y = Math.floor(Math.random() * cw_rows);
+    let isOccupied = false;
+    for (const agent of cw_agents.values()) {
+      if (agent.x === x && agent.y === y) {
+        isOccupied = true;
+        break;
+      }
     }
-    // If no spot found, place it at a default random location
-    const finalPos = { x: Math.floor(Math.random() * cw_cols), y: Math.floor(Math.random() * cw_rows), state: 1 };
-    cw_agents.set(agentId, finalPos);
-    return finalPos;
+    if (!isOccupied) {
+      const newPos = { x, y, state: 1 };
+      cw_agents.set(agentId, newPos);
+      return newPos;
+    }
+  }
+  // If no spot found, place it at a default random location
+  const finalPos = { x: Math.floor(Math.random() * cw_cols), y: Math.floor(Math.random() * cw_rows), state: 1 };
+  cw_agents.set(agentId, finalPos);
+  return finalPos;
 }
 
 // First definition placeholder removed — see unified updateAdanWorld below
@@ -2713,6 +2501,12 @@ setInterval(stepAdanWorld, 200);
 </html>`;
 
   const srv = http.createServer((req, res) => {
+    if (req.url === '/api/brains') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify(brainManager.getDashboardPayload()));
+      return;
+    }
+
     if (req.url === '/api/state') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       const pnl = loadPnL();
@@ -3083,7 +2877,7 @@ function render(s) {
 // ── Binance helpers ──────────────────────────────────────────────────────────
 async function fetchBinancePrice(symbol) {
   try {
-    const r = await fetch(`${BINANCE_API}/ticker/price?symbol=${symbol}`);
+    const r = await fetch(`${BINANCE_API} /ticker/price ? symbol = ${symbol} `);
     const d = await r.json();
     return parseFloat(d.price) || null;
   } catch { return null; }
@@ -5049,181 +4843,86 @@ async function think(client, markets, prices, pnl, openPos, soul) {
   const cascadeSignal = updateCorrelation(prices);
   const dynW = loadDynWeights();
 
-  // ── MESA REDONDA INTELLIGENCE — Run Apple → Snake → Eva cycle ──────────
-  const mesaResult = runMesaRedonda(prices, markets, pnl);
-  const mesaRedondaBlock = `
-══════════════════════════════════════════
-GOLDEN ROUND TABLE — YOUR PARENTS' COUNSEL:
-══════════════════════════════════════════
-🍎 APPLE (Context & Opportunity):
-  Opportunity: ${mesaResult.apple.opportunity} | Narrative: ${mesaResult.apple.narrative}
-  Confidence: ${mesaResult.apple.confidence}% | F&G: ${mesaResult.apple.fgValue} (${mesaResult.apple.fgBias})
-  Sentiment Score: ${mesaResult.apple.sentimentScore}/100 | News: ${mesaResult.apple.newsCount} items
-  ${mesaResult.apple.newsSummary.length > 0 ? 'Headlines: ' + mesaResult.apple.newsSummary.join(' | ') : ''}
-  Top Markets: ${mesaResult.apple.recommendedMarkets.map(m => m.title.slice(0, 30)).join(', ') || 'none'}
 
-🐍 SNAKE (Execution & Timing):
-  Viability: ${mesaResult.snake.viability} | Slippage Risk: ${mesaResult.snake.slippageRisk}
-  Optimal Timing: ${mesaResult.snake.optimalTiming}
-  Vol Ratio: ${mesaResult.snake.avgVolRatio}x | Vol Accel: ${mesaResult.snake.volAccel}
-  BTC Trend: 5m=${mesaResult.snake.btcTrend.m5.toFixed(2)}% 1h=${mesaResult.snake.btcTrend.h1.toFixed(2)}% aligned=${mesaResult.snake.btcTrend.aligned}
-  Plan: ${mesaResult.snake.executionPlan.slice(0, 120)}
+  // ── BRAIN SWITCH SYSTEM V2.1 INTEGRATION ────────────────────────────────────
+  // We extract the primary market driver (usually BTC) to feed the Brain Scanner
+  const primaryCoin = 'BTCUSDT';
+  const primaryData = prices[primaryCoin] || {};
 
-👑 EVA (Risk & Capital):
-  Decision: ${mesaResult.eva.approved ? '✅ APPROVED' : '❌ DENIED'} | Risk: ${mesaResult.eva.riskLevel} (${mesaResult.eva.riskPoints}pts)
-  Max Capital: $${mesaResult.eva.maxCapital} | Slots: ${mesaResult.eva.slotsAvailable}/${MAX_POSITIONS} free
-  Fund Status: ${mesaResult.eva.fundStatus} | Reason: ${mesaResult.eva.reason}
+  // Create the questions string for Claude
+  const marketQuestion = candidates.map((m, i) => {
+    return `[${i + 1}] "${m.title}" | Market Price: ${(m.yesPrice * 100).toFixed(1)}% | Asset: ${m.asset.toUpperCase()}`;
+  }).join('\n');
 
-MESA CONSENSUS: ${mesaResult.consensus}
-${!mesaResult.eva.approved ? '⚠ EVA SAYS NO — You may still override if you see extraordinary edge (>15%) with high confidence (>80%).' : '✅ Mesa approves action. Weigh their counsel and decide: INVEST or WAIT.'}
-══════════════════════════════════════════
-`;
+  let decision;
+  try {
+    decision = await runBrainCycle({
+      binanceTechnicals: {
+        klines1h: primaryData.klines1h || [],
+        klines5m: primaryData.klines5m || [],
+        vwap: primaryData.vwap5m?.vwap,
+        fundingRate: primaryData.funding?.rate || 0,
+        volRatio: primaryData.vol?.ratio || 1,
+        volAccel: primaryData.volAccel || 0,
+        bbWidth: primaryData.bb?.width || 0.01
+      },
+      binanceOrderBook: {
+        bids: primaryData._rawBids || [],
+        asks: primaryData._rawAsks || [],
+        midPrice: primaryData.price || 0
+      },
+      cryptoPanicItems: prices._meta?.cryptoNews || [],
+      fearGreedIndex: prices._meta?.fearGreed?.value || 50,
+      childConsensus: 0.5, // We calculate this below if needed, or default to neutral
+      polymarketQuestion: marketQuestion,
+      soulMd: soul,
+      currentFund: pnl.fund || 10000,
+      currentWinRate: pnl.trades > 0 ? (pnl.wins / pnl.trades) : 0,
+      totalTrades: pnl.trades || 0,
+      coins: ['BTC', 'ETH', 'SOL'],
+      brainManager,
+      anthropicClient: client
+    });
 
-  // AGI Layer 1: legacy pattern memory
-  const patternMemory = candidates.map((m, i) => {
-    const pm = getSimilarPastTrades(m.asset, 'NO', m.roughEdge || 0.07, prices[m.asset?.toUpperCase() + 'USDT']?.rsi || 50);
-    return pm ? `[${i + 1}] ${pm}` : '';
-  }).filter(Boolean).join('\n');
+    // Log the thought
+    fs.appendFileSync(THOUGHTS_PATH, JSON.stringify({ ts: new Date().toISOString(), thought: decision.thought }) + '\n');
 
-  // AGI Layer 10: CORTEX MEMORY — semantic vector recall
-  const cortexRecall = recallAllMemories(candidates, prices);
+  } catch (err) {
+    console.error('Brain Cycle Error:', err);
+    return { action: 'SKIP', thought: 'Brain transition manager failed: ' + err.message };
+  }
 
-  const hlBlock = buildHLPrompt(hlIntel);
+  // Parse mapped decision back to ADAN format
+  let shouldBet = false;
+  let chosen = null;
+  let finalSide = 'YES';
 
-  const prompt = `You are ADAN-PRED — autonomous prediction markets agent with a Mesa Redonda (Council of 3 Parents).
-Your parents Apple, Snake, and Eva have analyzed the market for you. Weigh their counsel, then decide: INVEST or WAIT.
-Mission: find Polymarket crypto markets where YOUR probability estimate differs from market price by >${(strat.minEdge * 100).toFixed(0)}%.${skillsBlock}${mesaRedondaBlock}${hlBlock}${intelSummary ? '\n' + intelSummary : ''}${episodicAccuracy ? '\nYOUR CALIBRATION HISTORY: ' + episodicAccuracy + '\n' : ''}${metaCalibCtx ? '\n' + metaCalibCtx + '\n' : ''}${cascadeSignal ? '\n' + cascadeSignal + '\n' : ''}${patternMemory ? '\nPATTERN MEMORY (similar past bets):\n' + patternMemory + '\n' : ''}${cortexRecall ? '\n' + cortexRecall + '\n' : ''}
+  if (decision.action === 'BET YES' || decision.action === 'BET NO') {
+    shouldBet = true;
+    finalSide = decision.action.replace('BET ', '');
+    // Adan expects the best market. For now, we take the first candidate as the primary context
+    // In a future update, runBrainCycle should return the specific MARKET_ID it chose
+    // For V2.1, we'll try to parse [N] from the thought block, fallback to candidates[0]
+    const mktMatch = decision.thought.match(/\[(\d+)\]/);
+    const mktIdx = mktMatch ? parseInt(mktMatch[1]) - 1 : 0;
+    chosen = (mktIdx >= 0 && mktIdx < candidates.length) ? candidates[mktIdx] : candidates[0];
+  }
 
-══════════════════════════════════════════
-MARKET CONTEXT — ${new Date().toISOString()}
-══════════════════════════════════════════
-${fgContext}${dynW.fearGreedBias !== 0 ? `\nFEAR-GREED BIAS ACTIVE: ${dynW.fearGreedBias > 0 ? 'Lean NO on UP bets (fear premium)' : 'Lean YES on UP bets (greed momentum)'}` : ''}
-${newsContext}
-REAL-TIME BINANCE INTELLIGENCE:
-${priceContext}
-
-══════════════════════════════════════════
-YOUR MEMORY (SOUL — learned patterns + auto-evolved rules):
-══════════════════════════════════════════
-${soul.slice(0, 800)}
-
-══════════════════════════════════════════
-STATUS: Fund=$${pnl.fund?.toFixed(2) || 100} | WR=${pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0}% (${pnl.trades} trades) | Open=${openPos.length}/${MAX_POSITIONS}
-══════════════════════════════════════════
-
-POLYMARKET CANDIDATES (${candidates.length} crypto markets):
-${marketsText}
-
-══════════════════════════════════════════
-YOUR 7-STEP ANALYSIS (INSTITUTIONAL GRADE):
-══════════════════════════════════════════
-1. MARKET SENTIMENT: Fear/Greed level → overall risk appetite. F&G < 20 biases market to overprice downside (lean NO pays more).
-
-2. MULTI-TIMEFRAME CONFLUENCE (FRACTAL ANALYSIS — most important):
-   - MACRO (1h) DICTATES DIRECTION. MICRO (5m/15m) DICTATES THE TRIGGER.
-   - If 1h macro=BEARISH + 5m attempts rally → it's a LIQUIDITY TRAP. Bet NO.
-   - If 1h macro=BULLISH + 5m dip → it's a buying opportunity. Bet YES.
-   - NO CONFLUENCE = NO BET. A great 5m signal against the 1h trend = suicide.
-   - BTC CORRELATION: ETH/SOL/BNB CANNOT bet YES if BTC is falling 5m (cascade risk).
-
-3. ORDER BOOK MICRO-STRUCTURE (predicts near-term 5-15min — your #1 edge on 5min markets):
-   - BUY WALL dominant (>60% bids within 0.5%): price has FLOOR support. YES bets safer.
-   - SELL WALL dominant (>60% asks within 0.5%): price has CEILING resistance. NO bets safer.
-   - ⚠ SELL WALL TRAP: If price is RISING but ask volume is 2x+ bid volume within 0.5% → IT IS A TRAP.
-     The price WILL bounce down. BET NO on 5min markets. NEVER bet YES against a sell wall trap.
-   - ⚠ BUY WALL TRAP: If price is FALLING but bid volume is 2x+ ask volume within 0.5% → floor support.
-     The price will bounce up. BET YES on 5min markets.
-   - Look at wall distance: if biggest sell wall is <0.2% above price → imminent ceiling. If >0.5% → less relevant.
-
-4. VOLUME MICROSTRUCTURE (PRIMARY EDGE — Polymarket lags Binance 10-30s):
-   - volRatio > 1.3x = conviction move in progress. volRatio < 0.8x = noise → SKIP.
-   - volAccel >= +2 = accelerating candle-over-candle = strong directional signal.
-   - VWAP deviation: price ABOVE VWAP + rising vol = genuine momentum. BELOW = fade risk.
-
-5. TIMEFRAME-SPECIFIC LOGIC (match your analysis to market window):
-   - 5min markets: IGNORE macro trends. Focus 100% on volume acceleration + order book.
-   - 15min markets: Look for DIVERGENCES (price up but volume falling = imminent collapse). RSI >65 + falling vol = BET NO.
-   - 1hr markets: BTC correlation + support/resistance macro levels matter most.
-
-6. VOLATILITY & PROBABILITY: volatility > 0.12%/candle → widen uncertainty by 15%. If unsure, SKIP.
-
-7. FUNDING RATE EDGE (perpetual futures sentiment):
-   - Funding > +0.005%: longs overleveraged → SHORT/NO has wind at its back
-   - Funding < -0.005%: shorts overleveraged → LONG/YES squeeze opportunity
-   - Funding > +0.01% or < -0.01%: EXTREME → imminent correction, bet AGAINST the crowd
-
-8. EDGE vs MARKET: Only bet if YOUR probability vs market price diverges by >${(strat.minEdge * 100).toFixed(0)}%+.
-   Also weight CHILD CONSENSUS — if ≥75% of children agree, add +3% to your edge estimate in that direction.
-
-DECISION FORMAT — copy exactly:
-MARKET_ID: [N]
-SIDE: YES or NO
-MY_PROB: 0.XX
-MARKET_PRICE: 0.XX
-EDGE: +/-0.XX
-CONFIDENCE: XX%
-REASONING: 2-3 sentences max
-
-Or if no edge: state SKIP and why in one sentence.`;
-
-  const resp = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1200,
-    messages: [{ role: 'user', content: prompt }]
-  });
-
-  const text = resp.content[0].text;
-  fs.appendFileSync(THOUGHTS_PATH, JSON.stringify({ ts: new Date().toISOString(), thought: text }) + '\n');
-
-  // Parse decision
-  const betMatch = text.match(/MARKET_ID[:\s]+\[?(\d+)\]?/i);
-  const sideMatch = text.match(/SIDE[:\s]+(YES|NO)/i);
-  const myProbM = text.match(/MY_PROB[:\s]+([\d.]+)/i);
-  const confMatch = text.match(/CONFIDENCE[:\s]+(\d+)/i);
-  const edgeMatch = text.match(/EDGE[:\s]+([+-]?[\d.]+)/i);
-
-  const hasBet = betMatch && sideMatch && myProbM;
-  const mktIdx = hasBet ? parseInt(betMatch[1]) - 1 : -1;
-  const chosen = (mktIdx >= 0 && mktIdx < candidates.length) ? candidates[mktIdx] : null;
-  const myProb = myProbM ? parseFloat(myProbM[1]) : 0;
-  const conf = confMatch ? parseInt(confMatch[1]) : 60;
-  const side = sideMatch ? sideMatch[1] : 'YES';
-  let edge = edgeMatch ? parseFloat(edgeMatch[1]) : chosen ? (myProb - chosen.yesPrice) : 0;
-  // Normalize: Claude often returns edge as percentage (e.g. 15.5 or -12.0) not decimal (0.155)
-  if (Math.abs(edge) > 1) edge = edge / 100;
-
-  let shouldBet = hasBet && chosen && Math.abs(edge) >= strat.minEdge && conf >= strat.minConfidence;
-
-  // ── DUAL AI CONSULTATION — second opinion on medium confidence bets ────────
-  // If confidence is 50-65%, ask Haiku for counter-opinion. Both must agree.
-  let dualNote = '';
-  if (shouldBet && conf >= 50 && conf <= 65 && chosen) {
-    try {
-      const dualResp = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 200,
-        messages: [{
-          role: 'user', content:
-            `Quick verdict: "${chosen.title}" — should I bet ${side} at ${(chosen.yesPrice * 100).toFixed(0)}% market price? My analysis says ${side} with ${conf}% confidence, edge ${(edge * 100).toFixed(1)}%.
-Asset trend 5m: ${chosen.priceData?.trend5m?.toFixed(2) || '?'}%, RSI: ${chosen.priceData?.rsi?.toFixed(0) || '?'}, volume ratio: ${chosen.priceData?.vol?.ratio?.toFixed(1) || '?'}x.
-Reply ONLY: AGREE or DISAGREE, then 1 sentence why.` }]
-      });
-      const dualText = dualResp.content[0].text.trim();
-      const agrees = /AGREE/i.test(dualText) && !/DISAGREE/i.test(dualText);
-      dualNote = `\n🤖 DUAL AI: ${agrees ? 'CONFIRMED' : 'VETOED'} — ${dualText.slice(0, 120)}`;
-      if (!agrees) {
-        shouldBet = false; // Haiku disagreed → SKIP
-        dualNote += '\n⚠ BET CANCELLED by second opinion — confidence too low for disagreement.';
-      }
-    } catch { }
+  // Dual AI note is handled inside runBrainCycle now, but if it vetoed:
+  if (decision.haikuVeto || decision.evaDenied) {
+    shouldBet = false;
   }
 
   return {
-    thought: text + dualNote,
+    thought: decision.thought,
     action: shouldBet ? 'BET' : 'SKIP',
     market: chosen,
-    side, myProb, edge, confidence: conf,
-    apiTokens: (resp.usage?.input_tokens || 0) + (resp.usage?.output_tokens || 0)
+    side: finalSide,
+    myProb: decision.probability || 0.5,
+    edge: decision.edge || 0,
+    confidence: decision.confidence || 0,
+    apiTokens: 3000, // Appx
+    brainStake: decision.stake // Pass the exact stake computed by EVA/Kelly
   };
 }
 
@@ -5546,6 +5245,17 @@ async function checkResolutions() {
     resolveHypothesis(p.marketId, won);
     updateMetaCalib(p.confidence || 65, won);
     promoteInsightsToSoul();
+
+    // ── Record Result for Brain Manager
+    if (p.brainStake && p.brainStake > 0) {
+      brainManager.recordResult({
+        brainName: p.brain || 'DEFAULT',
+        won,
+        predictedP: pred,
+        actualOutcome: actual,
+        edge: p.edge,
+      });
+    }
     // Cortex Memory: store trade with its entry feature vector
     if (p.entryVec) {
       memorizeTradeContext(p, { orderBook: { buyPressure: p.entryVec.buyPressure, ratio: p.entryVec.obRatio, sellWallTrap: p.entryVec.sellWallTrap, buyWallTrap: p.entryVec.buyWallTrap }, rsi: p.entryVec.rsi, rsi5m: p.entryVec.rsi5m, trend1m: p.entryVec.trend1m, trend5m: p.entryVec.trend5m, trend15m: p.entryVec.trend15m, trend1h: p.entryVec.trend1h, bb: { pct: p.entryVec.bbPct }, vol: { ratio: p.entryVec.volRatio }, volAccel: p.entryVec.volAccel, vwap5m: { pct: p.entryVec.vwapPct }, volatility: p.entryVec.volatility }, won);
