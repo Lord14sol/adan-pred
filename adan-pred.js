@@ -474,6 +474,7 @@ function startDashboard() {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ADAN · Web4 Node</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=JetBrains+Mono:wght@400;600&display=swap');
 :root{
@@ -599,6 +600,47 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 .b-wr-good{background:#c8e8c0;color:var(--green)}
 .b-wr-ok{background:#e8e0c0;color:var(--yellow)}
 .b-wr-bad{background:#e8c0c0;color:var(--red)}
+
+/* ── Interactive D3 DAG ───────────────────────────────────────── */
+#dynasty-panel {
+  width: 100%;
+  height: 480px;
+  background: var(--bg3);
+  border: 2px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 4px 4px 0px rgba(0,0,0,0.05);
+}
+
+.d3-node rect {
+  stroke: var(--border);
+  stroke-width: 2px;
+  transition: all 0.2s ease;
+  box-shadow: 2px 2px 0px rgba(0,0,0,1);
+}
+
+.d3-node:hover rect {
+  filter: brightness(1.1);
+  stroke-width: 3px;
+  cursor: pointer;
+}
+
+.d3-node text {
+  font-family: var(--pixel);
+  pointer-events: none;
+}
+
+.d3-link {
+  stroke: var(--dim);
+  stroke-width: 2px;
+  stroke-dasharray: 4 2;
+  animation: linkFlow 20s linear infinite;
+}
+
+@keyframes linkFlow {
+  to { stroke-dashoffset: -100; }
+}
+
 .dot{width:8px;height:8px;border-radius:0;display:inline-block;border:1px solid var(--border2)}
 .dot-green{background:var(--green)}
 .dot-yellow{background:var(--yellow)}
@@ -2110,116 +2152,156 @@ function updateNeuralFlow(d) {
         txt.style.color = isThinking ? 'var(--cyan)' : isDone ? 'var(--green)' : 'var(--text2)';
     }
 }
-// ── Dynasty Network — Golden Round Table + The Forge ───────────────────────────────
+// ── Dynasty Network — D3.js Force DAG ─────────────────────────────────────────
+let d3Sim = null;
+let d3Svg = null;
+let dynNodes = [];
+let dynLinks = [];
+
 function updateDynastyPanel(d) {
   const el = document.getElementById('dynasty-panel');
   if (!el) return;
+
   const config = d.config || {};
   const children = d.children || [];
-  const pnl = d.pnl || {};
+  
+  // Transform ADAN data to D3 nodes/links layout
+  const newNodes = [];
+  const newLinks = [];
+  
+  // 1. Core Node
+  newNodes.push({ id: 'ADAN', group: 0, label: '👑 ADAN', sub: 'Root Gen1', color: 'var(--purple)', fx: el.clientWidth / 2, fy: el.clientHeight / 2 });
 
-  const C_PUR = '#5a1a8a', C_CYA = '#1a4a8a', C_GRN = '#1a5a1a', C_RED = '#8a1a1a', C_YEL = '#7a5a10', C_DIM = '#888878';
-  const C_TXT = '#1a1a1a', C_CARD = '#e8e4d8', C_BRD2 = '#3a3a2a';
+  // 2. Pillars
+  const parents = config.mesaRedonda?.parents || [];
+  if (!parents.find(p => p.id === 'atlas')) parents.push({ id: 'atlas', name: 'Atlas', role: 'Oracle' });
+  
+  const pColors = { apple: 'var(--yellow)', snake: 'var(--green)', eva: 'var(--red)', atlas: 'var(--purple)' };
+  const pIcons = { apple: '🍎 APPLE', snake: '🐍 SNAKE', eva: '👑 EVA', atlas: '👁️ ATLAS' };
 
-  let html = '';
-
-  // ── SECTION 1: GOLDEN ROUND TABLE (Parent Agents) ──────────────────
-  html += '<div style="margin-bottom:12px">';
-  html += '<div style="font-family:var(--pixel);font-size:10px;color:' + C_PUR + ';font-weight:700;letter-spacing:2px;margin-bottom:8px">👑 GOLDEN ROUND TABLE</div>';
-
-  if (config.mesaRedonda && config.mesaRedonda.parents) {
-    html += '<div style="display:flex;gap:6px">';
-    const parents = config.mesaRedonda.parents.slice();
-    if (!parents.find(p => p.id === 'atlas')) {
-      parents.push({ id: 'atlas', name: 'Atlas', role: 'Smart Money / Liquidity Oracle' });
-    }
-    const icons = { apple: '🍎', snake: '🐍', eva: '👑', atlas: '👁️‍🗨️' };
-    const colors = { apple: C_YEL, snake: C_GRN, eva: C_RED, atlas: C_PUR };
-
-    parents.forEach(parent => {
-      const intel = children.find(c => c.spec === parent.id);
-      const color = colors[parent.id] || C_DIM;
-      const icon = icons[parent.id] || '◈';
-      const report = intel?.report;
-      const conf = intel?.signal?.conf || 0;
-
-      const lastSeen = new Date(intel?.ts || 0).getTime();
-      const isOnline = !!intel && (Date.now() - lastSeen) < 1800000; // 30 min threshold
-      const isInitializing = !intel || lastSeen === 0;
-
-      // Build summary line based on parent type
-      let summaryLine = 'Awaiting...';
-      if (parent.id === 'apple' && report) {
-        summaryLine = report.opportunity + ' | ' + report.narrative + ' | Sent:' + report.sentimentScore;
-      } else if (parent.id === 'snake' && report) {
-        summaryLine = report.viability + ' | Slip:' + report.slippageRisk + ' | Vol:' + (report.avgVolRatio || '--') + 'x';
-      } else if (parent.id === 'eva' && report) {
-        summaryLine = (report.approved ? 'APPROVED' : 'DENIED') + ' | $' + (report.maxCapital || 0) + ' max | Risk:' + report.riskLevel;
-      } else if (parent.id === 'atlas' && report) {
-        summaryLine = (report.smartMoney || 'Tracking') + ' | Funding:' + (report.fundingRate || '--');
-      } else if (intel?.signal?.reason) {
-        summaryLine = intel.signal.reason.slice(0, 60);
-      }
-
-      // Influence bar (confidence as proxy)
-      const barW = Math.max(5, conf);
-
-      // Variants count from competition config
-      const variants = parent.variants || [];
-      const variantsTxt = variants.length > 0 ? variants.length + ' variants' : '';
-
-      // Survival tier derived from intel freshness
-      let survivalTier = 'sleeping';
-      let tierColor = '#6b7280';
-      let tierLabel = 'SLEEPING';
-      if (isOnline) { survivalTier = 'normal'; tierColor = '#34d399'; tierLabel = 'NORMAL'; }
-      else if (isInitializing) { survivalTier = 'initializing'; tierColor = '#fbbf24'; tierLabel = 'INITIALIZING'; }
-      else { survivalTier = 'critical'; tierColor = '#f87171'; tierLabel = 'OFFLINE'; }
-
-      // Pixel art automaton sprite using CSS box-shadow (7px grid)
-      const px = 3; // pixel size
-      const p1 = px + 'px', pm1 = '-' + px + 'px', p2 = (2 * px) + 'px', pm2 = '-' + (2 * px) + 'px';
-      const pixelColors = {
-        normal: { body: '#34d399', eye: '#fff', antenna: '#10b981' },
-        initializing: { body: '#fbbf24', eye: '#fff', antenna: '#d97706' },
-        critical: { body: '#f87171', eye: '#fff', antenna: '#dc2626' },
-        sleeping: { body: '#6b7280', eye: '#374151', antenna: '#4b5563' }
-      };
-      const pc = pixelColors[survivalTier] || pixelColors.sleeping;
-      const robot = (c1, c2, c3) => [
-        '0 ' + pm2 + ' 0 0 ' + c3,
-        pm1 + ' ' + pm1 + ' 0 0 ' + c1, '0 ' + pm1 + ' 0 0 ' + c1, p1 + ' ' + pm1 + ' 0 0 ' + c1,
-        pm1 + ' 0 0 0 ' + c1, '0 0 0 0 ' + c2, p1 + ' 0 0 0 ' + c1,
-        pm1 + ' ' + p1 + ' 0 0 ' + c1, '0 ' + p1 + ' 0 0 ' + c1, p1 + ' ' + p1 + ' 0 0 ' + c1,
-        pm1 + ' ' + p2 + ' 0 0 ' + c1, p1 + ' ' + p2 + ' 0 0 ' + c1
-      ].join(',');
-      const botStyle = 'width:' + px + 'px;height:' + px + 'px;box-shadow:' + robot(pc.body, pc.eye, pc.antenna) + ';display:inline-block;margin:' + p2 + ' ' + (2 * px + 2) + 'px ' + (3 * px) + 'px;flex-shrink:0';
-
-      html += '<div style="flex:1;background:' + C_CARD + ';border:2px solid ' + color + ';padding:6px 8px;font-family:var(--pixel);cursor:pointer" onclick="showParentDetail(&quot;' + parent.id + '&quot;)">';
-      // Top row: sprite + name + status
-      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">';
-      html += '<span style="' + botStyle + '"></span>';
-      html += '<div style="flex:1">';
-      html += '<div style="display:flex;justify-content:space-between;align-items:center">';
-      html += '<span style="font-size:10px;font-weight:700;color:' + color + '">' + icon + ' ' + parent.name.toUpperCase() + '</span>';
-      html += '<span style="font-size:7px;font-weight:700;background:' + tierColor + '22;color:' + tierColor + ';border:1px solid ' + tierColor + ';padding:1px 4px;letter-spacing:1px">' + tierLabel + '</span>';
-      html += '</div>';
-      html += '<div style="font-size:7px;color:' + C_DIM + ';margin-top:1px">' + parent.role + '</div>';
-      html += '</div>';
-      html += '</div>';
-      html += '<div style="font-size:8px;color:' + C_TXT + ';margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">↳ ' + summaryLine + '</div>';
-      // Influence bar
-      html += '<div style="background:#ccc8bc;height:4px;border:1px solid ' + C_BRD2 + ';margin-bottom:2px"><div style="height:100%;width:' + barW + '%;background:' + color + '"></div></div>';
-      html += '<div style="font-size:7px;color:' + C_DIM + '">influence: ' + conf + '% ' + (variantsTxt ? '· ' + variantsTxt : '') + '</div>';
-      html += '</div>';
+  parents.forEach((p, i) => {
+    newNodes.push({
+      id: p.id, group: 1, label: pIcons[p.id], sub: p.role, color: pColors[p.id] || 'var(--grey)'
     });
+    newLinks.push({ source: p.id, target: 'ADAN', value: 3 });
+  });
 
-    html += '</div>';
+  // 3. Children
+  children.forEach(c => {
+    if (c.status === 'dead') return;
+    const cid = c.spec;
+    newNodes.push({
+      id: cid,
+      group: 2,
+      label: '🧬 ' + (c.name || cid).toUpperCase().slice(0, 10),
+      sub: 'WR: ' + Math.round((c.childPnl?.wins || 0) / Math.max(1, c.childPnl?.trades || 1) * 100) + '%',
+      color: 'var(--cyan)'
+    });
+    // Link to specific parent or ADAN
+    const parentId = parents.find(p => cid.toLowerCase().startsWith(p.id.charAt(0))) ? parents.find(p => cid.toLowerCase().startsWith(p.id.charAt(0))).id : 'ADAN';
+    newLinks.push({ source: cid, target: parentId, value: 1 });
+  });
+
+  // Preserve existing D3 node positions where possible so it doesn't jump
+  dynNodes.forEach(oldN => {
+    const newN = newNodes.find(n => n.id === oldN.id);
+    if (newN && !newN.fx) { // Don't overwrite fixed x/y
+      newN.x = oldN.x;
+      newN.y = oldN.y;
+      newN.vx = oldN.vx;
+      newN.vy = oldN.vy;
+    }
+  });
+
+  dynNodes = newNodes;
+  dynLinks = newLinks;
+
+  if (!d3Svg) {
+    el.innerHTML = '';
+    d3Svg = d3.select('#dynasty-panel').append('svg')
+      .attr('width', '100%')
+      .attr('height', '100%');
+      
+    d3Sim = d3.forceSimulation()
+      .force('link', d3.forceLink().id(d => d.id).distance(d => d.target.id === 'ADAN' ? 120 : 80))
+      .force('charge', d3.forceManyBody().strength(-300))
+      .force('center', d3.forceCenter(el.clientWidth / 2, el.clientHeight / 2))
+      .force('collide', d3.forceCollide().radius(40));
   }
-  html += '</div>';
 
-  el.innerHTML = html;
+  // Update Links
+  const link = d3Svg.selectAll('.d3-link')
+    .data(dynLinks, d => d.source.id + '-' + d.target.id);
+    
+  link.exit().remove();
+  
+  const linkEnter = link.enter().append('line')
+    .attr('class', 'd3-link');
+    
+  const linkMerge = linkEnter.merge(link);
+
+  // Update Nodes
+  const node = d3Svg.selectAll('.d3-node')
+    .data(dynNodes, d => d.id);
+    
+  node.exit().remove();
+
+  const nodeEnter = d3Svg.selectAll('.d3-node').data(dynNodes, d => d.id).enter()
+    .append('g')
+    .attr('class', 'd3-node')
+    .call(d3.drag()
+        .on('start', d => { if (!d.active) d3Sim.alphaTarget(0.3).restart(); d.subject.fx = d.subject.x; d.subject.fy = d.subject.y; })
+        .on('drag', d => { d.subject.fx = d.x; d.subject.fy = d.y; })
+        .on('end', d => { if (!d.active) d3Sim.alphaTarget(0); if(d.subject.id !== 'ADAN') { d.subject.fx = null; d.subject.fy = null; } })
+    );
+
+  // Box (Neo-brutalist style)
+  nodeEnter.append('rect')
+    .attr('width', 100).attr('height', 36)
+    .attr('x', -50).attr('y', -18)
+    .attr('fill', 'var(--bg2)')
+    .style('stroke', d => d.color);
+
+  // Labels
+  nodeEnter.append('text')
+    .attr('class', 'label-main')
+    .attr('dy', '-2px')
+    .attr('text-anchor', 'middle')
+    .style('font-size', '10px')
+    .style('fill', d => d.color)
+    .text(d => d.label);
+    
+  nodeEnter.append('text')
+    .attr('class', 'label-sub')
+    .attr('dy', '10px')
+    .attr('text-anchor', 'middle')
+    .style('font-size', '8px')
+    .style('fill', 'var(--text2)')
+    .style('font-family', 'var(--mono)')
+    .text(d => d.sub);
+
+  const nodeMerge = nodeEnter.merge(node);
+  
+  // Update texts logic in case it changes
+  nodeMerge.select('.label-main').text(d => d.label);
+  nodeMerge.select('.label-sub').text(d => d.sub);
+  nodeMerge.select('rect').style('stroke', d => d.color);
+
+  // Simulation tick event
+  d3Sim.nodes(dynNodes).on('tick', () => {
+    linkMerge
+      .attr('x1', d => d.source.x)
+      .attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x)
+      .attr('y2', d => d.target.y);
+      
+    nodeMerge.attr('transform', d => \`translate(\${d.x},\${d.y})\`);
+  });
+  
+  d3Sim.force('link').links(dynLinks);
+  d3Sim.alpha(0.3).restart();
 }
+
 
 refresh();
 setInterval(refresh, 4000);
