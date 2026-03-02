@@ -2180,19 +2180,23 @@ function updateNeuralFlow(d) {
             </circle>\`;
           }
 
-       svg += \`
-          \${ /* Highlight birth animation for < 5 mins old */
-             (Date.now() - new Date(child.born||0).getTime()) < 300000 ? 
-             \`<circle cx="\${childOrbitR}" cy="0" r="14" fill="none" stroke="\${C_GRN}" stroke-width="2" opacity="0">
-                <animate attributeName="opacity" values="1;0" dur="2s" repeatCount="indefinite"/>
-                <animate attributeName="r" values="8;16" dur="2s" repeatCount="indefinite"/>
-              </circle>\` : '' 
-           }
-          
-          <g onclick="showChildDetail(\${globalIdx})" style="cursor:pointer;">
-            <animateTransform attributeName="transform" type="rotate" from="\${-startAngle} 0 0" to="\${-endAngle} 0 0" dur="\${durSec}s" repeatCount="indefinite"/>
-            <circle cx="\${childOrbitR}" cy="0" r="8" fill="\${C_CARD3}" stroke="\${C_CYA}" stroke-width="1.5"/>
-            <text x="\${childOrbitR}" y="2" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(child.name||child.spec).slice(0,3).toUpperCase()}</text>
+          <g transform="translate(\${childOrbitR}, 0)">
+            <g>
+              <animateTransform attributeName="transform" type="rotate" from="\${-startAngle} 0 0" to="\${-(startAngle+360)} 0 0" dur="\${durSec}s" repeatCount="indefinite"/>
+              
+              \${ /* Highlight birth animation for < 5 mins old */
+                 (Date.now() - new Date(child.born||0).getTime()) < 300000 ? 
+                 \`<circle cx="0" cy="0" r="14" fill="none" stroke="\${C_GRN}" stroke-width="2" opacity="0">
+                    <animate attributeName="opacity" values="1;0" dur="2s" repeatCount="indefinite"/>
+                    <animate attributeName="r" values="8;16" dur="2s" repeatCount="indefinite"/>
+                  </circle>\` : '' 
+               }
+              
+              <g onclick="showChildDetail(\${globalIdx})" style="cursor:pointer;">
+                <circle cx="0" cy="0" r="8" fill="\${C_CARD3}" stroke="\${C_CYA}" stroke-width="1.5"/>
+                <text x="0" y="2" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(child.name||child.spec).slice(0,3).toUpperCase()}</text>
+              </g>
+            </g>
           </g>
         </g>
       </g>\`;
