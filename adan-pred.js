@@ -2180,6 +2180,7 @@ function updateNeuralFlow(d) {
             </circle>\`;
           }
 
+       svg += \`
           <g transform="translate(\${childOrbitR}, 0)">
             <animateTransform attributeName="transform" type="rotate" from="\${-startAngle} 0 0" to="\${-endAngle} 0 0" dur="\${durSec}s" repeatCount="indefinite"/>
             
