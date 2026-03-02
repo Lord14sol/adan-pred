@@ -95,19 +95,33 @@ While the terminal node runs, ADAN serves a real-time HTTP dashboard locally at:
 👉 `http://localhost:3141`
 
 *   **Interactive Force DAG (D3.js):** Replaces static SVGs. Watch nodes (ADAN, APPLE, SNAKE, EVA, and the genetically forged children) physically interact on-screen. Connections turn **green** when a child's Win Rate exceeds 50%, and dead branches show a `💀 DEAD` status.
+*   **6 Advanced DAG Features (Added in v3.0):**
+    1. **Golden Path Toggle:** Dims dead branches to highlight the >50% WR surviving lineages.
+    2. **Real-time Pulse:** Active processing nodes (e.g., APPLE, SNAKE) glow dynamically when feeding data.
+    3. **Dynamic Margins:** Link thickness scales automatically by the child's Experience Points (XP).
+    4. **Mutations Icons:** Displays DNA traits (⚔️ for aggressiveness, 🛡️ for patience) directly on the node title.
+    5. **Drag-Lasso:** Select multiple nodes at once with your mouse to highlight their lines.
+    6. **Double-Click Auto-Center:** Zooms and pans automatically to perfectly center a node.
 *   **Dynamic Avatar:** ADAN's 128x128 pixel art explicitly morphs CSS styling based on the Active Brain (CYBER = neon green, MECHA = red, GHOST = stealth dimming, etc.).
 *   **Clickable Nodes:** Click any entity in the D3 network to open a detailed modal with real-time WR, PnL, lifetime edge, and DNA mutation stats.
 *   **Brain Log:** Real-time stream of ADAN's internal thought process, including justifications for Brain Swaps, Vetoes from EVA, and HyperLiquid flows from ATLAS.
 
 ---
 
+## 🛡️ Risk & Capital Engines (Master Plan v3.0 Phase 1 Complete)
+
+ADAN natively limits its own exposure through two critical Risk Engines implemented in the pipeline:
+
+1. **Capital Lockup Manager:** Enforces a rigid 60% maximum treasury utilization limit. If ADAN tries to deploy capital that breaks this ceiling, EVA unilaterally aborts the scan, forcing the system to preserve cash until open markets resolve.
+2. **Nightmare Slippage Engine:** To simulate real-world Polymarket Order Book dynamics without burning actual cash, ADAN artificially deducts a 1.5% penalty per side (3% round-trip) from all theoretical PnL resolutions and Expected Value (EV) edge thresholds. This forces the AGI to only take highly asymmetric bets.
+
+---
+
 ## 🚀 MASTER PLAN v3.0 ROADMAP 
 
-ADAN is currently executing **Phase 1** of its roadmap toward a 60% WR. Next steps:
+ADAN is currently executing **Phase 2** of its roadmap toward a 60% WR. Next steps:
 
 ### Pending (Next Week)
-- 🔒 **Capital Lockup Manager:** Limit utilization to 60% so Kelly Criterion logic accurately accounts for tied-up funds.
-- 📉 **Nightmare Slippage Engine:** Simulate 1%-2.5% severe slippage for low-liquidity Polymarket assets to over-train ADAN's resilience.
 - 💤 **Dream Mode v2:** Enforce strict error categorization (Over/Under weighted signals) during post-mortem analysis.
 
 ### Pending (Month 2 & 3: Graduation)

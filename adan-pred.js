@@ -602,11 +602,51 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 .b-wr-bad{background:#e8c0c0;color:var(--red)}
 
 /* ── Interactive D3 DAG ───────────────────────────────────────── */
+.dynasty-wrap {
+  position: relative;
+  background: var(--bg3);
+  border: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+.dynasty-wrap.fullscreen {
+  position: fixed;
+  inset: 16px;
+  z-index: 1000;
+  box-shadow: 12px 12px 0px rgba(0,0,0,0.8);
+}
+.dynasty-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--border);
+  background: var(--bg4);
+}
+.btn-dag {
+  background: var(--bg);
+  border: 2px solid var(--border);
+  font-family: var(--pixel);
+  font-size: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--text);
+  box-shadow: 2px 2px 0px var(--border);
+  transition: all 0.1s;
+}
+.btn-dag:active {
+  box-shadow: 0px 0px 0px var(--border);
+  transform: translate(2px, 2px);
+}
+.btn-dag.active {
+  background: var(--purple);
+  color: #fff;
+}
+
 #dynasty-panel {
   width: 100%;
   height: 480px;
-  background: var(--bg3);
-  border: 2px solid var(--border);
+  flex: 1;
   position: relative;
   overflow: hidden;
   box-shadow: inset 4px 4px 0px rgba(0,0,0,0.05);
@@ -617,6 +657,18 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
   stroke-width: 2px;
   transition: all 0.2s ease;
   box-shadow: 2px 2px 0px rgba(0,0,0,1);
+}
+
+.d3-node.dimmed { opacity: 0.15; pointer-events: none; }
+.d3-link.dimmed { opacity: 0.15; }
+
+@keyframes nodePulse {
+  0% { filter: drop-shadow(0 0 2px var(--pulse-color)) }
+  50% { filter: drop-shadow(0 0 12px var(--pulse-color)) }
+  100% { filter: drop-shadow(0 0 2px var(--pulse-color)) }
+}
+.d3-node.pulsing rect {
+  animation: nodePulse 1s ease infinite;
 }
 
 .d3-node:hover rect {
@@ -885,7 +937,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
       </div>
       <div class="cmd-scan-bar-wrap"><div class="cmd-scan-bar" id="cmd-scan-bar"></div></div>
       <div class="nf-wrap" id="nf-wrap"></div>
-      <div class="dynasty-panel" id="dynasty-panel"></div>
+      <div class="dynasty-wrap" id="dynasty-wrap">
+        <div class="dynasty-tools">
+          <span class="card-title" style="margin:0;border:none;padding:0">🧬 THE FORGE (DYNASTY DAG)</span>
+          <div style="display:flex; gap: 8px;">
+            <button class="btn-dag" onclick="toggleGoldenPath()" id="btn-gp">⭐ GOLDEN PATH</button>
+            <button class="btn-dag" onclick="toggleDagFullscreen()" id="btn-fs">⛶ FULLSCREEN</button>
+          </div>
+        </div>
+        <div class="dynasty-panel" id="dynasty-panel"></div>
+      </div>
     </div>
 
     <!-- Child Detail Modal -->
@@ -2155,8 +2216,37 @@ function updateNeuralFlow(d) {
 // ── Dynasty Network — D3.js Force DAG ─────────────────────────────────────────
 let d3Sim = null;
 let d3Svg = null;
+let d3G = null;
 let dynNodes = [];
 let dynLinks = [];
+let d3Zoom = null;
+
+function toggleDagFullscreen() {
+  const wrap = document.getElementById('dynasty-wrap');
+  const btn = document.getElementById('btn-fs');
+  if (wrap.classList.contains('fullscreen')) {
+    wrap.classList.remove('fullscreen');
+    btn.textContent = '⛶ FULLSCREEN';
+  } else {
+    wrap.classList.add('fullscreen');
+    btn.textContent = '✖ MINIMIZE';
+  }
+}
+
+let isGoldenPath = false;
+function toggleGoldenPath() {
+  isGoldenPath = !isGoldenPath;
+  const btn = document.getElementById('btn-gp');
+  if (isGoldenPath) {
+    btn.classList.add('active');
+    d3G.selectAll('.d3-node').classed('dimmed', d => d.isDead || (d.group === 2 && d.wr < 50));
+    d3G.selectAll('.d3-link').classed('dimmed', d => !d.isGreen);
+  } else {
+    btn.classList.remove('active');
+    d3G.selectAll('.d3-node').classed('dimmed', false);
+    d3G.selectAll('.d3-link').classed('dimmed', false);
+  }
+}
 
 function updateDynastyPanel(d) {
   const el = document.getElementById('dynasty-panel');
@@ -2170,7 +2260,9 @@ function updateDynastyPanel(d) {
   const newLinks = [];
   
   // 1. Core Node
-  newNodes.push({ id: 'ADAN', group: 0, label: '👑 ADAN', sub: 'Root Gen1', color: 'var(--purple)', fx: el.clientWidth / 2, fy: el.clientHeight / 2 });
+  newNodes.push({ id: 'ADAN', group: 0, label: '👑 ADAN', sub: 'Root Gen1', color: 'var(--purple)', edgeVolume: 5, fx: 0, fy: 0, 
+    pulseColor: (d.state?.mode && d.state.mode !== 'idle') ? 'var(--cyan)' : null 
+  });
 
   // 2. Pillars
   const parents = config.mesaRedonda?.parents || [];
@@ -2180,10 +2272,12 @@ function updateDynastyPanel(d) {
   const pIcons = { apple: '🍎 APPLE', snake: '🐍 SNAKE', eva: '👑 EVA', atlas: '👁️ ATLAS' };
 
   parents.forEach((p, i) => {
+    // Pulse rule: Apple pulses if scanning news. Snake pulses if scanning orderbook.
+    const isScanning = d.state?.thought?.toLowerCase().includes(p.id);
     newNodes.push({
-      id: p.id, group: 1, label: pIcons[p.id], sub: p.role, color: pColors[p.id] || 'var(--grey)'
+      id: p.id, group: 1, label: pIcons[p.id], sub: p.role, color: pColors[p.id] || 'var(--grey)', edgeVolume: 3, pulseColor: isScanning ? pColors[p.id] : null
     });
-    newLinks.push({ source: p.id, target: 'ADAN', value: 3, isGreen: false });
+    newLinks.push({ source: p.id, target: 'ADAN', value: 3, isGreen: false, edgeVolume: 3 });
   });
 
   // 3. Children (Alive + Dead Branches)
@@ -2191,15 +2285,25 @@ function updateDynastyPanel(d) {
     const isDead = c.status === 'dead';
     const cid = c.spec + (isDead ? '_dead_' + idx : '');
     const wr = Math.round((c.childPnl?.wins || 0) / Math.max(1, c.childPnl?.trades || 1) * 100);
+    const xp = c.exp || 0;
     
+    // Check mutations
+    let mutationIcon = '';
+    if (c.dna) {
+       if (c.dna.stake_multiplier > 1.2) mutationIcon += '⚔️';
+       if (c.dna.confirmation_delay > 2) mutationIcon += '🛡️';
+    }
+
     newNodes.push({
       id: cid,
       group: 2,
-      label: (isDead ? '💀 ' : '🧬 ') + (c.name || c.spec).toUpperCase().slice(0, 10),
+      label: (isDead ? '💀 ' : '🧬 ') + (c.name || c.spec).toUpperCase().slice(0, 8) + mutationIcon,
       sub: isDead ? 'DEAD' : ('WR: ' + wr + '%'),
       color: isDead ? 'var(--red)' : 'var(--cyan)',
       childIdx: idx,
-      isDead: isDead
+      isDead: isDead,
+      wr: wr,
+      edgeVolume: Math.min(6, 1 + (xp / 20))
     });
     
     // Link to specific parent or ADAN
@@ -2209,7 +2313,7 @@ function updateDynastyPanel(d) {
     
     // Green line if WR >= 50% and alive
     const isGreen = !isDead && wr >= 50;
-    newLinks.push({ source: cid, target: parentId, value: 1, isGreen: isGreen });
+    newLinks.push({ source: cid, target: parentId, value: 1, isGreen: isGreen, edgeVolume: Math.min(5, 1 + (xp / 25)) });
   });
 
   // Preserve existing D3 node positions where possible so it doesn't jump
@@ -2232,15 +2336,50 @@ function updateDynastyPanel(d) {
       .attr('width', '100%')
       .attr('height', '100%');
       
+    d3G = d3Svg.append('g').attr('class', 'dag-container');
+
+    d3Zoom = d3.zoom()
+      .scaleExtent([0.1, 4])
+      .on('zoom', (event) => {
+        d3G.attr('transform', event.transform);
+      });
+
+    d3Svg.call(d3Zoom);
+    d3Svg.on('dblclick.zoom', null); // disable default double-click zoom
+
+    // Lasso Brush
+    const brush = d3.brush()
+      .extent([[-1000, -1000], [1000, 1000]])
+      .on('start brush', (event) => {
+        if (!event.selection) return;
+        const [[x0, y0], [x1, y1]] = event.selection;
+        d3G.selectAll('.d3-node rect').style('stroke', d => {
+          const isSelected = d.x >= x0 && d.x <= x1 && d.y >= y0 && d.y <= y1;
+          return isSelected ? '#fff' : d.color;
+        });
+      })
+      .on('end', (event) => {
+         if (!event.selection) {
+           d3G.selectAll('.d3-node rect').style('stroke', d => d.color);
+         }
+      });
+      
+    d3G.append("g")
+      .attr("class", "brush")
+      .call(brush);
+
+    // Start centered
+    d3Svg.call(d3Zoom.transform, d3.zoomIdentity.translate(el.clientWidth / 2, el.clientHeight / 2));
+      
     d3Sim = d3.forceSimulation()
       .force('link', d3.forceLink().id(d => d.id).distance(d => d.target.id === 'ADAN' ? 120 : 80))
       .force('charge', d3.forceManyBody().strength(-300))
-      .force('center', d3.forceCenter(el.clientWidth / 2, el.clientHeight / 2))
+      .force('center', d3.forceCenter(0, 0))
       .force('collide', d3.forceCollide().radius(40));
   }
 
   // Update Links
-  const link = d3Svg.selectAll('.d3-link')
+  const link = d3G.selectAll('.d3-link')
     .data(dynLinks, d => d.source.id + '-' + d.target.id);
     
   link.exit().remove();
@@ -2250,15 +2389,17 @@ function updateDynastyPanel(d) {
     
   const linkMerge = linkEnter.merge(link);
   
-  linkMerge.style('stroke', d => d.isGreen ? 'var(--green)' : 'var(--dim)');
+  linkMerge
+    .style('stroke', d => d.isGreen ? 'var(--green)' : 'var(--dim)')
+    .style('stroke-width', d => d.edgeVolume);
 
   // Update Nodes
-  const node = d3Svg.selectAll('.d3-node')
+  const node = d3G.selectAll('.d3-node')
     .data(dynNodes, d => d.id);
     
   node.exit().remove();
 
-  const nodeEnter = d3Svg.selectAll('.d3-node').data(dynNodes, d => d.id).enter()
+  const nodeEnter = d3G.selectAll('.d3-node').data(dynNodes, d => d.id).enter()
     .append('g')
     .attr('class', 'd3-node')
     .call(d3.drag()
@@ -2267,9 +2408,17 @@ function updateDynastyPanel(d) {
         .on('end', (event, d) => { if (!event.active) d3Sim.alphaTarget(0); if(d.id !== 'ADAN') { d.fx = null; d.fy = null; } })
     )
     .on('click', (event, d) => {
+        if (event.defaultPrevented) return;
         if (d.group === 0) showAdanDetail();
         else if (d.group === 1) showParentDetail(d.id);
         else if (d.group === 2) showChildDetail(d.childIdx);
+    })
+    .on('dblclick', (event, d) => {
+        event.stopPropagation();
+        d3Svg.transition().duration(750).call(
+          d3Zoom.transform,
+          d3.zoomIdentity.translate(el.clientWidth / 2, el.clientHeight / 2).scale(1.5).translate(-d.x, -d.y)
+        );
     });
 
   // Box (Neo-brutalist style)
@@ -2298,6 +2447,17 @@ function updateDynastyPanel(d) {
     .text(d => d.sub);
 
   const nodeMerge = nodeEnter.merge(node);
+  
+  // Re-apply classes, pulse colors and state
+  nodeMerge.classed('pulsing', d => !!d.pulseColor);
+  nodeMerge.style('--pulse-color', d => d.pulseColor || 'transparent');
+  if (isGoldenPath) {
+    nodeMerge.classed('dimmed', d => d.isDead || (d.group === 2 && d.wr < 50));
+    linkMerge.classed('dimmed', d => !d.isGreen);
+  } else {
+    nodeMerge.classed('dimmed', false);
+    linkMerge.classed('dimmed', false);
+  }
   
   // Update texts logic in case it changes
   nodeMerge.select('.label-main').text(d => d.label);
@@ -5320,8 +5480,8 @@ async function checkResolutions() {
     const yesWon = Array.isArray(outcomePrices) && parseFloat(outcomePrices[0]) >= 0.99;
     const won = (p.side === 'YES' && yesWon) || (p.side === 'NO' && !yesWon);
 
-    // Slippage simulation: 0.2% deducted on entry + exit = realistic paper trading
-    const SLIPPAGE = 0.002; // 0.2% per side
+    // Slippage simulation: 1.5% deducted on entry + exit = realistic paper trading (Nightmare Engine)
+    const SLIPPAGE = 0.015; // 1.5% per side for low-liquidity PM markets
     const slippageCost = parseFloat((p.stake * SLIPPAGE * 2).toFixed(2)); // entry + exit
     let pnlVal;
     if (won) {
@@ -6007,11 +6167,27 @@ async function doScan(client, state) {
     }
   }
 
-  // 3. Think
+  // 3. CAPITAL LOCKUP MANAGER (Risk Guard)
+  // Enforce Max 60% Treasury Utilization
+  const currentTreasury = pnl.treasury || 10000;
+  let lockedCapital = 0;
+  openPos.forEach(p => { lockedCapital += (p.amount || 0); });
+  const lockupRatio = lockedCapital / currentTreasury;
+
+  if (lockupRatio >= 0.60) {
+    state.thought = `🛑 CAPITAL LOCKUP VETO [EVA] — Locked capital ($${lockedCapital.toFixed(2)}) is ≥ 60% of Treasury ($${currentTreasury.toFixed(2)}). Max exposure reached. Waiting for resolutions before opening new positions.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
+    state.mode = 'result';
+    state.lastScan = new Date().toLocaleTimeString();
+    state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
+    render(state); return;
+  }
+
+  // 4. Think (Neural Pipeline)
   state.mode = 'thinking'; render(state);
   let decision;
   try {
     decision = await think(client, markets, prices, pnl, openPos, soul);
+    // Slippage Engine penalty injected inside think() logic
     state.apiCost = parseFloat(((state.apiCost || 0) + (decision.apiTokens || 2000) / 1e6 * 9).toFixed(5));
   } catch (e) {
     state.thought = 'Claude error: ' + e.message; state.mode = 'result'; render(state); return;
