@@ -2183,23 +2183,33 @@ function updateDynastyPanel(d) {
     newNodes.push({
       id: p.id, group: 1, label: pIcons[p.id], sub: p.role, color: pColors[p.id] || 'var(--grey)'
     });
-    newLinks.push({ source: p.id, target: 'ADAN', value: 3 });
+    newLinks.push({ source: p.id, target: 'ADAN', value: 3, isGreen: false });
   });
 
-  // 3. Children
-  children.forEach(c => {
-    if (c.status === 'dead') return;
-    const cid = c.spec;
+  // 3. Children (Alive + Dead Branches)
+  children.forEach((c, idx) => {
+    const isDead = c.status === 'dead';
+    const cid = c.spec + (isDead ? '_dead_' + idx : '');
+    const wr = Math.round((c.childPnl?.wins || 0) / Math.max(1, c.childPnl?.trades || 1) * 100);
+    
     newNodes.push({
       id: cid,
       group: 2,
-      label: '🧬 ' + (c.name || cid).toUpperCase().slice(0, 10),
-      sub: 'WR: ' + Math.round((c.childPnl?.wins || 0) / Math.max(1, c.childPnl?.trades || 1) * 100) + '%',
-      color: 'var(--cyan)'
+      label: (isDead ? '💀 ' : '🧬 ') + (c.name || c.spec).toUpperCase().slice(0, 10),
+      sub: isDead ? 'DEAD' : ('WR: ' + wr + '%'),
+      color: isDead ? 'var(--red)' : 'var(--cyan)',
+      childIdx: idx,
+      isDead: isDead
     });
+    
     // Link to specific parent or ADAN
-    const parentId = parents.find(p => cid.toLowerCase().startsWith(p.id.charAt(0))) ? parents.find(p => cid.toLowerCase().startsWith(p.id.charAt(0))).id : 'ADAN';
-    newLinks.push({ source: cid, target: parentId, value: 1 });
+    const pStr = (c.faction || c.spec).toLowerCase();
+    const parent = parents.find(p => pStr.startsWith(p.id.charAt(0)));
+    const parentId = parent ? parent.id : 'ADAN';
+    
+    // Green line if WR >= 50% and alive
+    const isGreen = !isDead && wr >= 50;
+    newLinks.push({ source: cid, target: parentId, value: 1, isGreen: isGreen });
   });
 
   // Preserve existing D3 node positions where possible so it doesn't jump
@@ -2239,6 +2249,8 @@ function updateDynastyPanel(d) {
     .attr('class', 'd3-link');
     
   const linkMerge = linkEnter.merge(link);
+  
+  linkMerge.style('stroke', d => d.isGreen ? 'var(--green)' : 'var(--dim)');
 
   // Update Nodes
   const node = d3Svg.selectAll('.d3-node')
@@ -2250,10 +2262,15 @@ function updateDynastyPanel(d) {
     .append('g')
     .attr('class', 'd3-node')
     .call(d3.drag()
-        .on('start', d => { if (!d.active) d3Sim.alphaTarget(0.3).restart(); d.subject.fx = d.subject.x; d.subject.fy = d.subject.y; })
-        .on('drag', d => { d.subject.fx = d.x; d.subject.fy = d.y; })
-        .on('end', d => { if (!d.active) d3Sim.alphaTarget(0); if(d.subject.id !== 'ADAN') { d.subject.fx = null; d.subject.fy = null; } })
-    );
+        .on('start', (event, d) => { if (!event.active) d3Sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+        .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+        .on('end', (event, d) => { if (!event.active) d3Sim.alphaTarget(0); if(d.id !== 'ADAN') { d.fx = null; d.fy = null; } })
+    )
+    .on('click', (event, d) => {
+        if (d.group === 0) showAdanDetail();
+        else if (d.group === 1) showParentDetail(d.id);
+        else if (d.group === 2) showChildDetail(d.childIdx);
+    });
 
   // Box (Neo-brutalist style)
   nodeEnter.append('rect')
@@ -2295,7 +2312,7 @@ function updateDynastyPanel(d) {
       .attr('x2', d => d.target.x)
       .attr('y2', d => d.target.y);
       
-    nodeMerge.attr('transform', d => \`translate(\${d.x},\${d.y})\`);
+    nodeMerge.attr('transform', d => 'translate(' + d.x + ',' + d.y + ')');
   });
   
   d3Sim.force('link').links(dynLinks);
