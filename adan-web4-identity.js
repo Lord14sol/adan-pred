@@ -1,6 +1,4 @@
-'use strict';
-
-const {
+import {
   SolanaSDK,
   IPFSClient,
   buildRegistrationFileJson,
@@ -8,16 +6,16 @@ const {
   Tag,
   TrustTier,
   trustTierToString,
-} = require('8004-solana');
+} from '8004-solana';
 
-const { Keypair, PublicKey } = require('@solana/web3.js');
-const fs   = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+import { Keypair, PublicKey } from '@solana/web3.js';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 
-const STATE_DIR    = path.join(process.env.HOME || process.env.USERPROFILE, '.adan-pred');
+const STATE_DIR = path.join(process.env.HOME || process.env.USERPROFILE, '.adan-pred');
 const KEYPAIR_PATH = path.join(STATE_DIR, 'adan_keypair.json');
-const ASSET_PATH   = path.join(STATE_DIR, 'adan_asset.json');
+const ASSET_PATH = path.join(STATE_DIR, 'adan_asset.json');
 
 // ─────────────────────────────────────────────────────────────
 // HELPER: Inicializar SDK con signer
@@ -53,7 +51,7 @@ async function initAdanKeypair() {
 
   if (fs.existsSync(KEYPAIR_PATH)) {
     const raw = JSON.parse(fs.readFileSync(KEYPAIR_PATH, 'utf8'));
-    const kp  = Keypair.fromSecretKey(Uint8Array.from(raw));
+    const kp = Keypair.fromSecretKey(Uint8Array.from(raw));
     console.log(`[IDENTITY] ✅ Operational wallet loaded`);
     console.log(`[IDENTITY]    Address: ${kp.publicKey.toString()}`);
     return kp;
@@ -98,11 +96,11 @@ async function registerAdan(keypair, options = {}) {
     return saved;
   }
 
-  const sdk  = createSDK(keypair);
+  const sdk = createSDK(keypair);
   const ipfs = createIPFS();
 
   // Verificar balance antes de intentar
-  const conn    = sdk.getSolanaClient();
+  const conn = sdk.getSolanaClient();
   const balance = await conn.getBalance(keypair.publicKey);
   const solBalance = balance / 1e9;
 
@@ -185,12 +183,12 @@ async function registerAdan(keypair, options = {}) {
 
   // Guardar asset address localmente
   const registration = {
-    asset:        result.asset.toString(),
-    signature:    result.signature,
+    asset: result.asset.toString(),
+    signature: result.signature,
     registeredAt: new Date().toISOString(),
     tokenUri,
-    network:      'mainnet-beta',
-    phase:        'paper-trading',
+    network: 'mainnet-beta',
+    phase: 'paper-trading',
   };
 
   fs.writeFileSync(ASSET_PATH, JSON.stringify(registration, null, 2));
@@ -227,7 +225,7 @@ async function reportWeeklyPerformance(keypair, {
 
   const { asset } = JSON.parse(fs.readFileSync(ASSET_PATH, 'utf8'));
   const assetPubkey = new PublicKey(asset);
-  const sdk  = createSDK(keypair);
+  const sdk = createSDK(keypair);
   const ipfs = createIPFS();
 
   // Crear el reporte detallado para subir a IPFS
@@ -239,10 +237,10 @@ async function reportWeeklyPerformance(keypair, {
     phase: isPaperTrading ? 'paper-trading' : 'live',
     timestamp: new Date().toISOString(),
     metrics: {
-      winRate:         parseFloat((winRate * 100).toFixed(2)),
+      winRate: parseFloat((winRate * 100).toFixed(2)),
       weeklyProfitUSD: parseFloat(weeklyProfitUSD.toFixed(2)),
       totalTrades,
-      brierScore:      parseFloat(brierScore.toFixed(4)),
+      brierScore: parseFloat(brierScore.toFixed(4)),
     },
     note: isPaperTrading
       ? 'Paper trading phase — 0.2% simulated slippage, no real capital at risk'
@@ -257,23 +255,23 @@ async function reportWeeklyPerformance(keypair, {
 
   // ── Reportar Win Rate (ATOM auto-score este tag) ─────────────
   await sdk.giveFeedback(assetPubkey, {
-    value:       (winRate * 100).toFixed(2),  // "53.50"
-    tag1:        Tag.successRate,              // ATOM auto-score
-    tag2:        Tag.week,
-    score:       Math.round(winRate * 100),   // 0-100
+    value: (winRate * 100).toFixed(2),  // "53.50"
+    tag1: Tag.successRate,              // ATOM auto-score
+    tag2: Tag.week,
+    score: Math.round(winRate * 100),   // 0-100
     feedbackUri,
   });
 
   // ── Reportar P&L ─────────────────────────────────────────────
   if (weeklyProfitUSD !== 0) {
     await sdk.giveFeedback(assetPubkey, {
-      value:       weeklyProfitUSD.toFixed(2),
-      tag1:        Tag.tradingYield,
-      tag2:        Tag.week,
+      value: weeklyProfitUSD.toFixed(2),
+      tag1: Tag.tradingYield,
+      tag2: Tag.week,
       // Score basado en si fue profitable o no
       score: weeklyProfitUSD > 0
         ? Math.min(100, Math.round(50 + weeklyProfitUSD / 20))
-        : Math.max(0,  Math.round(50 + weeklyProfitUSD / 20)),
+        : Math.max(0, Math.round(50 + weeklyProfitUSD / 20)),
       feedbackUri,
     });
   }
@@ -307,16 +305,16 @@ async function getAdanReputation(keypair) {
   const rep = {
     asset,
     registeredAt,
-    tierNumber:    tier,
-    tierName:      trustTierToString(tier),
-    qualityScore:  atom ? atom.getQualityPercent()    : 0,
-    confidence:    atom ? atom.getConfidencePercent() : 0,
-    riskScore:     atom ? atom.risk_score             : 0,
-    uniqueClients: atom ? atom.estimateUniqueClients(): 0,
-    totalFeedbacks:summary.totalFeedbacks,
-    avgScore:      summary.averageScore,
-    explorerUrl:   `https://8004scan.io/agent/${asset}`,
-    marketUrl:     `https://8004market.io/agent/${asset}`,
+    tierNumber: tier,
+    tierName: trustTierToString(tier),
+    qualityScore: atom ? atom.getQualityPercent() : 0,
+    confidence: atom ? atom.getConfidencePercent() : 0,
+    riskScore: atom ? atom.risk_score : 0,
+    uniqueClients: atom ? atom.estimateUniqueClients() : 0,
+    totalFeedbacks: summary.totalFeedbacks,
+    avgScore: summary.averageScore,
+    explorerUrl: `https://8004scan.io/agent/${asset}`,
+    marketUrl: `https://8004market.io/agent/${asset}`,
   };
 
   console.log('\n┌─────────────────────────────────────────┐');
@@ -346,7 +344,7 @@ async function updateAdanProfile(keypair, updates = {}) {
 
   const { asset } = JSON.parse(fs.readFileSync(ASSET_PATH, 'utf8'));
   const assetPubkey = new PublicKey(asset);
-  const sdk  = createSDK(keypair);
+  const sdk = createSDK(keypair);
   const ipfs = createIPFS();
 
   if (!ipfs) {
@@ -359,9 +357,9 @@ async function updateAdanProfile(keypair, updates = {}) {
 
   // Construir nueva metadata
   const newMetadata = buildRegistrationFileJson({
-    name:        updates.name        || 'ADAN',
+    name: updates.name || 'ADAN',
     description: updates.description || 'ADAN — Live trading phase. 60%+ WR confirmed.',
-    image:       updates.image       || 'ipfs://QmADANAvatar',
+    image: updates.image || 'ipfs://QmADANAvatar',
     services: updates.services || [
       { type: ServiceType.A2A, value: 'http://localhost:3141/api/oracle-signals' },
       { type: ServiceType.MCP, value: 'http://localhost:3141/api/mcp' },
@@ -415,7 +413,11 @@ async function getWeb4DashboardPayload(keypair) {
 // CLI — Ejecutar directamente para setup
 // ─────────────────────────────────────────────────────────────
 
-if (require.main === module) {
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+if (process.argv[1] === __filename) {
   (async () => {
     const args = process.argv.slice(2);
 
@@ -446,9 +448,9 @@ if (require.main === module) {
       await reportWeeklyPerformance(keypair, {
         winRate,
         weeklyProfitUSD: pnl.weeklyProfit || 0,
-        totalTrades:     pnl.trades       || 0,
-        brierScore:      pnl.brierScore   || 0.25,
-        isPaperTrading:  true,  // cambiar a false cuando gradúes
+        totalTrades: pnl.trades || 0,
+        brierScore: pnl.brierScore || 0.25,
+        isPaperTrading: true,  // cambiar a false cuando gradúes
       });
 
     } else if (args.includes('--graduate')) {
@@ -485,7 +487,7 @@ if (require.main === module) {
   })();
 }
 
-module.exports = {
+export {
   initAdanKeypair,
   registerAdan,
   reportWeeklyPerformance,

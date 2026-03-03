@@ -19,6 +19,7 @@
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
+import { routeLLM } from './adan-llm-router.js';
 
 const STATE_DIR = path.join(process.env.HOME, '.adan-pred');
 const BRAIN_STATS_PATH = path.join(STATE_DIR, 'brain_stats.json');
@@ -1001,16 +1002,15 @@ async function runBrainCycle({
         marketQuestion: polymarketQuestion,
     });
 
-    // ── 5. Call Claude ────────────────────────────────────────
-    console.log(`[ADAN] 🤔 ${activeBrain} thinking...`);
-    const claudeResponse = await anthropicClient.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
+    // ── 5. Call Hybrid Router ─────────────────────────────────
+    console.log(`[ADAN] 🤔 ${activeBrain} thinking via Hybrid Router (Heavy)...`);
+    const thought = await routeLLM({
+        weight: 'Heavy',
+        systemPrompt: systemPrompt,
+        userPrompt: userPrompt,
+        anthropicClient: anthropicClient
     });
 
-    const thought = claudeResponse.content[0]?.text ?? '';
     console.log(`[ADAN] 💭 ${activeBrain}: ${thought.slice(0, 200)}...`);
 
     // ── 6. Parse decision ─────────────────────────────────────
@@ -1023,15 +1023,15 @@ async function runBrainCycle({
     // ── 7. Dual AI check (EVA decides if needed) ──────────────
     const needsDualAI = EVA.requiresDualAI({ brainName: activeBrain, confidence: decision.confidence, fund: currentFund, BRAINS });
     if (needsDualAI) {
-        console.log(`[ADAN] 🤖 EVA requesting Haiku counter-opinion...`);
-        const haiku = await anthropicClient.messages.create({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 300,
-            messages: [{ role: 'user', content: `Counter-analyze this crypto bet. Be skeptical. Should ADAN take it?\n\nQuestion: ${polymarketQuestion}\nProposed: ${decision.action}\nReasoning: ${thought.slice(0, 500)}\n\nOutput: AGREE or DISAGREE with one reason.` }],
+        console.log(`[ADAN] 🤖 EVA requesting Light Model counter-opinion...`);
+        const haikuText = await routeLLM({
+            weight: 'Light',
+            systemPrompt: 'You are EVA, an extreme risk manager.',
+            userPrompt: `Counter-analyze this crypto bet. Be skeptical. Should ADAN take it?\n\nQuestion: ${polymarketQuestion}\nProposed: ${decision.action}\nReasoning: ${thought.slice(0, 500)}\n\nOutput: AGREE or DISAGREE with one reason.`,
+            anthropicClient: anthropicClient
         });
-        const haikuText = haiku.content[0]?.text ?? '';
         if (haikuText.includes('DISAGREE')) {
-            console.log(`[ADAN] 🚫 Haiku disagrees — bet cancelled`);
+            console.log(`[ADAN] 🚫 Light Model (EVA) disagrees — bet cancelled`);
             return { action: 'SKIP', brain: activeBrain, thought, haikuVeto: true };
         }
     }
