@@ -1,4 +1,4 @@
-import { Ollama } from 'ollama';
+import ollama from 'ollama';
 
 // Hybrid Router Config
 // Mode can be 'TRAINING' ($0 cost local inference) or 'LIVE' (Anthropic API with Local Fallback)
@@ -6,23 +6,12 @@ export const ROUTER_CONFIG = {
     MODE: process.env.ADAN_MODE || 'TRAINING', // Default to TRAINING for $0 cost simulations
     LOCAL_HOST: 'http://127.0.0.1:11434',
     MODELS: {
-        HEAVY: 'qwen3.5:9b',       // High reasoning, order book analysis
+        HEAVY: 'qwen3.5:0.8b',     // Downgraded to 0.8b because 9b crashes M2 8GB RAM (Swap death)
         LIGHT: 'qwen3.5:0.8b',     // Fast classification, blood-brain barrier
         CLAUDE: 'claude-3-5-sonnet-20241022' // Main live model
     }
 };
 
-const ollama = new Ollama({ host: ROUTER_CONFIG.LOCAL_HOST });
-
-/**
- * Hybrid LLM Router
- * @param {Object} params
- * @param {'Heavy'|'Light'} params.weight - Computational weight needed for the prompt
- * @param {string} params.systemPrompt - The system instructions
- * @param {string} params.userPrompt - The user prompt/data
- * @param {Object} [params.anthropicClient] - Optional Anthropic client for LIVE mode
- * @returns {Promise<string>} The generated text response
- */
 export async function routeLLM({ weight, systemPrompt, userPrompt, anthropicClient }) {
     const localModel = weight === 'Heavy' ? ROUTER_CONFIG.MODELS.HEAVY : ROUTER_CONFIG.MODELS.LIGHT;
 
