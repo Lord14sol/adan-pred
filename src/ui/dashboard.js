@@ -4,8 +4,8 @@ import http from 'http';
 import {
   DIR, MAX_POSITIONS, MIN_EDGE, PAPER_BET_SIZE, SYMBOLS, TREE_RULES,
   G, Y, R, B, C, M, W, D, X, BOLD,
-  cls, loadStrategy, loadPnL, savePnL, loadPositions, loadCalibration,
-  expProgress, levelTitle, getSkills
+  cls, loadConfig, loadStrategy, loadPnL, savePnL, loadPositions, loadCalibration,
+  expProgress, levelTitle, getSkills, INTEL_DIR
 } from '../core/config.js';
 import { signalLabel } from '../api/binance.js';
 
@@ -187,7 +187,7 @@ function _stopThinkSpin() {
   try { process.stdout.write('\r                                                                   \r'); } catch { }
 }
 
-function startDashboard() {
+function startDashboard(brainManager) {
   const PORT = 3141;
   const HTML = `<!DOCTYPE html>
 <html lang="en">

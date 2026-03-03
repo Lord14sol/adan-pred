@@ -1991,7 +1991,7 @@ async function checkResolutions() {
     if (p.entryVec) {
       memorizeTradeContext(p, { orderBook: { buyPressure: p.entryVec.buyPressure, ratio: p.entryVec.obRatio, sellWallTrap: p.entryVec.sellWallTrap, buyWallTrap: p.entryVec.buyWallTrap }, rsi: p.entryVec.rsi, rsi5m: p.entryVec.rsi5m, trend1m: p.entryVec.trend1m, trend5m: p.entryVec.trend5m, trend15m: p.entryVec.trend15m, trend1h: p.entryVec.trend1h, bb: { pct: p.entryVec.bbPct }, vol: { ratio: p.entryVec.volRatio }, volAccel: p.entryVec.volAccel, vwap5m: { pct: p.entryVec.vwapPct }, volatility: p.entryVec.volatility }, won);
     }
-    
+
     // We need awardChildExp if we have it or try
     if (typeof awardChildExp === 'function') awardChildExp(p.asset || 'btc', won);
 
@@ -2033,7 +2033,7 @@ async function checkResolutions() {
     savePositions(pos);
     const pnlFinal = loadPnL();
     if (typeof _agiClient !== 'undefined' && _agiClient) {
-       try { autoEvolveSoul(_agiClient, pnlFinal).catch(() => {}); } catch {}
+      try { autoEvolveSoul(_agiClient, pnlFinal).catch(() => { }); } catch { }
     }
     absorbEliteGenome(pnlFinal);
     pruneDeadChildren(loadPnL());
@@ -2314,7 +2314,7 @@ async function main() {
   const client = new Anthropic({ apiKey });
   _agiClient = client; // AGI layers use this reference
   loadSoul();
-  startDashboard();
+  startDashboard(brainManager);
 
   const state = {
     status: 'Starting...', mode: 'idle', thought: null,
