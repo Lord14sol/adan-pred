@@ -474,6 +474,7 @@ function startDashboard() {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ADAN · Web4 Node</title>
+<script>window.ADAN_MODE = '${process.env.ADAN_MODE || 'TRAINING'}';</script>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=JetBrains+Mono:wght@400;600&display=swap');
@@ -2049,7 +2050,7 @@ function updateDecisionsLog(d) {
     html += \`<div class="brain-live-block thinking">
       <div class="brain-live-header">
         <span class="brain-live-dot"></span>
-        <span style="color:var(--cyan);font-weight:700;font-size:11px;font-family:var(--mono)">\${frame} ANALYZING — \${(process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Local Qwen3.5 0.8b' : 'Claude Sonnet 4.6'}</span>
+        <span style="color:var(--cyan);font-weight:700;font-size:11px;font-family:var(--mono)">\${frame} ANALYZING — \${(window.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Local Qwen3.5 0.8b' : 'Claude Sonnet 4.6'}</span>
         <span style="color:var(--grey);font-size:9px;margin-left:auto;font-family:var(--mono)">thinking...</span>
       </div>
       <div class="brain-live-body">Procesando mercados + datos Binance + señales hijos...</div>
@@ -2252,7 +2253,7 @@ function updateNeuralFlow(d) {
 
     const dot = document.getElementById('cmd-live-dot');
     const txt = document.getElementById('cmd-live-txt');
-    const aiEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Local Qwen3.5' : 'Sonnet 4.6';
+    const aiEngine = (window.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Local Qwen3.5' : 'Sonnet 4.6';
     if (dot) dot.className = 'cmd-live-dot' + (isThinking ? ' thinking' : (btc ? '' : ' idle'));
     if (txt) {
         txt.textContent = isThinking ? \`THINKING — \${aiEngine} analyzing\` : isDone ? 'DECISION MADE' : (btc ? 'MONITORING · live prices' : 'INITIALIZING');
@@ -6234,15 +6235,8 @@ async function doScan(client, state) {
   });
   state.markets = markets.slice(0, 8);
 
-  // Sleep mode: if no active markets right now → skip Claude call, just show status
+  // Sleep mode: if no active markets right now → activate Night Watch Broad Scanner
   if (activeNow.length === 0) {
-    // Polymarket session runs roughly 8AM-midnight ET = UTC 13:00-05:00
-    const utcHour = new Date().getUTCHours();
-    const sessionLikely = utcHour >= 13 || utcHour < 5; // ET 8AM-midnight
-    const sleepMin = sessionLikely ? 5 : 20; // check every 5min if session might be live
-    const nextOpen = sessionLikely
-      ? 'Session may be opening — checking every 5min'
-      : '5M session opens ~8AM ET. Checking every 20min.';
     // Shadow mode: use offline time to practice Binance-only predictions (LVL 25+)
     const xpShadow = expProgress(pnl.exp || 0);
     if (xpShadow.level >= 25 && prices) {
@@ -6259,32 +6253,27 @@ async function doScan(client, state) {
     runAllChildScanners(prices, allMarkets).catch(() => { });
 
     // ── DREAM MODE — off-hours self-reflection (AGI Layer 6) ─────────────
-    // ADAN replays recent losses with Claude and generates new insights for SOUL.md
     if (client && !pnl._lastDream || (Date.now() - new Date(pnl._lastDream || 0).getTime()) > 3600000) {
       dreamMode(client, pnl).catch(() => { });
     }
 
-    state.thought = `No active markets closing within 4h. ${nextOpen}\nDisplaying ${future.length} upcoming markets for reference.\nPreserving $${pnl.fund?.toFixed(2) || 10000}. Will bet automatically when session opens.${pnl._lastDream ? '\n💤 Last dream session: ' + new Date(pnl._lastDream).toLocaleTimeString() : ''}`;
-    state.mode = 'result'; state.lastScan = new Date().toLocaleTimeString();
-    state.nextScanIn = sleepMin;
-    render(state);
-    return;
-  }
-
-  if (markets.length === 0) {
-    // Last resort: fetch any active markets and show top crypto ones regardless of close time
-    const fallback = await polyFetch('/markets?limit=200&active=true&closed=false&order=volumeNum&ascending=false');
+    // ── NIGHT WATCH BROAD SCANNER ─────────────
+    // Fetch ALL active markets regardless of close time or crypto tag to train the models locally
+    state.status = 'Activating Night Watch Broad Scanner...'; render(state);
+    const fallback = await polyFetch('/markets?limit=100&active=true&closed=false&order=volumeNum&ascending=false');
     const fbList = Array.isArray(fallback) ? fallback : (fallback?.markets || []);
-    const fbCrypto = fbList.filter(m => CRYPTO_RE.test(m.question || m.title || '')).slice(0, 8);
-    if (fbCrypto.length > 0) {
-      state.markets = fbCrypto.map(m => normalizePolymarket(m, prices));
-      state.thought = `Found ${fbCrypto.length} crypto markets (no recent close constraint). Monitoring for best entry. ADAN will bet when edge > ${(strat.minEdge * 100).toFixed(0)}%.`;
+    const validFallback = fbList.filter(m => m.yesPrice > 0.05 && m.yesPrice < 0.95).slice(0, 10);
+
+    if (validFallback.length > 0) {
+      state.markets = validFallback.map(m => normalizePolymarket(m, prices));
+      markets = state.markets; // Override loop target so the brain processes them
+      state.thought = `🌙 VIGILIA NOCTURNA: Mercados Crypto a corto plazo cerrados.\nEscaneando \${validFallback.length} mercados globales (Política, Deportes, etc.) para entrenar a los Avatares toda la noche.`;
     } else {
-      state.thought = 'No crypto markets found on Polymarket. API may be down or all markets closed. Retrying in ' + Math.round(SCAN_INTERVAL_MS / 60000) + 'min.';
+      state.thought = 'Polymarket API offline. Retrying in ' + Math.round(SCAN_INTERVAL_MS / 60000) + 'min.';
+      state.mode = 'result'; state.lastScan = new Date().toLocaleTimeString();
+      state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
+      render(state); return;
     }
-    state.mode = 'result'; state.lastScan = new Date().toLocaleTimeString();
-    state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
-    render(state); return;
   }
 
   // 2.5 Run child scanners in background (LVL 3+) — no Claude, just data
