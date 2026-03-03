@@ -156,3 +156,21 @@ The Evolutionary Model has been upgraded into a physical, playable ecosystem.
 ADAN won't let rogue algorithms vaporize your Treasury. Every API cycle must bypass the new local validation engines before spending Anthropic tokens or USDC:
 *   **Capital Lockup Manager:** Hard-vetos any new trades if the current aggregate open positions exceed `60%` of Treasury size.
 *   **Nightmare Slippage Engine:** Hardcoded `1.5%` penalty per side into the reinforcement learning PnL loops to simulate low liquidity in Polymarket meme markets. Models that try to scalp ultra-tight 2% edges are mathematically punished.
+
+## 🌐 Web4 Agent Identity & Reputation (Solana Agent Registry)
+
+ADAN now integrates with the **Solana Agent Registry (ERC-8004)** to build an immutable, on-chain reputation profile. This allows other agents to discover ADAN, verify its historical performance (Win Rate, Brier Score, P&L), and subscribe to its signals.
+
+### Agent Architecture
+*   **Owner Wallet:** Your personal Phantom/hardware wallet. Used to register ADAN and hold the Agent NFT.
+*   **Operational Wallet (`~/.adan-pred/adan_keypair.json`):** Created automatically by ADAN on first boot. Used to sign daily transactions, pay gas, report feedback to the registry, and receive signal payments. Needs ~0.01 SOL for gas.
+*   **Cold Wallet:** Hardcoded receiving address for emergencies (Directive Zero). 
+
+### Setup Instructions
+1. Install dependencies: `npm install 8004-solana @solana/web3.js`
+2. Generate ADAN's Operational Wallet: `node adan-web4-identity.js` (Fund this address with 0.01 SOL).
+3. Set environment variables in `.env`: `SOLANA_RPC` and `PINATA_JWT`.
+4. Register ADAN on-chain (~$0.81 cost): `node adan-web4-identity.js --register`.
+5. Check current Trust Tier: `node adan-web4-identity.js --status`.
+
+Every week, ADAN can auto-report its `pnl.json` performance using `node adan-web4-identity.js --report` to slowly upgrade its Trust Tier (Bronze → Silver → Gold → Platinum) via the ATOM Engine.
