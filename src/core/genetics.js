@@ -30,7 +30,7 @@ async function spawnChild(client, pnl, specialization) {
   const xpData = expProgress(pnl.exp || 0);
   const sc = TREE_RULES.spawnConditions;
   const children = pnl.children || [];
-  // LVL 3 → 1 hijo máximo. LVL 4+ → hasta 6 hijos. Hijos SOLO informan, NUNCA apuestan.
+  // LVL 3 → 1 max child. LVL 4+ → up to 6 children. Children ONLY report, NEVER bet.
   const maxC = xpData.level >= 4 ? TREE_RULES.maxChildrenGen1 : TREE_RULES.maxChildrenAtLvl3;
   if (xpData.level < sc.minLvl) return null;
   if (children.length >= maxC) return null;
@@ -97,9 +97,9 @@ ${inheritedLines.join('\n')}
   const childId = Date.now().toString();
   const capital = Math.min(pnl.treasury * 0.3, 500);
 
-  // ── MUTACIÓN GENÉTICA — presión evolutiva ─────────────────────────────────
-  // Gen 1 (Riesgo): minEdge ±10%, Gen 2 (Stake): 5-15% capital, Gen 3 (Paciencia): ±20%
-  // Gen C (Cognitivo): estilo de análisis (A=volume/vwap, B=bollinger/vol, C=rsi/reversal)
+  // ── GENETIC MUTATION — evolutionary pressure ─────────────────────────────────
+  // Gen 1 (Risk): minEdge ±10%, Gen 2 (Stake): 5-15% capital, Gen 3 (Patience): ±20%
+  // Gen C (Cognitive): analysis style (A=volume/vwap, B=bollinger/vol, C=rsi/reversal)
   const mutate = (base, pct = 0.08) => parseFloat((base * (1 + (Math.random() * 2 - 1) * pct)).toFixed(4));
   const parentStrat = loadStrategy();
   // Cognitive style: read from parent's best child or random
@@ -111,13 +111,13 @@ ${inheritedLines.join('\n')}
   const patience = parseFloat((0.8 + Math.random() * 0.8).toFixed(2)); // 0.8-1.6x
   const dna = {
     minEdge: mutate(parentStrat.minEdge || 0.05, 0.10), // Gen 1: risk aversion ±10%
-    volWeight: mutate(1.0, 0.08), // peso volumen
-    vwapWeight: mutate(1.0, 0.08), // peso VWAP
-    boredBBMin: mutate(0.006, 0.10), // umbral aburrimiento
+    volWeight: mutate(1.0, 0.08), // volume weight
+    vwapWeight: mutate(1.0, 0.08), // VWAP weight
+    boredBBMin: mutate(0.006, 0.10), // boredom threshold
     stakePct,                                                      // Gen 2: stake 5-15% capital
     patience,                                                      // Gen 3: market patience factor
-    cognitiveStyle,                                                // Estilo cognitivo A/B/C
-    mutation: Math.round(Math.random() * 100)                   // seed trazabilidad
+    cognitiveStyle,                                                // Cognitive style A/B/C
+    mutation: Math.round(Math.random() * 100)                   // traceability seed
   };
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -129,7 +129,7 @@ ${inheritedLines.join('\n')}
     parentId: pnl.id || 'root', spec: nextSpec, name: childName, faction: chosenFaction,
     // Child observes first 5 trades before sending signals (signal quality gate)
     signalActiveTrades: 5, status: 'observing',
-    dna  // mutación genética hereditaria
+    dna  // hereditary genetic mutation
   }, null, 2));
 
   const child = { id: childId, name: childName, spec: nextSpec, faction: chosenFaction, born: new Date().toISOString(), capital, dir: childDir, generation: (pnl.generation || 1) + 1, status: 'observing', dna };
@@ -141,14 +141,14 @@ ${inheritedLines.join('\n')}
   return child;
 }
 
-// ── ABSORCIÓN GENÉTICA ASCENDENTE ────────────────────────────────────────────
-// El mecanismo central de evolución: el mejor hijo le sube sus genes al padre.
-// ADAN es el evaluador y el beneficiario — no el que decide qué hijo sobrevive,
-// sino el que absorbe la inteligencia ganadora hacia su propio ADN operativo.
+// ── ASCENDING GENETIC ABSORPTION ────────────────────────────────────────────
+// The central mechanism of evolution: the best child promotes its genes to the parent.
+// ADAN is the evaluator and beneficiary — not the one who decides which child survives,
+// but the one who absorbs winning intelligence into its own operational DNA.
 //
-// Flujo: hijo nace con DNA mutado → opera → si supera a ADAN en ≥10 trades →
-//        ADAN absorbe su DNA → dynamic_weights.json se actualiza →
-//        ADAN opera en el próximo ciclo con ese genoma superior.
+// Flow: child born with mutated DNA → operates → if outperforms ADAN in ≥10 trades →
+//        ADAN absorbs its DNA → dynamic_weights.json updates →
+//        ADAN operates in the next cycle with that superior genome.
 function absorbEliteGenome(pnl) {
   const children = pnl.children || [];
   if (!children.length) return;
@@ -164,12 +164,12 @@ function absorbEliteGenome(pnl) {
     let cp;
     try { cp = JSON.parse(fs.readFileSync(cpPath, 'utf8')); } catch { continue; }
 
-    if (!cp.dna) continue;                          // hijo sin mutación = no aplica
-    if ((cp.trades || 0) < 10) continue;            // mínimo estadístico
+    if (!cp.dna) continue;                          // child without mutation = not applicable
+    if ((cp.trades || 0) < 10) continue;            // statistical minimum
     const childWR = cp.trades > 0 ? (cp.wins || 0) / cp.trades : 0;
-    if (childWR <= parentWR) continue;              // solo absorbe si supera al padre
+    if (childWR <= parentWR) continue;              // only absorb if outperforms parent
 
-    // Score compuesto: win rate + número de trades (más trades = más confianza)
+    // Composite score: win rate + number of trades (more trades = more confidence)
     const score = childWR * 100 + Math.log(cp.trades + 1) * 5;
     if (score > bestScore) {
       bestScore = score;
@@ -177,15 +177,15 @@ function absorbEliteGenome(pnl) {
     }
   }
 
-  if (!bestChild) return; // nadie supera al padre todavía
+  if (!bestChild) return; // nobody outperforms parent yet
 
   const dna = bestChild.cp.dna;
   const curr = loadDynWeights();
 
-  // Absorción gradual (20% del delta por ciclo — no absorción total de golpe)
-  // Esto evita que un hijo con suerte distorsione el genoma del padre en un ciclo.
+  // Gradual absorption (20% delta per cycle — no total absorption at once)
+  // This prevents a lucky child from distorting the parent's genome in one cycle.
   const lerp = (a, b, t) => parseFloat((a + (b - a) * t).toFixed(4));
-  const T = 0.20; // tasa de absorción: 20% del camino hacia el genoma del hijo
+  const T = 0.20; // absorption rate: 20% of the way to child genome
   const absorbed = {
     volumeWeight: lerp(curr.volumeWeight, dna.volWeight || 1.0, T),
     vwapWeight: lerp(curr.vwapWeight, dna.vwapWeight || 1.0, T),
@@ -196,26 +196,26 @@ function absorbEliteGenome(pnl) {
     _note: curr._note
   };
 
-  // Solo escribe si hay cambio real
+  // Only write if real change
   const changed = Math.abs(absorbed.volumeWeight - curr.volumeWeight) > 0.001
     || Math.abs(absorbed.vwapWeight - curr.vwapWeight) > 0.001;
   if (!changed) return;
 
   fs.writeFileSync(DYN_WEIGHTS_PATH, JSON.stringify({ ...curr, ...absorbed }, null, 2));
 
-  const msg = `\n### ABSORCIÓN GENÉTICA — ${new Date().toISOString()}:\n`
-    + `Hijo élite: ${bestChild.name || bestChild.spec} | WR: ${absorbed._childWR} (padre: ${absorbed._parentWR})\n`
-    + `DNA absorbido: volWeight=${dna.volWeight} → ${absorbed.volumeWeight}, vwapWeight=${dna.vwapWeight} → ${absorbed.vwapWeight}\n`
-    + `Tasa de absorción: 20% del delta. ADAN evoluciona gradualmente hacia el genoma ganador.\n`;
+  const msg = `\n### GENETIC ABSORPTION — ${new Date().toISOString()}:\n`
+    + `Elite child: ${bestChild.name || bestChild.spec} | WR: ${absorbed._childWR} (parent: ${absorbed._parentWR})\n`
+    + `DNA absorbed: volWeight=${dna.volWeight} → ${absorbed.volumeWeight}, vwapWeight=${dna.vwapWeight} → ${absorbed.vwapWeight}\n`
+    + `Absorption rate: 20% delta. ADAN evolves gradually toward winning genome.\n`;
   appendToSoul(msg);
 
   console.log(C + BOLD + '\n  ◈ DNA ABSORBED from ' + bestChild.name + ' → ADAN evolves' + X);
 }
 
-// ── MUERTE NATURAL DE HIJOS ───────────────────────────────────────────────────
-// Un hijo que pierde todo su capital muere. No reaparece. No se recupera.
-// Esta es la presión de selección: los genomas malos desaparecen del árbol.
-// Los buenos sobreviven, se reproducen, y su DNA sube a ADAN vía absorción.
+// ── NATURAL CHILD DEATH ───────────────────────────────────────────────────────
+// A child that loses all capital dies. It doesn't reappear. It doesn't recover.
+// This is selection pressure: bad genomes disappear from the tree.
+// Good ones survive, reproduce, and their DNA moves up to ADAN via absorption.
 function pruneDeadChildren(pnl) {
   const children = pnl.children || [];
   const alive = [];
@@ -259,17 +259,17 @@ function pruneDeadChildren(pnl) {
   for (const d of dead) {
     const reason = d.deathReason === 'incompetence'
       ? `Avg intel score: ${d.avgScore}/100 over 15 cycles — consistently weak signal.`
-      : `Capital agotado. WR final: ${d.finalWR}% en ${d.finalTrades} trades.`;
+      : `Capital exhausted. Final WR: ${d.finalWR}% in ${d.finalTrades} trades.`;
     const msg = `\n### CHILD DIED — ${new Date().toISOString()}:\n`
-      + `${d.name || d.spec} (${d.spec}) ha muerto por ${d.deathReason || 'capital'}.\n`
+      + `${d.name || d.spec} (${d.spec}) has died due to ${d.deathReason || 'capital'}.\n`
       + `${reason} DNA: ${JSON.stringify(d.dna || {})}\n`
-      + `Selección natural ha hablado. Este genoma no sobrevivió.\n`;
+      + `Natural selection has spoken. This genome did not survive.\n`;
     appendToSoul(msg);
     const cause = d.deathReason === 'incompetence' ? 'incompetent (score avg ' + d.avgScore + ')' : 'capital exhausted';
     console.log(R + BOLD + '\n  ✗ CHILD DIED: ' + (d.name || d.spec) + ' (' + d.spec + ') — ' + cause + X);
   }
 
-  // Actualiza el árbol del padre
+  // Update father's tree
   for (const d of dead) {
     d.status = 'dead';
     d.deathTime = new Date().toISOString();
@@ -278,16 +278,16 @@ function pruneDeadChildren(pnl) {
   savePnL(pnl);
 }
 
-// ── TORNEO DE LA MUERTE: al trade 20 mata bottom 50%, redistribuye capital ────────────
-// La selección natural acelerada: sólo los más rentables sobreviven la primera purga.
-// Capital de los muertos va al Tesoro del padre para redistribuirse entre los vivos.
+// ── TOURNAMENT OF DEATH: at trade 20 kill bottom 50%, redistribute capital ────────────
+// Accelerated natural selection: only the most profitable survive the first purge.
+// Capital from the dead goes to father's treasury to be redistributed to the living.
 function runTournamentOfDeath(pnl) {
   const children = pnl.children || [];
   if (!children.length) return;
   if ((pnl.trades || 0) < TREE_RULES.tournamentTrades) return;
   if (pnl._tournamentDone) return; // solo una vez
 
-  // Leer PnL de cada hijo
+  // Read PnL from each child
   const withStats = children.map(ch => {
     const childDir = ch.dir || path.join(DIR, 'children', ch.id || ch.spec);
     const cpPath = path.join(childDir, 'pnl.json');
@@ -299,11 +299,11 @@ function runTournamentOfDeath(pnl) {
     } catch { return { ...ch, wr: 0, fund: 0 }; }
   });
 
-  // Solo si suficientes hijos tienen trades para comparar
+  // Only if enough children have trades to compare
   const active = withStats.filter(c => c.trades >= 5);
   if (active.length < 2) return;
 
-  // Ordenar por WR (mejor primero)
+  // Sort by WR (best first)
   active.sort((a, b) => b.wr - a.wr);
   const cutoff = Math.ceil(active.length / 2);
   const survivors = active.slice(0, cutoff);
@@ -323,17 +323,17 @@ function runTournamentOfDeath(pnl) {
       fs.writeFileSync(cpPath, JSON.stringify(cp, null, 2));
     } catch { }
     const msg = `\n### TOURNAMENT DEATH — ${new Date().toISOString()}:\n`
-      + `${loser.name || loser.spec} eliminado en Torneo de la Muerte (trade ${pnl.trades}).\n`
-      + `WR: ${Math.round(loser.wr * 100)}% — perdió el corte. Capital recuperado: $${(loser.fund || 0).toFixed(2)}.\n`;
+      + `${loser.name || loser.spec} eliminated in Tournament of Death (trade ${pnl.trades}).\n`
+      + `WR: ${Math.round(loser.wr * 100)}% — missed the cut. Recovered capital: $${(loser.fund || 0).toFixed(2)}.\n`;
     appendToSoul(msg);
     console.log(R + BOLD + '\n  ✗ TOURNAMENT KILL: ' + (loser.name || loser.spec) + ' WR ' + Math.round(loser.wr * 100) + '%' + X);
   }
 
-  // Capital redistribuído al tesoro
+  // Capital redistributed to treasury
   pnl.treasury = parseFloat(((pnl.treasury || 0) + recoveredCapital).toFixed(2));
   pnl._tournamentDone = true;
 
-  // Mantener solo survivors + children sin suficientes trades + losers muertos
+  // Keep survivors + children without enough trades + dead losers
   const noTrades = withStats.filter(c => !active.find(a => a.id === c.id));
 
   for (const loser of losers) {
@@ -349,8 +349,8 @@ function runTournamentOfDeath(pnl) {
   console.log(M + BOLD + '\n  ◈ TOURNAMENT DONE: ' + survivors.length + ' survivors, $' + recoveredCapital.toFixed(2) + ' recovered' + X);
 }
 
-// ── COMPETENCIA HORIZONTAL: múltiples variantes por arquetipo ──────────────
-// Después de cada trade, evalúa qué padre fue más acertado y ajusta influencia.
+// ── HORIZONTAL COMPETITION: multiple variants per archetype ──────────────
+// After each trade, evaluates which parent was more accurate and adjusts influence.
 function evaluateParentPerformance(pnl, tradeResult) {
   const config = loadConfig();
   if (!config?.mesaRedonda?.competition?.horizontal) return;
@@ -417,8 +417,8 @@ function evaluateParentPerformance(pnl, tradeResult) {
   saveConfig(config);
 }
 
-// ── COMPETENCIA VERTICAL: La Vía del Usurpador ──────────────────────────
-// Gen2 hijo con WR consistentemente > padre arquetípico en 10+ trades → usurpa
+// ── VERTICAL COMPETITION: The Path of the Usurper ──────────────────────────
+// Gen2 child with WR consistently > archetypal parent in 10+ trades → usurps
 function checkUsurperPath(pnl) {
   const config = loadConfig();
   if (!config?.mesaRedonda?.competition?.verticalUsurper) return;
@@ -471,10 +471,10 @@ function checkUsurperPath(pnl) {
   }
 }
 
-// ── PROMOCIÓN DE NIETOS: si nieto supera al hijo padre, el hijo muere y el nieto sube ──
-// Esto implementa selección ascendente: el mejor genoma siempre sube al nivel más alto.
-// Nieto (Gen3) → mata al Hijo (Gen2) → Nieto pasa a ser Hijo directo de ADAN (Gen2)
-// El nieto hereda la posición y puede crear nuevos hijos propios.
+// ── GRANDCHILD PROMOTION: if grandchild outperforms child parent, the child dies and grandchild moves up ──
+// This implements ascending selection: the best genome always moves to the highest level.
+// Grandchild (Gen3) → kills Child (Gen2) → Grandchild becomes direct Child of ADAN (Gen2)
+// The grandchild inherits the position and can create their own new children.
 function promoteEliteGrandchild(pnl) {
   const children = pnl.children || [];
   if (!children.length) return;
@@ -502,17 +502,17 @@ function promoteEliteGrandchild(pnl) {
 
       const gcWR = (gcPnl.trades || 0) >= 10 ? (gcPnl.wins || 0) / gcPnl.trades : null;
       if (childWR === null || gcWR === null) continue;
-      if (gcWR <= childWR + 0.12) continue; // nieto debe superar al padre por >12%
+      if (gcWR <= childWR + 0.12) continue; // grandchild must outperform parent by >12%
 
-      // PROMOCIÓN: nieto elimina al padre y sube a Gen 2
+      // PROMOTION: grandchild eliminates parent and moves up to Gen 2
       const msg = `\n### GRANDCHILD PROMOTION — ${new Date().toISOString()}:\n`
-        + `${gc.name || gc.spec} (GC·WR:${Math.round(gcWR * 100)}%) eliminó a ${child.name || child.spec} (WR:${Math.round(childWR * 100)}%)\n`
-        + `${gc.name || gc.spec} promovido a Gen 2 — hijo directo de ADAN. El mejor genoma sobrevive.\n`
-        + `DNA del nieto: ${JSON.stringify(gc.dna || {})}\n`;
+        + `${gc.name || gc.spec} (GC·WR:${Math.round(gcWR * 100)}%) eliminated ${child.name || child.spec} (WR:${Math.round(childWR * 100)}%)\n`
+        + `${gc.name || gc.spec} promoted to Gen 2 — direct child of ADAN. The best genome survives.\n`
+        + `Grandchild DNA: ${JSON.stringify(gc.dna || {})}\n`;
       appendToSoul(msg);
       console.log(C + BOLD + '\n  ◈ PROMOTION: ' + (gc.name || gc.spec) + ' → Gen2 (eliminated parent ' + (child.name || child.spec) + ')' + X);
 
-      // Nieto pasa a ser hijo directo de ADAN
+      // Grandchild becomes direct child of ADAN
       const promoted = {
         ...gc,
         generation: (pnl.generation || 1) + 1,
@@ -522,11 +522,11 @@ function promoteEliteGrandchild(pnl) {
         promotedAt: new Date().toISOString()
       };
 
-      // Reemplaza al hijo con el nieto promovido
+      // Replaces child with promoted grandchild
       children.splice(i, 1, promoted);
       pnl.children = children;
       savePnL(pnl);
-      return; // una promoción por ciclo
+      return; // one promotion per cycle
     }
   }
 }
