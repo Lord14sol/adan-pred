@@ -1703,7 +1703,12 @@ async function think(client, markets, prices, pnl, openPos, soul) {
       totalTrades: pnl.trades || 0,
       coins: ['BTC', 'ETH', 'SOL'],
       brainManager,
-      anthropicClient: client
+      anthropicClient: client,
+      onStatus: (msg) => {
+        state.status = msg;
+        _startThinkSpin(msg); // Update terminal spinner with current step
+        render(state);        // Push to web UI
+      }
     });
 
     // Log the thought

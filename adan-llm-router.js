@@ -34,16 +34,34 @@ export async function routeLLM({ weight, systemPrompt, userPrompt, anthropicClie
     // Local Execution (TRAINING mode OR Live Fallback)
     console.log(`[ROUTER] 🖥️ Routing to Local Ollama (${localModel})`);
     try {
-        const response = await ollama.chat({
-            model: localModel,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userPrompt }
-            ]
+        // Custom request to allow longer timeout for slow local models
+        const response = await fetch(`${ROUTER_CONFIG.LOCAL_HOST}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: localModel,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt }
+                ],
+                stream: false
+            }),
+            signal: AbortSignal.timeout(120000) // 120s timeout for local inference
         });
-        return response.message?.content || '';
+
+        if (!response.ok) {
+            const errBody = await response.text();
+            throw new Error(`Ollama Error (${response.status}): ${errBody}`);
+        }
+
+        const result = await response.json();
+        return result.message?.content || '';
     } catch (localError) {
-        console.error(`[ROUTER] ❌ Local Model Failed: ${localError.message}. Make sure Ollama is running.`);
+        if (localError.name === 'TimeoutError') {
+            console.error(`[ROUTER] ⏱️ Local Model Timed Out (120s). Try a smaller model or check system load.`);
+        } else {
+            console.error(`[ROUTER] ❌ Local Model Failed: ${localError.message}. Make sure Ollama is running.`);
+        }
         throw localError;
     }
 }

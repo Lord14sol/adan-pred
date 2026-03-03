@@ -174,10 +174,11 @@ const RESULT_SHOW_MS = 22000; // show "DECISION MADE" for 22s then go idle
 let _thinkSpinTimer = null;
 const _SPIN_F = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 let _spinIdx = 0;
-function _startThinkSpin() {
-  if (_thinkSpinTimer) return;
+function _startThinkSpin(msg) {
+  if (_thinkSpinTimer) _stopThinkSpin();
+  const label = msg || 'Thinking...';
   _thinkSpinTimer = setInterval(() => {
-    try { process.stdout.write('\r  ' + _SPIN_F[_spinIdx++ % _SPIN_F.length] + ' Claude Sonnet 4.6 analyzing market edge...              '); } catch { }
+    try { process.stdout.write('\r  ' + _SPIN_F[_spinIdx++ % _SPIN_F.length] + ' ' + label + '               '); } catch { }
   }, 120);
 }
 function _stopThinkSpin() {
@@ -582,6 +583,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 .dec-reason.open{display:block}
 .dec-toggle{font-size:9px;color:var(--grey);white-space:nowrap;font-family:var(--pixel)}
 .dec-learn{margin-top:5px;font-size:10px;color:var(--purple);font-style:italic;font-family:var(--mono)}
+.brain-stream-text{margin-top:10px;padding:8px;background:rgba(0,0,0,0.3);border-left:2px solid var(--cyan);font-family:var(--mono);font-size:10px;color:var(--text2);white-space:pre-wrap;max-height:150px;overflow-y:auto}
+.pulse{animation:pulse 1.5s infinite}
+@keyframes pulse{0%{opacity:1}50%{opacity:0.4}100%{opacity:1}}
 /* ── Hour heatmap ─────────────────────────────────────────────── */
 .hour-grid{display:grid;grid-template-columns:repeat(24,1fr);gap:1px;margin-top:6px}
 .hour-cell{height:20px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;font-family:var(--mono);border:1px solid var(--border2)}
@@ -1768,13 +1772,18 @@ function updateDecisionsLog(d) {
   if (isThinking) {
     const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
     const frame  = frames[Math.floor(Date.now()/150) % frames.length];
+    const aiEngine = (window.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Local Qwen3.5 0.8b' : 'Claude Sonnet 4.6';
+    const brainName = d.state?.currentBrain || 'ADAN';
+    const currentStep = d.state?.status || 'Analyzing market data...';
+    
     html += \`<div class="brain-live-block thinking">
       <div class="brain-live-header">
-        <span class="brain-live-dot"></span>
-        <span style="color:var(--cyan);font-weight:700;font-size:11px;font-family:var(--mono)">\${frame} ANALYZING — \${(window.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Local Qwen3.5 0.8b' : 'Claude Sonnet 4.6'}</span>
-        <span style="color:var(--grey);font-size:9px;margin-left:auto;font-family:var(--mono)">thinking...</span>
+        <span class="brain-live-dot pulse"></span>
+        <span style="color:var(--cyan);font-weight:700;font-size:11px;font-family:var(--mono)">\${frame} \${brainName} ANALYZING — \${aiEngine}</span>
+        <span style="color:var(--grey);font-size:9px;margin-left:auto;font-family:var(--mono)">in progress</span>
       </div>
-      <div class="brain-live-body">Procesando mercados + datos Binance + señales hijos...</div>
+      <div class="brain-live-body">\${currentStep}</div>
+      \${thought ? \`<div class="brain-stream-text">\${thought}</div>\` : ''}
     </div>\`;
   } else if (hasThought) {
     const isBet  = thought.includes('BET') || thought.includes('MARKET_ID');
@@ -1783,17 +1792,19 @@ function updateDecisionsLog(d) {
     const blockCls = isBet ? 'bet' : isSkip ? 'skip' : 'result';
     const dotColor = isBet ? 'var(--green)' : isAuto ? 'var(--yellow)' : isSkip ? 'var(--grey)' : 'var(--cyan)';
     const label    = isBet ? '◉ BET PLACED' : isAuto ? '⏸ AUTO-SKIP' : isSkip ? '⏸ SKIP / MONITORING' : '● ANALYSIS COMPLETE';
+    const brainName = d.state?.currentBrain || 'ADAN';
+
     // Extract key lines (skip headers, code fences, separators)
     const lines = thought.split('\\n')
       .filter(l => l.trim() && !l.startsWith('#') && l.slice(0,3)!=='---' && l.slice(0,3)!=='~~~')
-      .slice(0,5);
+      .slice(0,6);
     html += \`<div class="brain-live-block \${blockCls}">
       <div class="brain-live-header">
-        <span style="color:\${dotColor};font-weight:700;font-size:11px;font-family:var(--mono)">\${label}</span>
+        <span style="color:\${dotColor};font-weight:700;font-size:11px;font-family:var(--mono)">\${label} [\${brainName}]</span>
         <span style="color:var(--grey);font-size:9px;margin-left:auto;font-family:var(--mono)">\${d.state?.lastScan||''}</span>
       </div>
-      <div class="brain-live-body">\${lines.join('\\n').slice(0,500)}</div>
-      \${thought.length > 200 ? \`<details style="margin-top:8px"><summary style="color:var(--grey);font-size:9px;font-family:var(--pixel);cursor:pointer;user-select:none">▸ FULL REASONING</summary><div class="brain-full-text">\${thought.slice(0,3000)}</div></details>\` : ''}
+      <div class="brain-live-body">\${lines.join('\\n').slice(0,800)}</div>
+      \${thought.length > 200 ? \`<details style="margin-top:8px"><summary style="color:var(--grey);font-size:9px;font-family:var(--pixel);cursor:pointer;user-select:none">▸ FULL REASONING</summary><div class="brain-full-text">\${thought.slice(0,5000)}</div></details>\` : ''}
     </div>\`;
   }
 
@@ -2743,7 +2754,11 @@ setInterval(stepAdanWorld, 200);
         pnl, calib, positions: pos,
         xp: { ...xp, title: levelTitle(xp.level) },
         children: [...parentIntelEntries, ...childrenWithIntel],
-        state: enrichedState,
+        state: {
+          ...enrichedState,
+          currentBrain: brainManager.currentBrain,
+          brainStats: brainManager.brainStats
+        },
         config
       }));
     } else {

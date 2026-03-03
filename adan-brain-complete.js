@@ -951,19 +951,23 @@ async function runBrainCycle({
     coins,               // e.g. ['BTC', 'ETH', 'SOL']
     brainManager,        // BrainTransitionManager instance
     anthropicClient,     // your existing Anthropic client
+    onStatus,            // optional callback(status)
 }) {
 
     // ── 1. Gather all Golden Round Table signals ───────────────
     console.log('[ADAN] 🍎 APPLE scanning narrative...');
+    if (onStatus) onStatus('🍎 APPLE scanning narrative...');
     const appleSignal = await APPLE.getSignal(fearGreedIndex, cryptoPanicItems);
 
     console.log('[ADAN] 🐍 SNAKE analyzing order book...');
+    if (onStatus) onStatus('🐍 SNAKE analyzing order book...');
     const snakeAnalysis = {
         microStructure: SNAKE.analyzeOrderBook(binanceOrderBook.bids, binanceOrderBook.asks, binanceOrderBook.midPrice),
         technicals: SNAKE.analyzeTechnicals(binanceTechnicals.klines1h, binanceTechnicals.klines5m, binanceTechnicals.vwap, binanceTechnicals.fundingRate),
     };
 
     console.log('[ADAN] 👁️ ATLAS querying Hyperliquid...');
+    if (onStatus) onStatus('👁️ ATLAS querying Hyperliquid...');
     const atlasData = await ATLAS.getFullSnapshot(coins);
 
     // ── 1b. Track BB compression per coin (persistent state for PLASMA) ──
@@ -989,6 +993,7 @@ async function runBrainCycle({
     // ── 3. Brain selection ────────────────────────────────────
     const activeBrain = brainManager.evaluate(marketSnapshot);
     console.log(`[ADAN] 🧠 Active brain: ${activeBrain} (${BRAINS[activeBrain].description})`);
+    if (onStatus) onStatus(`🧠 Brain: ${activeBrain} selected`);
 
     // ── 4. Build Claude prompt ────────────────────────────────
     const { systemPrompt, userPrompt } = buildPrompt({
@@ -1004,6 +1009,9 @@ async function runBrainCycle({
 
     // ── 5. Call Hybrid Router ─────────────────────────────────
     console.log(`[ADAN] 🤔 ${activeBrain} thinking via Hybrid Router (Heavy)...`);
+    const aiEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Local Qwen3.5' : 'Sonnet 4.6';
+    if (onStatus) onStatus(`🤔 ${activeBrain} thinking via ${aiEngine}...`);
+
     const thought = await routeLLM({
         weight: 'Heavy',
         systemPrompt: systemPrompt,
@@ -1012,6 +1020,7 @@ async function runBrainCycle({
     });
 
     console.log(`[ADAN] 💭 ${activeBrain}: ${thought.slice(0, 200)}...`);
+    if (onStatus) onStatus(`💭 ${activeBrain} complete`);
 
     // ── 6. Parse decision ─────────────────────────────────────
     const decision = parseDecision(thought);
