@@ -2049,7 +2049,7 @@ function updateDecisionsLog(d) {
     html += \`<div class="brain-live-block thinking">
       <div class="brain-live-header">
         <span class="brain-live-dot"></span>
-        <span style="color:var(--cyan);font-weight:700;font-size:11px;font-family:var(--mono)">\${frame} ANALYZING — Claude Sonnet 4.6</span>
+        <span style="color:var(--cyan);font-weight:700;font-size:11px;font-family:var(--mono)">\${frame} ANALYZING — \${(process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Local Qwen3.5 0.8b' : 'Claude Sonnet 4.6'}</span>
         <span style="color:var(--grey);font-size:9px;margin-left:auto;font-family:var(--mono)">thinking...</span>
       </div>
       <div class="brain-live-body">Procesando mercados + datos Binance + señales hijos...</div>
@@ -2252,9 +2252,10 @@ function updateNeuralFlow(d) {
 
     const dot = document.getElementById('cmd-live-dot');
     const txt = document.getElementById('cmd-live-txt');
+    const aiEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Local Qwen3.5' : 'Sonnet 4.6';
     if (dot) dot.className = 'cmd-live-dot' + (isThinking ? ' thinking' : (btc ? '' : ' idle'));
     if (txt) {
-        txt.textContent = isThinking ? 'THINKING — Sonnet 4.6 analyzing' : isDone ? 'DECISION MADE' : (btc ? 'MONITORING · live prices' : 'INITIALIZING');
+        txt.textContent = isThinking ? \`THINKING — \${aiEngine} analyzing\` : isDone ? 'DECISION MADE' : (btc ? 'MONITORING · live prices' : 'INITIALIZING');
         txt.style.color = isThinking ? 'var(--cyan)' : isDone ? 'var(--green)' : 'var(--text2)';
     }
 }
