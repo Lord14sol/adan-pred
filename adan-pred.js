@@ -2847,6 +2847,19 @@ setInterval(stepAdanWorld, 200);
       return;
     }
 
+    if (req.url === '/api/web4') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      import('./adan-web4-identity.js').then(module => {
+        module.getWeb4DashboardPayload(module.initAdanKeypair ? null : null).then(payload => {
+          res.end(JSON.stringify(payload));
+        }).catch(err => res.end(JSON.stringify({ error: err.message })));
+      }).catch(err => {
+        console.error("Web4 module missing, ignoring:", err.message);
+        res.end(JSON.stringify({ registered: false, error: 'Module missing run `npm install 8004-solana`' }));
+      });
+      return;
+    }
+
     if (req.url === '/api/crossover' && req.method === 'POST') {
       let body = '';
       req.on('data', chunk => body += chunk.toString());
