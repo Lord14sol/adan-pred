@@ -3671,7 +3671,6 @@ async function fetchPolymarkets(strat) {
     for (const m of list) {
       if (seen.has(m.id)) continue;
       const title = (m.question || m.title || '');
-      if (!CRYPTO_RE.test(title)) continue;
       seen.add(m.id);
       const endMs = m.endDate ? new Date(m.endDate).getTime() : 0;
       if (endMs <= nowMs || endMs > maxMs) continue;
@@ -3827,6 +3826,10 @@ function normalizePolymarket(raw, prices = {}) {
   if (targetPrice && priceData?.price) {
     const dist = (targetPrice - priceData.price) / priceData.price * 100;
     roughEdge = Math.abs(dist) < 1 ? 0.1 : Math.abs(dist) < 2 ? 0.05 : 0;
+  } else if (asset === 'other') {
+    // For non-crypto markets (politics, sports) during Night Watch, we don't have Binance data.
+    // Calculate a basic algorithmic edge based on pure probability asymmetry.
+    roughEdge = yesPrice > 0.5 ? yesPrice - 0.5 : 0.5 - yesPrice;
   }
 
   return { id, title, yesPrice, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false };
@@ -6288,7 +6291,11 @@ async function doScan(client, state) {
   const anyActive = activeSyms.some(([, d]) =>
     (d.bb?.width || 0) >= BOREDOM_BB_MIN || (d.vol?.ratio || 1) >= BOREDOM_VOL_MIN
   );
-  if (!anyActive && activeSyms.length > 0) {
+
+  // Bypass Boredom Filter if we are in Night Watch mode (scanning non-crypto markets)
+  const isNightWatchMode = activeNow.length === 0;
+
+  if (!anyActive && activeSyms.length > 0 && !isNightWatchMode) {
     const bbAvg = (activeSyms.reduce((s, [, d]) => s + (d.bb?.width || 0), 0) / activeSyms.length * 100).toFixed(2);
     const volAvg = (activeSyms.reduce((s, [, d]) => s + (d.vol?.ratio || 1), 0) / activeSyms.length).toFixed(2);
     state.thought = `⏸ AUTO-SKIP — Market dormant (BB width avg: ${bbAvg}% < 0.6%, vol ratio avg: ${volAvg}x < 0.75x).\nNo conviction in Binance. Polymarket prices have nothing real to lag. Preserving tokens + capital.\nNext check in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
