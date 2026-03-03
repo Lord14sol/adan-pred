@@ -141,3 +141,18 @@ node adan-pred.js
 ```
 
 *Note: You must have an `ANTHROPIC_API_KEY` exported in your environment.*
+
+## 🧬 Phase 2: Dynasty DAG & Gen3 Crossover
+
+The Evolutionary Model has been upgraded into a physical, playable ecosystem.
+
+*   **Interactive D3.js Force Graph:** The entire neural network of parent algorithms and their spawned children is now fully physics-simulated, replacing static arrays with a living UI.
+*   **Drag-Lasso & Auto-Center:** Advanced D3 controls allow you to drag boxes to calculate combined agent stats on the fly and double-click to snap focus.
+*   **Genetic Mutation Indicators:** Agents born with anomalous traits instantly render SVGs (⚔️ High Stake, 🛡️ Patience) directly on the neural map.
+*   **Gen3 Crossover (Drag & Drop):** Nodes that survive `20 trades` with a `> 55% Brier accuracy` will begin to physically glow. You can drag one glowing node onto another to permanently fuse their DNA parameters, deliberately spawning a hyper-optimized Gen3 child while automatically executing the weaker parent to free capital.
+
+## 🛑 Master Plan v3.0: Institutional Risk Gating
+
+ADAN won't let rogue algorithms vaporize your Treasury. Every API cycle must bypass the new local validation engines before spending Anthropic tokens or USDC:
+*   **Capital Lockup Manager:** Hard-vetos any new trades if the current aggregate open positions exceed `60%` of Treasury size.
+*   **Nightmare Slippage Engine:** Hardcoded `1.5%` penalty per side into the reinforcement learning PnL loops to simulate low liquidity in Polymarket meme markets. Models that try to scalp ultra-tight 2% edges are mathematically punished.

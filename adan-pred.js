@@ -650,7 +650,43 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
   position: relative;
   overflow: hidden;
   box-shadow: inset 4px 4px 0px rgba(0,0,0,0.05);
+  cursor: grab;
 }
+#dynasty-panel:active { cursor: grabbing; }
+
+/* Pulse animation for nodes ready for Gen3 Crossover */
+@keyframes fuseGlow {
+  0% { filter: drop-shadow(0 0 2px var(--yellow)); }
+  50% { filter: drop-shadow(0 0 10px var(--yellow)); }
+  100% { filter: drop-shadow(0 0 2px var(--yellow)); }
+}
+.d3-node.ready-fuse rect {
+  stroke: var(--yellow) !important;
+  stroke-width: 2px;
+  animation: fuseGlow 2s infinite;
+}
+
+.lasso-tooltip {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--purple);
+  color: #fff;
+  padding: 8px 16px;
+  font-family: var(--pixel);
+  font-size: 10px;
+  border: 2px solid #000;
+  box-shadow: 4px 4px 0px #000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 100;
+  white-space: pre-wrap;
+  text-align: center;
+  line-height: 1.4;
+}
+.lasso-tooltip.visible { opacity: 1; }
 
 .d3-node rect {
   stroke: var(--border);
@@ -941,11 +977,20 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
         <div class="dynasty-tools">
           <span class="card-title" style="margin:0;border:none;padding:0">🧬 THE FORGE (DYNASTY DAG)</span>
           <div style="display:flex; gap: 8px;">
-            <button class="btn-dag" onclick="toggleGoldenPath()" id="btn-gp">⭐ GOLDEN PATH</button>
             <button class="btn-dag" onclick="toggleDagFullscreen()" id="btn-fs">⛶ FULLSCREEN</button>
+            <button class="btn-dag" onclick="toggleGoldenPath()" id="btn-gp">⭐ GOLDEN PATH</button>
           </div>
         </div>
         <div class="dynasty-panel" id="dynasty-panel"></div>
+        <div id="lasso-tooltip" class="lasso-tooltip"></div>
+        <div id="fuse-modal" class="fuse-modal">
+           <h3 id="fuse-title">FUSE NODES?</h3>
+           <p id="fuse-desc">A new Gen3 descendant will be born combining both AI rulesets.</p>
+           <div class="fuse-actions">
+              <button class="fuse-btn yes" id="fuse-yes">FUSE (GEN3)</button>
+              <button class="fuse-btn no" id="fuse-no">CANCEL</button>
+           </div>
+        </div>
       </div>
     </div>
 
@@ -2284,8 +2329,12 @@ function updateDynastyPanel(d) {
   children.forEach((c, idx) => {
     const isDead = c.status === 'dead';
     const cid = c.spec + (isDead ? '_dead_' + idx : '');
-    const wr = Math.round((c.childPnl?.wins || 0) / Math.max(1, c.childPnl?.trades || 1) * 100);
+    const trades = c.childPnl?.trades || 1;
+    const wr = Math.round((c.childPnl?.wins || 0) / Math.max(1, trades) * 100);
     const xp = c.exp || 0;
+    
+    // Eugenics Condition: > 55% WR, > 10 trades, ALIVE
+    const isReadyFuse = !isDead && wr >= 55 && (c.childPnl?.trades || 0) >= 10;
     
     // Check mutations
     let mutationIcon = '';
@@ -2297,11 +2346,13 @@ function updateDynastyPanel(d) {
     newNodes.push({
       id: cid,
       group: 2,
+      rawChild: c,
       label: (isDead ? '💀 ' : '🧬 ') + (c.name || c.spec).toUpperCase().slice(0, 8) + mutationIcon,
       sub: isDead ? 'DEAD' : ('WR: ' + wr + '%'),
       color: isDead ? 'var(--red)' : 'var(--cyan)',
       childIdx: idx,
       isDead: isDead,
+      isReadyFuse: isReadyFuse,
       wr: wr,
       edgeVolume: Math.min(6, 1 + (xp / 20))
     });
@@ -2359,8 +2410,25 @@ function updateDynastyPanel(d) {
         });
       })
       .on('end', (event) => {
+         const tooltip = document.getElementById('lasso-tooltip');
          if (!event.selection) {
            d3G.selectAll('.d3-node rect').style('stroke', d => d.color);
+           tooltip.classList.remove('visible');
+           return;
+         }
+         
+         const [[x0, y0], [x1, y1]] = event.selection;
+         const selectedPaths = dynNodes.filter(d => d.group === 2 && d.x >= x0 && d.x <= x1 && d.y >= y0 && d.y <= y1);
+         
+         if (selectedPaths.length > 0) {
+           const avgWR = selectedPaths.reduce((sum, d) => sum + (d.wr || 0), 0) / selectedPaths.length;
+           const alive = selectedPaths.filter(d => !d.isDead).length;
+           let tStr = '🧬 SELECTED FORGE COMBINE: ' + selectedPaths.length + ' NODES\\n';
+           tStr += '⭐ AVG WIN RATE: ' + avgWR.toFixed(1) + '% | 🩸 ALIVE: ' + alive;
+           tooltip.innerHTML = tStr;
+           tooltip.classList.add('visible');
+         } else {
+           tooltip.classList.remove('visible');
          }
       });
       
@@ -2405,7 +2473,19 @@ function updateDynastyPanel(d) {
     .call(d3.drag()
         .on('start', (event, d) => { if (!event.active) d3Sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
         .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
-        .on('end', (event, d) => { if (!event.active) d3Sim.alphaTarget(0); if(d.id !== 'ADAN') { d.fx = null; d.fy = null; } })
+        .on('end', (event, d) => { 
+            if (!event.active) d3Sim.alphaTarget(0); 
+            if(d.id !== 'ADAN') { d.fx = null; d.fy = null; }
+            
+            // Crossover Collision Detection
+            if (d.group === 2 && d.isReadyFuse) {
+               // Find if dropped on another ready-fuse node
+               const droppedOn = dynNodes.find(n => n.id !== d.id && n.group === 2 && n.isReadyFuse && Math.abs(n.x - d.x) < 30 && Math.abs(n.y - d.y) < 30);
+               if (droppedOn) {
+                  promptCrossover(d, droppedOn);
+               }
+            }
+        })
     )
     .on('click', (event, d) => {
         if (event.defaultPrevented) return;
@@ -2450,6 +2530,7 @@ function updateDynastyPanel(d) {
   
   // Re-apply classes, pulse colors and state
   nodeMerge.classed('pulsing', d => !!d.pulseColor);
+  nodeMerge.classed('ready-fuse', d => d.isReadyFuse);
   nodeMerge.style('--pulse-color', d => d.pulseColor || 'transparent');
   if (isGoldenPath) {
     nodeMerge.classed('dimmed', d => d.isDead || (d.group === 2 && d.wr < 50));
@@ -2763,6 +2844,68 @@ setInterval(stepAdanWorld, 200);
     if (req.url === '/api/brains') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify(brainManager.getDashboardPayload()));
+      return;
+    }
+
+    if (req.url === '/api/crossover' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => body += chunk.toString());
+      req.on('end', () => {
+        try {
+          const { childIdA, childIdB } = JSON.parse(body);
+          const pnl = loadPnL();
+          const children = pnl.children || [];
+
+          const idxA = children.findIndex(c => c.spec === childIdA || c.id === childIdA);
+          const idxB = children.findIndex(c => c.spec === childIdB || c.id === childIdB);
+          if (idxA === -1 || idxB === -1) throw new Error("Parent nodes not found");
+
+          const childA = children[idxA];
+          const childB = children[idxB];
+
+          let dnaA = childA.dna || { minEdge: 0.05, maxRiskIdx: 4, stakePct: 0.15, patience: 1.0, volWeight: 1.0, vwapWeight: 1.0 };
+          let dnaB = childB.dna || { minEdge: 0.05, maxRiskIdx: 4, stakePct: 0.15, patience: 1.0, volWeight: 1.0, vwapWeight: 1.0 };
+
+          // Fused DNA
+          const fusedDna = {
+            minEdge: parseFloat(((dnaA.minEdge + dnaB.minEdge) / 2).toFixed(3)),
+            maxRiskIdx: Math.round((dnaA.maxRiskIdx + dnaB.maxRiskIdx) / 2),
+            stakePct: parseFloat(((dnaA.stakePct + dnaB.stakePct) / 2).toFixed(3)),
+            patience: parseFloat(((dnaA.patience + dnaB.patience) / 2).toFixed(2)),
+            volWeight: parseFloat(((dnaA.volWeight + dnaB.volWeight) / 2).toFixed(2)),
+            vwapWeight: parseFloat(((dnaA.vwapWeight + dnaB.vwapWeight) / 2).toFixed(2))
+          };
+
+          // Execute the weakest parent (Brier-score approximate)
+          const wrA = (childA.childPnl?.wins || 0) / Math.max(1, childA.childPnl?.trades || 1);
+          const wrB = (childB.childPnl?.wins || 0) / Math.max(1, childB.childPnl?.trades || 1);
+          if (wrA >= wrB) childB.status = 'dead'; else childA.status = 'dead';
+
+          // Spawn Gen3
+          const genId = 'GEN3-' + Date.now().toString().slice(-6);
+          const gen3 = {
+            name: genId,
+            spec: genId,
+            faction: childA.faction,
+            status: 'observing',
+            generation: 3,
+            dna: fusedDna,
+            fusedFrom: [childIdA, childIdB],
+            fusedAt: new Date().toISOString()
+          };
+
+          children.push(gen3);
+          pnl.children = children;
+          savePnL(pnl);
+
+          appendToSoul(`\n### GEN3 CROSSOVER — ${new Date().toISOString()}:\nNodes [${childIdA}] and [${childIdB}] fused to create ${genId}.\nFused DNA: ${JSON.stringify(fusedDna)}\nWeakest parent executed.\n`);
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, gen3 }));
+        } catch (e) {
+          res.writeHead(400); res.end(JSON.stringify({ error: e.message }));
+        }
+      });
       return;
     }
 
