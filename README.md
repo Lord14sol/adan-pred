@@ -174,3 +174,13 @@ ADAN now integrates with the **Solana Agent Registry (ERC-8004)** to build an im
 5. Check current Trust Tier: `node adan-web4-identity.js --status`.
 
 Every week, ADAN can auto-report its `pnl.json` performance using `node adan-web4-identity.js --report` to slowly upgrade its Trust Tier (Bronze → Silver → Gold → Platinum) via the ATOM Engine.
+
+## Master Plan v4.0: Codebase Modularization (Completed)
+ADAN's monolithic 6,500-line script has been successfully refactored into a scalable ES Module architecture:
+
+*   **`src/core/config.js`:** Handles environment variables, global constants, and core state loading (PnL, Soul, Positions).
+*   **`src/api/polymarket.js`:** Fetches and normalizes Polymarket prediction odds and resolves expected outcomes.
+*   **`src/api/binance.js`:** Fetches real-time candles and operates the technical analysis engine (MACD, RSI, VWAP).
+*   **`src/ui/dashboard.js`:** Drives the local port 3141 web server and terminal-based ASCII rendering.
+*   **`src/core/genetics.js`:** Houses the evolutionary algorithms (child spawning, mutation, tournament of death, DNA absorption).
+*   **`adan-pred.js`:** Now acts solely as the asynchronous orchestrator bridging the APIs, the LLM, and the AI Brain Router.
