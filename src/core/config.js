@@ -68,13 +68,18 @@ function loadEnv() {
   if (fs.existsSync(envPath)) {
     const lines = fs.readFileSync(envPath, 'utf8').split('\n');
     lines.forEach(l => {
-      const match = l.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+      // Ignore comments and empty lines
+      if (l.trim().startsWith('#') || l.trim() === '') return;
+      const match = l.match(/^\s*([a-zA-Z0-9_.-]+)\s*=\s*(.*)?\s*$/);
       if (match) {
         const key = match[1];
         let value = (match[2] || '').trim();
         // Remove surrounding quotes if they exist
         if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
         else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+
+        // Remove trailing comments in the value line
+        if (value.includes('#')) value = value.split('#')[0].trim();
 
         // Only set if not already set or if it's currently a placeholder
         if (!process.env[key] || process.env[key] === 'FROM_ENV' || process.env[key] === '') {
@@ -83,11 +88,12 @@ function loadEnv() {
       }
     });
   }
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (key && key.startsWith('sk-ant')) {
-    console.log(G + '✅ API Key Loaded: ' + key.slice(0, 10) + '...' + key.slice(-4) + X);
+
+  const key = process.env.GEMINI_API_KEY;
+  if (key && key.startsWith('AIza')) {
+    console.log(G + '✅ Gemini API Key Loaded: ' + key.slice(0, 10) + '...' + key.slice(-4) + X);
   } else {
-    console.log(R + '❌ API Key Error: Not found or invalid in .env' + X);
+    console.log(R + '❌ API Key Error: GEMINI_API_KEY not found or invalid in .env' + X);
   }
 }
 loadEnv();

@@ -19,7 +19,8 @@
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
-import { routeLLM } from './adan-llm-router.js';
+import { routeLLM, parseAIResponse } from './adan-llm-router.js';
+import { soulManager } from './src/core/soul_manager.js';
 
 const STATE_DIR = path.join(process.env.HOME, '.adan-pred');
 const BRAIN_STATS_PATH = path.join(STATE_DIR, 'brain_stats.json');
@@ -857,7 +858,7 @@ class BrainTransitionManager {
 // Injects brain system prompt + all Golden Round Table data
 // ─────────────────────────────────────────────────────────────
 
-function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulMd, childConsensus, marketQuestion }) {
+function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion }) {
     const brain = BRAINS[brainName];
     if (!brain) throw new Error(`Unknown brain: ${brainName}`);
 
@@ -871,8 +872,8 @@ Volume: ${brain.weights.volume}x | Funding: ${brain.weights.funding}x | Sentimen
 Min Edge: ${(brain.thresholds.minEdge * 100).toFixed(1)}% | Min Confidence: ${brain.thresholds.minConfidence}%
 Default Bias: ${brain.thresholds.defaultBias ?? 'NONE'}
 
-━━━ SOUL.md LEARNED RULES ━━━
-${soulMd ?? 'No rules yet.'}`;
+━━━ SOUL.md RELEVANT RULES ━━━
+${soulRules ?? 'No rules yet.'}`;
 
     const userPrompt = `MARKET QUESTION: ${marketQuestion}
 
@@ -944,13 +945,12 @@ async function runBrainCycle({
     fearGreedIndex,      // number 0-100
     childConsensus,      // 0-1 ratio of children agreeing
     polymarketQuestion,  // string
-    soulMd,              // string content of SOUL.md
+    soulMd,              // (deprecated) string content of SOUL.md
     currentFund,         // number
     currentWinRate,      // 0-1
     totalTrades,         // number
     coins,               // e.g. ['BTC', 'ETH', 'SOL']
     brainManager,        // BrainTransitionManager instance
-    anthropicClient,     // your existing Anthropic client
     onStatus,            // optional callback(status)
 }) {
 
@@ -995,28 +995,33 @@ async function runBrainCycle({
     console.log(`[ADAN] 🧠 Active brain: ${activeBrain} (${BRAINS[activeBrain].description})`);
     if (onStatus) onStatus(`🧠 Brain: ${activeBrain} selected`);
 
-    // ── 4. Build Claude prompt ────────────────────────────────
+    // ── 4. Build Gemini prompt ────────────────────────────────
+    const activeTimeframe = binanceTechnicals.klines1h?.length > 0 ? '1hr' : '5min';
+    const soulRules = soulManager.getRelevantRules({
+        asset: coins[0],
+        timeframe: activeTimeframe
+    });
     const { systemPrompt, userPrompt } = buildPrompt({
         brainName: activeBrain,
         marketData: binanceTechnicals,
         atlasData,
         appleSignal,
         snakeAnalysis,
-        soulMd,
+        soulRules,
         childConsensus,
         marketQuestion: polymarketQuestion,
     });
 
     // ── 5. Call Hybrid Router ─────────────────────────────────
     console.log(`[ADAN] 🤔 ${activeBrain} thinking via Hybrid Router (Heavy)...`);
-    const aiEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Local Qwen3.5' : 'Sonnet 4.6';
+    const aiEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B' : 'Gemini-2.5-Flash';
     if (onStatus) onStatus(`🤔 ${activeBrain} thinking via ${aiEngine}...`);
 
     const thought = await routeLLM({
         weight: 'Heavy',
         systemPrompt: systemPrompt,
         userPrompt: userPrompt,
-        anthropicClient: anthropicClient
+        reason: activeBrain
     });
 
     console.log(`[ADAN] 💭 ${activeBrain}: ${thought.slice(0, 200)}...`);
@@ -1037,7 +1042,7 @@ async function runBrainCycle({
             weight: 'Light',
             systemPrompt: 'You are EVA, an extreme risk manager.',
             userPrompt: `Counter-analyze this crypto bet. Be skeptical. Should ADAN take it?\n\nQuestion: ${polymarketQuestion}\nProposed: ${decision.action}\nReasoning: ${thought.slice(0, 500)}\n\nOutput: AGREE or DISAGREE with one reason.`,
-            anthropicClient: anthropicClient
+            reason: 'risk_check'
         });
         if (haikuText.includes('DISAGREE')) {
             console.log(`[ADAN] 🚫 Light Model (EVA) disagrees — bet cancelled`);

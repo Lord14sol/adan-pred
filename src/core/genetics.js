@@ -13,20 +13,19 @@ const CHILD_NAMES = {
   'BTC-15min': 'KRONOS', 'ETH-15min': 'DAEDALUS', 'SOL-15min': 'APOLLO',
   'ALT-coins': 'PROTEUS', '1H-windows': 'TITAN', 'BTC/ETH/SOL-15min': 'ARES'
 };
-async function nameChild(client, spec, signal) {
+async function nameChild(spec, signal) {
   // Try predefined first — fast + free
   if (CHILD_NAMES[spec]) return CHILD_NAMES[spec];
   try {
-    const resp = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001', max_tokens: 20,
-      messages: [{ role: 'user', content: `Name a trading AI agent: specialization=${spec}, signal=${signal || 'neutral'}. One mythological name only (Greek/Roman/Norse). Reply with just the name in CAPS.` }]
-    });
-    return resp.content[0].text.trim().replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 10) || CHILD_NAMES[spec] || 'UNNAMED';
+    const { routeLLM, parseAIResponse } = await import('../../adan-llm-router.js');
+    const prompt = `Name a trading AI agent: specialization=${spec}, signal=${signal || 'neutral'}. One mythological name only (Greek/Roman/Norse). Reply with just the name in CAPS.`;
+    const resp = await routeLLM({ prompt, weight: 'Light' });
+    return resp.trim().replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 10) || CHILD_NAMES[spec] || 'UNNAMED';
   } catch { return CHILD_NAMES[spec] || 'UNNAMED'; }
 }
 
 // ── Spawn child agent ─────────────────────────────────────────────────────────
-async function spawnChild(client, pnl, specialization) {
+async function spawnChild(pnl, specialization) {
   const xpData = expProgress(pnl.exp || 0);
   const sc = TREE_RULES.spawnConditions;
   const children = pnl.children || [];

@@ -11,10 +11,13 @@
  * Flow:  Binance candles → trend/momentum → Polymarket markets → Claude edge calc → BET/SKIP
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+// import Anthropic from '@anthropic-ai/sdk'; // No longer used
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
+import { quota } from './src/core/quota_manager.js';
+import { soulManager } from './src/core/soul_manager.js';
+import { parseAIResponse, routeLLM } from './adan-llm-router.js';
 import { BrainTransitionManager, runBrainCycle, ATLAS, APPLE, SNAKE, EVA } from './adan-brain-complete.js';
 
 const brainManager = new BrainTransitionManager();
@@ -470,7 +473,7 @@ function grandchildSignal(d, focus) {
 }
 
 // ── Spawn grandchildren when ADAN is LVL 4+ and child has enough EXP ─────────
-async function spawnGrandchildren(client) {
+async function spawnGrandchildren() {
   const pnl = loadPnL();
   const xpData = expProgress(pnl.exp || 0);
   if (xpData.level < 4) return; // nietos solo desde LVL 4 de ADAN
@@ -500,11 +503,12 @@ async function spawnGrandchildren(client) {
     // Name the grandchild
     let gcName = nextGcSpec.id.toUpperCase().replace(/-/g, '_');
     try {
-      const resp = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001', max_tokens: 15,
-        messages: [{ role: 'user', content: `Name a micro-scanner AI: focus=${nextGcSpec.focus}, asset=${nextGcSpec.assetName}. One short mythological name in CAPS only.` }]
+      const resp = await routeLLM({
+        prompt: `Name a micro-scanner AI: focus=${nextGcSpec.focus}, asset=${nextGcSpec.assetName}. One short mythological name in CAPS only.`,
+        weight: 'Light',
+        reason: 'naming'
       });
-      gcName = resp.content[0].text.trim().replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 10) || gcName;
+      gcName = resp.trim().replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 10) || gcName;
     } catch { }
 
     const gcId = Date.now().toString();
@@ -1205,12 +1209,8 @@ async function autoEvolveSoul(client, pnl) {
   const currentRules = loadSoul().split('\n').filter(l => l.startsWith('1.') || l.startsWith('2.') || l.startsWith('3.') || l.startsWith('4.') || l.startsWith('5.')).join('\n');
 
   try {
-    const resp = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      messages: [{
-        role: 'user', content:
-          `You are ADAN-PRED. Analyze your last ${resolved.length} trades and extract 1-2 NEW pattern rules.
+    const resp = await routeLLM({
+      prompt: `You are ADAN-PRED. Analyze your last ${resolved.length} trades and extract 1-2 NEW pattern rules.
 
 TRADE HISTORY:
 ${summary}
@@ -1221,9 +1221,11 @@ ${currentRules}
 Write ONLY 1-2 new short rules based on what the data shows. Format:
 PATTERN: [what you observe] → RULE: [action to take]
 
-Be specific. If BTC NO bets with edge >10% win more, say that. If morning trades lose, say that.` }]
+Be specific. If BTC NO bets with edge >10% win more, say that. If morning trades lose, say that.`,
+      weight: 'Light',
+      reason: 'evolution'
     });
-    const newRule = resp.content[0].text.trim();
+    const newRule = resp.trim();
     if (newRule && newRule.length > 20) {
       appendToSoul(`\n### AUTO-EVOLVED RULE — ${new Date().toISOString()} (${pnl.trades} trades):\n${newRule}\n`);
     }
@@ -1235,7 +1237,7 @@ Be specific. If BTC NO bets with edge >10% win more, say that. If morning trades
 // During off-hours, ADAN replays recent losses and asks Claude "what would I do
 // differently?" The insights get appended to SOUL.md. This is self-awareness.
 // ══════════════════════════════════════════════════════════════════════════════
-async function dreamMode(client, pnl) {
+async function dreamMode(pnl) {
   const pos = loadPositions();
   const losses = (pos.closed || []).filter(p => p.result === 'LOSS').slice(-5);
   if (losses.length < 2) return; // need at least 2 losses to reflect
@@ -1248,12 +1250,8 @@ async function dreamMode(client, pnl) {
   const wr = pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0;
 
   try {
-    const resp = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 400,
-      messages: [{
-        role: 'user', content:
-          `You are ADAN-PRED in DREAM MODE. You are replaying your last ${losses.length} losses during off-hours.
+    const resp = await routeLLM({
+      prompt: `You are ADAN-PRED in DREAM MODE. You are replaying your last ${losses.length} losses during off-hours.
 Current WR: ${wr}% (${pnl.trades} trades). Fund: $${pnl.fund?.toFixed(2) || 10000}.
 
 LOSSES TO ANALYZE:
@@ -1270,17 +1268,25 @@ DREAM TASK:
 Format each rule as:
 DREAM_RULE: [condition] → [action]
 
-Be brutally honest. This is self-reflection, not performance.` }]
+Be brutally honest. This is self-reflection, not performance.`,
+      weight: 'Dream',
+      reason: 'dream_mode'
     });
-    const dreamText = resp.content[0].text.trim();
+
+    const dreamText = resp.trim();
     if (dreamText && dreamText.length > 30) {
-      appendToSoul(`\n### 💤 DREAM SESSION — ${new Date().toISOString()} (off-hours reflection):\n${dreamText}\n`);
-      console.log('\n' + M + BOLD + '  💤 DREAM MODE — self-reflection complete' + X);
+      const dreamLines = dreamText.match(/DREAM_RULE:[^\n]+/g) || [];
+      dreamLines.forEach(rule => {
+        soulManager.addRule(rule.trim(), { tag: 'DREAM_RULE' });
+      });
+      // Fallback if no formatted rules found
+      if (dreamLines.length === 0) {
+        soulManager.addRule(dreamText.slice(0, 300), { tag: 'DREAM_RAW' });
+      }
+
+      quota.markDreamRun();
+      console.log('\n' + M + BOLD + `  💤 DREAM MODE — ${dreamLines.length} rules added to soul` + X);
     }
-    // Mark last dream time
-    const p = loadPnL();
-    p._lastDream = new Date().toISOString();
-    savePnL(p);
   } catch (e) {
     console.log('Dream mode error:', e.message);
   }
@@ -1559,7 +1565,7 @@ function buildChildHLPrompt(hlIntel, childAsset) {
 }
 
 // ── Think — Claude Sonnet 4.6 ────────────────────────────────────────────────
-async function think(client, markets, prices, pnl, openPos, soul) {
+async function think(markets, prices, pnl, openPos, state) {
   const strat = loadStrategy();
   const openIds = new Set(openPos.map(p => p.marketId));
   const candidates = markets
@@ -1697,13 +1703,12 @@ async function think(client, markets, prices, pnl, openPos, soul) {
       fearGreedIndex: prices._meta?.fearGreed?.value || 50,
       childConsensus: 0.5, // We calculate this below if needed, or default to neutral
       polymarketQuestion: marketQuestion,
-      soulMd: soul,
       currentFund: pnl.fund || 10000,
       currentWinRate: pnl.trades > 0 ? (pnl.wins / pnl.trades) : 0,
       totalTrades: pnl.trades || 0,
       coins: ['BTC', 'ETH', 'SOL'],
       brainManager,
-      anthropicClient: client,
+      // anthropicClient removed, handled by routeLLM
       onStatus: (msg) => {
         state.status = msg;
         _startThinkSpin(msg); // Update terminal spinner with current step
@@ -2050,7 +2055,7 @@ async function checkResolutions() {
   }
 }
 
-async function doScan(client, state) {
+async function doScan(state) {
   let pnl = loadPnL();
   const survival = applySurvivalMode(pnl);
   state.survivalMode = survival.mode;
@@ -2069,7 +2074,7 @@ async function doScan(client, state) {
     && childCount < maxC
     && (pnl.treasury || 0) > 0;
   if (spawnReady) {
-    const newChild = await spawnChild(client, pnl, null);
+    const newChild = await spawnChild(pnl, null);
     if (newChild) {
       pnl = loadPnL();
       cls();
@@ -2083,7 +2088,7 @@ async function doScan(client, state) {
   }
 
   // Check grandchildren spawning (LVL 4+ only, silently in background)
-  if (xpCheck.level >= 4) spawnGrandchildren(client).catch(() => { });
+  if (xpCheck.level >= 4) spawnGrandchildren().catch(() => { });
 
   if (openPos.length >= MAX_POSITIONS) {
     state.thought = 'All ' + MAX_POSITIONS + ' slots full. Monitoring for resolutions.';
@@ -2136,8 +2141,8 @@ async function doScan(client, state) {
     runAllChildScanners(prices, allMarkets).catch(() => { });
 
     // ── DREAM MODE — off-hours self-reflection (AGI Layer 6) ─────────────
-    if (client && !pnl._lastDream || (Date.now() - new Date(pnl._lastDream || 0).getTime()) > 3600000) {
-      dreamMode(client, pnl).catch(() => { });
+    if (!pnl._lastDream || (Date.now() - new Date(pnl._lastDream || 0).getTime()) > 3600000) {
+      dreamMode().catch(() => { });
     }
 
     // ── NIGHT WATCH BROAD SCANNER ─────────────
@@ -2219,7 +2224,7 @@ async function doScan(client, state) {
   state.mode = 'thinking'; render(state);
   let decision;
   try {
-    decision = await think(client, markets, prices, pnl, openPos, soul);
+    decision = await think(markets, prices, pnl, openPos, state);
     // Slippage Engine penalty injected inside think() logic
     state.apiCost = parseFloat(((state.apiCost || 0) + (decision.apiTokens || 2000) / 1e6 * 9).toFixed(5));
   } catch (e) {
@@ -2250,26 +2255,27 @@ async function setup() {
   console.log('  ║   ▀▀▀  ▀▀▀ █  █ ▀▀  ▀▀▀  ▀    ▀▀▀ █  █                        ║');
   console.log('  ║                                                                  ║');
   console.log('  ║         P R E D I C T I O N   M A R K E T S   A G E N T        ║');
-  console.log('  ║     Polymarket  ·  Binance  ·  Claude Sonnet 4.6  ·  2026       ║');
+  console.log('  ║     Polymarket  ·  Binance  ·  Gemini / Gemma  ·  2026           ║');
   console.log('  ║                                                                  ║');
   console.log('  ╠══════════════════════════════════════════════════════════════════╣');
   console.log('  ║                                                                  ║');
   console.log('  ║   DATA:    Binance API   — BTC/ETH/SOL candles (free)           ║');
   console.log('  ║   MARKETS: Polymarket    — crypto up/down 5-15min               ║');
-  console.log('  ║   BRAIN:   Sonnet 4.6   — edge calculation + calibration        ║');
+  console.log('  ║   BRAIN:   Gemini 2.5 Flash — sniper edge + calibration         ║');
+  console.log('  ║   CORE:    Gemma 3 27B   — 24/7 narrative analysis              ║');
   console.log('  ║   MODE:    Paper trading → real USDC at Level 40                ║');
   console.log('  ║                                                                  ║');
   console.log('  ╠══════════════════════════════════════════════════════════════════╣');
   console.log('  ║                                                                  ║');
-  console.log('  ║   Get your Anthropic key at:                                    ║');
-  console.log('  ║   console.anthropic.com/settings/keys                           ║');
+  console.log('  ║   Get your Google AI Studio key at:                             ║');
+  console.log('  ║   aistudio.google.com/app/apikey                                ║');
   console.log('  ║                                                                  ║');
   console.log('  ╚══════════════════════════════════════════════════════════════════╝');
   console.log(X + '\n');
 
   const key = await new Promise(resolve => {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
-    process.stdout.write('  > Paste Anthropic API key and press ENTER: ');
+    process.stdout.write('  > Paste Gemini API key (Google AI Studio) and press ENTER: ');
     rl.once('line', ans => { rl.close(); resolve(ans); });
   });
 
@@ -2309,15 +2315,16 @@ async function main() {
     }
   } catch { }
   let config = loadConfig();
-  if (!config?.anthropicKey) config = await setup();
   // Prefer .env key over config.json
-  const apiKey = process.env.ANTHROPIC_API_KEY || config.anthropicKey;
-  if (!apiKey || apiKey === 'FROM_ENV') {
-    console.log(R + 'ERROR: No API key found. Add ANTHROPIC_API_KEY to .env file or config.json' + X);
+  const apiKey = process.env.GEMINI_API_KEY || config.geminiKey;
+  if (!apiKey || apiKey === 'tu_nueva_api_key_aqui') {
+    console.log(R + '❌ API Key Error: Not found or invalid in .env' + X);
+    console.log(Y + 'Please add GEMINI_API_KEY to your .env file.' + X);
     process.exit(1);
   }
-  const client = new Anthropic({ apiKey });
-  _agiClient = client; // AGI layers use this reference
+
+  // Gemini/Gemma stack doesn't need a central 'client' like Anthropic SDK in this main file
+  // as the routing is handled in adan-llm-router.js using process.env.GEMINI_API_KEY
   loadSoul();
   startDashboard(brainManager);
 
@@ -2336,7 +2343,7 @@ async function main() {
       state.pnl = loadPnL();
       state.positions = loadPositions();
       await checkResolutions();
-      await doScan(client, state);
+      await doScan(state);
 
       // Adan Faction Explanations (Golden Round Table)
       if (Math.random() < 0.2) {

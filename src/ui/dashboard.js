@@ -8,6 +8,7 @@ import {
   expProgress, levelTitle, getSkills, INTEL_DIR
 } from '../core/config.js';
 import { signalLabel } from '../api/binance.js';
+import { quota } from '../core/quota_manager.js';
 
 // ── Panel — fixed 72 cols, always fits terminal ───────────────────────────
 const PW = 72;
@@ -2749,18 +2750,26 @@ setInterval(stepAdanWorld, 200);
         }
       }
 
-      res.end(JSON.stringify({
-        ts: new Date().toISOString(),
-        pnl, calib, positions: pos,
-        xp: { ...xp, title: levelTitle(xp.level) },
-        children: [...parentIntelEntries, ...childrenWithIntel],
-        state: {
-          ...enrichedState,
-          currentBrain: brainManager.currentBrain,
-          brainStats: brainManager.brainStats
-        },
-        config
-      }));
+        let soulRulesLite = [];
+        try {
+          const rulesPath = path.join(process.env.HOME, '.adan-pred', 'soul_rules.json');
+          soulRulesLite = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));
+        } catch {}
+
+        res.end(JSON.stringify({
+          ts: new Date().toISOString(),
+          pnl, calib, positions: pos,
+          xp: { ...xp, title: levelTitle(xp.level) },
+          children: [...parentIntelEntries, ...childrenWithIntel],
+          state: {
+            ...enrichedState,
+            currentBrain: brainManager.currentBrain,
+            brainStats: brainManager.brainStats
+          },
+          quota: quota.status(),
+          soulRules: soulRulesLite,
+          config
+        }));
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(HTML);
