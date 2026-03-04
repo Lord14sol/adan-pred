@@ -196,7 +196,7 @@ function levelFromExp(e) { let L = 1; while (expForLevel(L + 1) <= e) L++; retur
 function expProgress(e) {
   const L = levelFromExp(e), cur = expForLevel(L), nxt = expForLevel(L + 1);
   const pct = Math.round((e - cur) / (nxt - cur) * 100), f = Math.round(pct / 5);
-  return { level: L, bar: '█'.repeat(f) + '░'.repeat(20 - f), pct, needed: nxt - e };
+  return { level: L, bar: '█'.repeat(f) + '░'.repeat(20 - f), pct, needed: nxt - e, curTotal: Math.round(e), nxtTotal: nxt };
 }
 function levelTitle(L) {
   if (L >= 100) return '👑 SOVEREIGN'; if (L >= 80) return '🏦 DYNASTY';

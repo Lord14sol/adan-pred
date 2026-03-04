@@ -651,7 +651,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
           <div id="treasury-box" style="text-align:right"></div>
         </div>
         <div class="xp-bar"><div class="xp-fill" id="xp-fill" style="width:0%"></div></div>
-        <div class="xp-label"><span id="xp-pct">0%</span><span id="xp-need">-- xp to next</span></div>
+        <div class="xp-label"><span id="xp-pct">0%</span><span id="xp-exact">0 / 0 EXP</span></div>
       </div>
       <div class="fund-ring">
         <svg width="80" height="80" viewBox="0 0 80 80">
@@ -1405,7 +1405,7 @@ async function refresh() {
     document.getElementById('lvl-name').textContent=xp.title;
     document.getElementById('xp-fill').style.width=xp.pct+'%';
     document.getElementById('xp-pct').textContent=xp.pct+'%';
-    document.getElementById('xp-need').textContent=xp.needed+' xp to next';
+    document.getElementById('xp-exact').textContent=xp.curTotal+' / '+xp.nxtTotal+' EXP';
     document.getElementById('treasury-box').innerHTML=\`<div style="color:var(--purple);font-size:12px;font-weight:700">\$\${(pnl.treasury||0).toFixed(2)}</div><div style="font-size:9px;color:var(--grey)">TREASURY</div>\`;
 
     // Fund ring
@@ -2750,26 +2750,26 @@ setInterval(stepAdanWorld, 200);
         }
       }
 
-        let soulRulesLite = [];
-        try {
-          const rulesPath = path.join(process.env.HOME, '.adan-pred', 'soul_rules.json');
-          soulRulesLite = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));
-        } catch {}
+      let soulRulesLite = [];
+      try {
+        const rulesPath = path.join(process.env.HOME, '.adan-pred', 'soul_rules.json');
+        soulRulesLite = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));
+      } catch { }
 
-        res.end(JSON.stringify({
-          ts: new Date().toISOString(),
-          pnl, calib, positions: pos,
-          xp: { ...xp, title: levelTitle(xp.level) },
-          children: [...parentIntelEntries, ...childrenWithIntel],
-          state: {
-            ...enrichedState,
-            currentBrain: brainManager.currentBrain,
-            brainStats: brainManager.brainStats
-          },
-          quota: quota.status(),
-          soulRules: soulRulesLite,
-          config
-        }));
+      res.end(JSON.stringify({
+        ts: new Date().toISOString(),
+        pnl, calib, positions: pos,
+        xp: { ...xp, title: levelTitle(xp.level) },
+        children: [...parentIntelEntries, ...childrenWithIntel],
+        state: {
+          ...enrichedState,
+          currentBrain: brainManager.currentBrain,
+          brainStats: brainManager.brainStats
+        },
+        quota: quota.status(),
+        soulRules: soulRulesLite,
+        config
+      }));
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(HTML);
