@@ -1,6 +1,7 @@
 // ============================================================
 // ADAN BRAIN SWITCH SYSTEM v2.1 — GOLDEN ROUND TABLE EDITION
 // Integrates: APPLE + SNAKE + EVA + ATLAS + 8 Avatar Brains
+// + Mother Code v2.0 Quant Intelligence Layer
 //
 // FIXES vs v2.0:
 //   - bbCompressionDuration now persists between cycles (PLASMA works)
@@ -858,7 +859,7 @@ class BrainTransitionManager {
 // Injects brain system prompt + all Golden Round Table data
 // ─────────────────────────────────────────────────────────────
 
-function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion }) {
+function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext }) {
     const brain = BRAINS[brainName];
     if (!brain) throw new Error(`Unknown brain: ${brainName}`);
 
@@ -872,10 +873,28 @@ Volume: ${brain.weights.volume}x | Funding: ${brain.weights.funding}x | Sentimen
 Min Edge: ${(brain.thresholds.minEdge * 100).toFixed(1)}% | Min Confidence: ${brain.thresholds.minConfidence}%
 Default Bias: ${brain.thresholds.defaultBias ?? 'NONE'}
 
+━━━ QUANT INTELLIGENCE LAYER (Mother Code v2.0) ━━━
+You have access to quantitative models backing your decision. Trust math over gut:
+- LMSR: Bayesian fair value vs market price → if LMSR says SKIP, the edge is imaginary
+- Particle Filter: Estimates true probability from noisy market data
+- Greeks: Binary contract Delta/Gamma/Theta → time decay accelerates near close
+- Copula: Portfolio tail dependence → BTC+ETH crash together 55% of the time
+Always mention if you agree or disagree with the quantitative layer.
+
 ━━━ SOUL.md RELEVANT RULES ━━━
 ${soulRules ?? 'No rules yet.'}`;
 
+    // Extract regime info if available
+    let regimeContext = '';
+    if (marketData && marketData.some && marketData.some(m => m.regime)) {
+        const regimes = marketData.map(m => m.regime ? `${m.asset}: ${m.regime} (v: ${(m.regimeMetrics?.volatility || 0).toFixed(4)}, t: ${(m.regimeMetrics?.trend || 0).toFixed(4)})` : null).filter(Boolean);
+        regimeContext = `\n━━━ MARKET REGIMES (60m Rolling) ━━━\n${regimes.join('\n')}\nRegime rules:\n- TRENDING: Price is making clear directional moves. Trend-following signals are stronger.\n- VOLATILE: High noise/chop. Mean-reversion signals may work, breakouts often fail.\n- MEAN_REVERTING: Low volatility range-bound. Trust RSI overbought/oversold.\n`;
+    }
+
     const userPrompt = `MARKET QUESTION: ${marketQuestion}
+
+━━━ ORACLE FRONT-RUN INTELLIGENCE ━━━
+${oracleContext || 'No active front-run signals right now.'}
 
 ━━━ APPLE (Context & Narrative) ━━━
 ${JSON.stringify(appleSignal, null, 2)}
@@ -888,7 +907,7 @@ ${JSON.stringify(snakeAnalysis, null, 2)}
 
 ━━━ BINANCE TECHNICAL DATA ━━━
 ${JSON.stringify(marketData, null, 2)}
-
+${regimeContext}
 ━━━ CHILDREN CONSENSUS ━━━
 ${childConsensus >= 0.75 ? `STRONG CONSENSUS: ${(childConsensus * 100).toFixed(0)}% agreement → +3% edge bonus` : `WEAK: ${(childConsensus * 100).toFixed(0)}%`}
 
@@ -950,6 +969,7 @@ async function runBrainCycle({
     currentWinRate,      // 0-1
     totalTrades,         // number
     coins,               // e.g. ['BTC', 'ETH', 'SOL']
+    oracleContext,       // string
     brainManager,        // BrainTransitionManager instance
     onStatus,            // optional callback(status)
 }) {
@@ -1010,6 +1030,7 @@ async function runBrainCycle({
         soulRules,
         childConsensus,
         marketQuestion: polymarketQuestion,
+        oracleContext,
     });
 
     // ── 5. Call Hybrid Router ─────────────────────────────────

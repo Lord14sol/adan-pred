@@ -68,6 +68,28 @@ import {
   promoteEliteGrandchild
 } from './src/core/genetics.js';
 
+// ── Mother Code v2.0 + Quant Intelligence Layer ─────────────────────────────
+import { marketSessions } from './src/core/market_sessions.js';
+import { humanEventLayer } from './src/core/human_event_layer.js';
+import { polymerase } from './src/core/polymerase.js';
+import { metabolism } from './src/core/metabolism.js';
+import { apoptosis } from './src/core/apoptosis.js';
+import { lmsrEngine } from './src/core/lmsr_engine.js';
+import { particleFilter } from './src/core/particle_filter.js';
+import { calculateGreeks } from './src/core/greeks_adapter.js';
+import { copulaRisk } from './src/core/copula_risk.js';
+import { smartMoney } from './src/core/smart_money.js';
+import { orderBook } from './src/core/order_book.js';
+import { featureTracker } from './src/core/feature_attribution.js';
+import { oracle } from './src/core/oracle_front_run.js';
+import { childLearning } from './src/core/child_learning.js';
+import { regimeDetector } from './src/core/regime_classifier.js';
+
+let consecutiveLosses = 0;
+let lastHumanState = 'RATIONAL_MARKET';
+let lastSessionAdj = null;
+let lastSmartMoneyData = null;
+
 // ── External Intelligence APIs ───────────────────────────────────────────────
 async function fetchFearGreed() {
   // Alternative.me Fear & Greed Index — free, no auth
@@ -207,6 +229,12 @@ async function fetchAllPrices() {
     const funding = fundingRates[sym] || null;
     // Order book imbalance: bid/ask ratio > 1.3 = buy wall dominant
     const obImbalance = orderBook ? (orderBook.buyPressure > 60 ? 'BUY_WALL' : orderBook.buyPressure < 40 ? 'SELL_WALL' : 'BALANCED') : 'UNKNOWN';
+
+    // ── Update Regime Classifier ──
+    const assetName = sym.replace('USDT', '').toLowerCase();
+    regimeDetector.updatePrice(assetName, price);
+    const regimeInfo = regimeDetector.detectRegime(assetName);
+
     const d = {
       price,
       chg: ((price - open24) / open24) * 100,
@@ -229,7 +257,9 @@ async function fetchAllPrices() {
       volAccel,
       orderBook,
       obImbalance,
-      funding
+      funding,
+      regime: regimeInfo.regime,
+      regimeMetrics: regimeInfo.metrics
     };
     d.intelScore = calcIntelScore(d);
     result[sym] = d;
@@ -309,6 +339,19 @@ async function runChildScanner(spec, allPrices, allMarkets) {
     // Log insight if strong signal — bottom-up learning
     if (sig.dir !== 'NEUTRAL' && sig.conf >= 65) {
       logChildInsight(spec.id, spec.assetName, sig.reason, sig.dir, 1);
+    }
+
+    // ═══ CHILD LEARNING: Record prediction as shadow bet ═══
+    if (sig.dir !== 'NEUTRAL') {
+      childLearning.recordPrediction(spec.id, {
+        direction: sig.dir,
+        confidence: sig.conf,
+        asset: spec.assetName,
+        marketId: bestMarket?.id || `${spec.assetName}_${Date.now()}`,
+        marketCloseTime: bestMarket?.closesAt || new Date(Date.now() + (spec.windowMin || 5) * 60000).toISOString(),
+        reasons: sig.reason ? sig.reason.split(', ') : [],
+        regime: d?.regime || 'UNKNOWN',
+      });
     }
 
     const intel = {
@@ -981,8 +1024,29 @@ function readIntelSummary() {
   }
   if (!reports.length) return '';
 
-  // ── MULTI-AGENT CONSENSUS ──────────────────────────────────────────────────
-  // Aggregate child signals by asset to detect consensus
+  // ═══ CHILD LEARNING: Weighted consensus (replaces flat democratic vote) ═══
+  const childSignals = [];
+  for (const f of files) {
+    try {
+      const intel = JSON.parse(fs.readFileSync(path.join(INTEL_DIR, f), 'utf8'));
+      const age = Math.round((Date.now() - new Date(intel.ts).getTime()) / 1000);
+      if (age > 180) continue;
+      if (intel.signal?.dir && intel.signal.dir !== 'NEUTRAL') {
+        childSignals.push({
+          childId: intel.spec,
+          direction: intel.signal.dir,
+          confidence: intel.signal.conf || 50,
+        });
+      }
+    } catch { }
+  }
+
+  const weightedContext = childLearning.getPromptContext(childSignals);
+  if (weightedContext) {
+    return '\n══ CHILD SCANNER INTEL (' + reports.length + ' active children) ══\n' + reports.join('\n') + '\n' + weightedContext + '\n';
+  }
+
+  // Fallback to flat consensus if no learning data yet
   const assetVotes = {};
   for (const f of files) {
     try {
@@ -1707,6 +1771,7 @@ async function think(markets, prices, pnl, openPos, state) {
       currentWinRate: pnl.trades > 0 ? (pnl.wins / pnl.trades) : 0,
       totalTrades: pnl.trades || 0,
       coins: ['BTC', 'ETH', 'SOL'],
+      oracleContext: oracle.getPromptContext(prices),
       brainManager,
       // anthropicClient removed, handled by routeLLM
       onStatus: (msg) => {
@@ -1759,49 +1824,187 @@ async function think(markets, prices, pnl, openPos, state) {
 }
 
 // ── Enter position ───────────────────────────────────────────────────────────
-// ── Kelly Criterion bet sizing (LVL 4+) ─────────────────────────────────────
-function kellyStake(pnl, side, myProb, marketYesPrice, edge) {
+// ── Kelly Criterion bet sizing with Bayesian Uncertainty Penalty ───────────────
+function kellyStake(pnl, side, myProb, marketYesPrice, edge, confidence = 50) {
   const xpData = expProgress(pnl.exp || 0);
   if (xpData.level < 4) return PAPER_BET_SIZE;
+
   const p = side === 'YES' ? myProb : 1 - myProb;
   const q = 1 - p;
   const odds = side === 'YES'
     ? (1 / Math.max(marketYesPrice, 0.01) - 1)
     : (1 / Math.max(1 - marketYesPrice, 0.01) - 1);
+
+  // Base Kelly fraction
   const kelly = Math.max(0, (p * odds - q) / odds);
-  const halfKelly = kelly / 2;  // half-Kelly = safer
+
+  // Fractional Kelly (Bayesian Penalty)
+  // Master System Prompt: f* = (EV / Variance) * Confidence Scalar
+  // We approximate this by scaling down the raw Kelly fraction based on LLM confidence.
+  // 90%+ confidence = 1/2 Kelly (aggressive)
+  // 70-89% confidence = 1/4 Kelly (standard)
+  // <70% confidence = 1/8 Kelly (conservative)
+  let kellyFraction = 0.25; // Default 1/4 Kelly
+  if (confidence >= 90) kellyFraction = 0.50; // 1/2 Kelly
+  else if (confidence < 70) kellyFraction = 0.125; // 1/8 Kelly
+
+  const finalKelly = kelly * kellyFraction;
   const fund = pnl.fund || 10000;
-  const raw = fund * halfKelly;
+  const raw = fund * finalKelly;
+
   // Dynamic max based on WR — protect capital when losing
   const wr = pnl.trades > 0 ? pnl.wins / pnl.trades : 0.5;
   const maxStake = wr >= 0.60 ? 400    // 60%+ WR → aggressive, up to $400
     : wr >= 0.50 ? 250    // 50-59% WR → moderate, up to $250
       : wr >= 0.40 ? 150    // 40-49% WR → conservative, up to $150
         : 75;   // <40% WR → survival mode, max $75
-  // Round to nearest $25, clamp $50-maxStake
-  return Math.round(Math.min(Math.max(raw, 50), maxStake) / 25) * 25;
+
+  // Round to nearest $25, clamp $25-maxStake
+  return Math.round(Math.min(Math.max(raw, 25), maxStake) / 25) * 25;
 }
 
-async function enterPosition(decision) {
+// ── 4. Agent evaluate_and_trade (Master System Prompt) ──────────────────────
+async function evaluate_and_trade(decision) {
   const { market, side, myProb, edge, confidence, thought } = decision;
   const pnlNow = loadPnL();
-  const stake = kellyStake(pnlNow, side, myProb, market.yesPrice, edge);
   const xpData = expProgress(pnlNow.exp || 0);
   const kellyOn = xpData.level >= 4;
+  const level = xpData.level || 0;
+
+  // ═══ MOTHER CODE: Polymerase gate ═══
+  const polyResult = level >= 5
+    ? polymerase.simulate(market, { targetSide: side }, PAPER_BET_SIZE, level)
+    : { approved: true, reason: 'BELOW_LVL5' };
+  if (!polyResult.approved) {
+    console.log('[POLYMERASE] ⛔ BLOCKED:', polyResult.reason, '—', (market.title || '').slice(0, 40));
+    return;
+  }
+
+  // ═══ QUANT: Smart Money + Order Book (VPIN Kill Switch) ═══
+  const smData = lastSmartMoneyData || { available: false };
+  if (smData.available && smData.isVPINToxic) {
+    console.log(`[VPIN KILL SWITCH] ⛔ Toxic flow detected (Vol ${smData.volumeSpike}x, Move ${(smData.oneHourChange * 100).toFixed(1)}%) — skipping`);
+    return;
+  }
+
+  const obData = orderBook.analyze(smData);
+  const effectiveEdge = obData.available ? orderBook.adjustEdge(edge, obData) : edge;
+  if (obData.available && obData.recommendation === 'AVOID_WIDE_SPREAD') {
+    console.log('[ORDER BOOK] ⛔ Wide spread:', obData.spreadPct + '% — skipping');
+    return;
+  }
+
+  // ═══ QUANT: LMSR edge check ═══
+  const sessionAdj = lastSessionAdj || marketSessions.getSessionAdjustments();
+  const lmsrResult = lmsrEngine.calculateFairValue({
+    yesPrice: market.yesPrice,
+    fearGreedIndex: null, volRatio: 1, priceChange1h: 0,
+    rsi14: market.priceData?.rsi || undefined,
+    bbPosition: market.priceData?.bbPct || undefined,
+    sessionEdge: sessionAdj.edgeMultiplier,
+    humanState: lastHumanState,
+    soulRules: [],
+    side
+  });
+
+  // ═══ QUANT: Particle Filter ═══
+  const pState = particleFilter.update(
+    market.id || market.conditionId || Date.now().toString(),
+    market.yesPrice,
+    { signalLogitUpdate: lmsrResult.logitComponents?.totalShift || 0 }
+  );
+
+  let particleStakeAdj = 1.0;
+  if (pState?.uncertainty > 0.5) {
+    particleStakeAdj = 0.6;
+    console.log('[PARTICLE] ⚠️ High uncertainty — reducing stake 40%');
+  }
+
+  // ═══ QUANT: Greeks timing ═══
+  const hoursToClose = market.closesAt ? (new Date(market.closesAt) - Date.now()) / 3600000 : 48;
+  const greeks = calculateGreeks(market.yesPrice, hoursToClose);
+  if (greeks) {
+    console.log('[GREEKS] Delta:', greeks.delta.toFixed(4),
+      '| Exit urgency:', (greeks.exitUrgency * 100).toFixed(0) + '%',
+      '| Hold:', greeks.holdRecommendation);
+  }
+
+  // ═══ QUANT: Copula portfolio risk ═══
+  const positions = loadPositions();
+  const portfolioRisk = copulaRisk.analyzePortfolio(positions.open);
+  const copulaStakeAdj = portfolioRisk.stakeMultiplier;
+
+  // ═══ QUANT: Master System Prompt EV Check ═══
+  const p = side === 'YES' ? myProb : 1 - myProb;
+  const rawOdds = side === 'YES' ? market.yesPrice : (1 - market.yesPrice);
+  const potentialProfit = (1 / Math.max(rawOdds, 0.01)) - 1;
+  const ev = (p * potentialProfit) - (1 - p);
+
+  if (ev <= 0) {
+    console.log(`[EV GATE] ⛔ NEGATIVE EV: Math dictates PASS. EV = ${ev.toFixed(4)}. Market: $${market.title.slice(0, 30)}...`);
+    return;
+  }
+
+  // ═══ COMBINED STAKE (Kelly × Mother Code multipliers with floor) ═══
+  // We only reach here if EV > 0 (as mathematically required by Kelly formula)
+  const baseStake = kellyStake(pnlNow, side, myProb, market.yesPrice, edge, confidence);
+  const humanMult = (lastHumanState === 'NEWS_SHOCK') ? 0 : 1.0;
+  const sessionMult = sessionAdj.stakeMultiplier;
+  const metabolicMult = metabolism.getStakeMultiplier(pnlNow.fund || 0, lastHumanState);
+  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj);
+  const stake = Math.round(Math.max(25, baseStake * combined) / 25) * 25;
+
+  if (humanMult === 0) {
+    console.log('[MOTHER CODE] ⛔ NEWS_SHOCK — skipping all bets');
+    return;
+  }
+
+  console.log('[STAKE] Base:', baseStake,
+    '× Session:', sessionMult,
+    '× Metabolic:', metabolicMult,
+    '× Particle:', particleStakeAdj,
+    '× Copula:', copulaStakeAdj,
+    '= Final:', stake);
 
   cls();
   console.log(M + BOLD + '  ╔══════════════════════════════════════════════════════════════╗');
   console.log(M + BOLD + '  ║  ADAN  ·  PAPER BET  ·  ' + new Date().toLocaleTimeString().padEnd(35) + '║');
   console.log(M + BOLD + '  ╠══════════════════════════════════════════════════════════════╣');
   console.log(M + BOLD + '  ║  Market: ' + W + BOLD + (market.title || '').slice(0, 52).padEnd(52) + M + BOLD + ' ║');
-  console.log(M + BOLD + '  ║  Side: ' + W + BOLD + side.padEnd(5) + X + M + BOLD + '  My prob: ' + Y + BOLD + (myProb * 100).toFixed(1) + '%' + M + BOLD + '  Market: ' + W + (market.yesPrice * 100).toFixed(1) + '%' + M + BOLD + '  Edge: ' + G + BOLD + (edge * 100).toFixed(1) + '%' + M + BOLD + '  ║');
+  console.log(M + BOLD + '  ║  Side: ' + W + BOLD + side.padEnd(5) + X + M + BOLD + '  My prob: ' + Y + BOLD + (myProb * 100).toFixed(1) + '%' + M + BOLD + '  Market: ' + W + (market.yesPrice * 100).toFixed(1) + '%' + M + BOLD + '  EV: ' + G + BOLD + '+' + ev.toFixed(3) + M + BOLD + '     ║');
   console.log(M + BOLD + '  ║  Confidence: ' + Y + BOLD + confidence + '%' + M + BOLD + '  Stake: ' + G + BOLD + '$' + stake + (kellyOn ? ' 📐KELLY' : ' flat') + M + BOLD + '  Liq: $' + (market.liquidity || 0).toFixed(0).padEnd(8) + '║');
+  console.log(M + BOLD + '  ║  LMSR: ' + (lmsrResult.hasSufficientEdge ? G : R) + BOLD + lmsrResult.recommendation + X + M + BOLD + '  Sessions: ' + Y + sessionAdj.sessionName + X + M + BOLD + '                 ║');
   console.log(M + BOLD + '  ║  PAPER BET — no real money moved                             ║');
   console.log(M + BOLD + '  ╚══════════════════════════════════════════════════════════════╝' + X);
   await new Promise(r => setTimeout(r, 2000));
 
   // Build feature vector for cortex memory at entry time
   const entryVec = buildFeatureVector(market.priceData || {});
+
+  // ═══ FEATURE ATTRIBUTION: Record entry features ═══
+  const tradeId = Date.now().toString();
+  try {
+    const fgData = state?.prices?._meta?.fearGreed;
+    featureTracker.recordEntry(tradeId, featureTracker.extractFeatures({
+      fearGreed: fgData?.value || 0,
+      fundingRate: market.priceData?.funding || 0,
+      trendStrength: market.priceData?.trend || 0,
+      volRatio: market.priceData?.volRatio || 1,
+      sessionName: sessionAdj.sessionName,
+      humanState: lastHumanState,
+      edge: effectiveEdge,
+      confidence,
+      asset: market.asset || '',
+      smartMoneySignal: smData.signal || 'NO_DATA',
+      spreadPct: obData.spreadPct || 0
+    }));
+  } catch (e) { }
+
+  // ═══ LMSR: Record prediction for Brier Score ═══
+  const predId = (market.id || '') + '_' + Date.now();
+  const effectiveProb = side === 'YES' ? (pState?.trueProbability || market.yesPrice)
+    : (1 - (pState?.trueProbability || market.yesPrice));
+  lmsrEngine.recordPrediction(predId, effectiveProb, side);
 
   const pos = loadPositions();
   pos.open.push({
@@ -1817,7 +2020,8 @@ async function enterPosition(decision) {
     closesAt: market.closesAt || null,
     resolved: false, won: null, pnl: null,
     entryThought: thought ? thought.slice(0, 300) : '',
-    entryVec     // saved for cortex memory on resolution
+    entryVec,
+    lmsrPredId: predId  // for Brier Score resolution
   });
   savePositions(pos);
 
@@ -1962,15 +2166,17 @@ async function checkResolutions() {
     const yesWon = Array.isArray(outcomePrices) && parseFloat(outcomePrices[0]) >= 0.99;
     const won = (p.side === 'YES' && yesWon) || (p.side === 'NO' && !yesWon);
 
-    // Slippage simulation: 1.5% deducted on entry + exit = realistic paper trading (Nightmare Engine)
-    const SLIPPAGE = 0.015; // 1.5% per side for low-liquidity PM markets
-    const slippageCost = parseFloat((p.stake * SLIPPAGE * 2).toFixed(2)); // entry + exit
+    // Slippage simulation: realistic paper trading (Nightmare Engine)
+    const SLIPPAGE = 0.015; // 1.5% per side
     let pnlVal;
     if (won) {
-      const mult = p.side === 'YES' ? 1 / Math.max(p.marketPrice, 0.01) : 1 / Math.max(1 - p.marketPrice, 0.01);
+      // p.marketPrice was already saved as the TARGET side price at entry time. No need to flip it twice.
+      const mult = 1 / Math.max(p.marketPrice, 0.01);
+      const slippageCost = parseFloat((p.stake * SLIPPAGE * 2).toFixed(2)); // entry + exit slippage
       pnlVal = parseFloat((p.stake * (mult - 1) - slippageCost).toFixed(2));
     } else {
-      pnlVal = parseFloat((-p.stake - slippageCost).toFixed(2));
+      // On a full loss, the stake is lost. Slippage only matters for the entry, but you just lose your stake.
+      pnlVal = parseFloat((-p.stake).toFixed(2));
     }
 
     // BRIER SCORE CALCULATION (Calibration metric)
@@ -1986,6 +2192,17 @@ async function checkResolutions() {
     resolveHypothesis(p.marketId, won);
     updateMetaCalib(p.confidence || 65, won);
     promoteInsightsToSoul();
+
+    // ── Mother Code: LMSR Brier Score + Metabolism tracking ──
+    if (p.lmsrPredId) {
+      lmsrEngine.resolvePrediction(p.lmsrPredId, won);
+      const brier = lmsrEngine.getBrierScore(50);
+      if (brier.score !== null) {
+        console.log('[BRIER] 📊 Score:', brier.score, '(' + brier.status + ')', 'on last', brier.n, 'trades');
+      }
+    }
+    metabolism.recordTradePnL(pnlVal || 0);
+    if (won) { consecutiveLosses = 0; } else { consecutiveLosses++; }
 
     // ── Record Result for Brain Manager
     if (p.brainStake && p.brainStake > 0) {
@@ -2009,9 +2226,12 @@ async function checkResolutions() {
     pnl2.trades = (pnl2.trades || 0) + 1;
     if (won) {
       pnl2.wins = (pnl2.wins || 0) + 1; pnl2.streak = (pnl2.streak || 0) + 1;
-      pnl2.fund = parseFloat(((pnl2.fund || 100) + p.stake + pnlVal).toFixed(2));
+      const tpct = typeof TREE_RULES !== 'undefined' ? TREE_RULES.treasuryPct : 0.1;
+      const treasuryCut = parseFloat((pnlVal * tpct).toFixed(2));
+
+      pnl2.fund = parseFloat(((pnl2.fund || 100) + p.stake + pnlVal - treasuryCut).toFixed(2));
       pnl2.net = parseFloat(((pnl2.net || 0) + pnlVal).toFixed(2));
-      pnl2.treasury = parseFloat(((pnl2.treasury || 0) + pnlVal * TREE_RULES.treasuryPct).toFixed(2));
+      pnl2.treasury = parseFloat(((pnl2.treasury || 0) + treasuryCut).toFixed(2));
       pnl2.brierTotal = (pnl2.brierTotal || 0) + brierScore;
       pnl2.brierCount = (pnl2.brierCount || 0) + 1;
       pnl2.brierScore = parseFloat((pnl2.brierTotal / pnl2.brierCount).toFixed(4));
@@ -2236,7 +2456,7 @@ async function doScan(state) {
   state.lastScan = new Date().toLocaleTimeString();
   state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
 
-  if (decision.action === 'BET' && decision.market) await enterPosition(decision);
+  if (decision.action === 'BET' && decision.market) await evaluate_and_trade(decision);
 
   render(state);
 }
@@ -2342,8 +2562,60 @@ async function main() {
     try {
       state.pnl = loadPnL();
       state.positions = loadPositions();
+
+      // ── Mother Code: Session + Human State ──
+      metabolism.recordCycleCost(0.001);
+      lastSessionAdj = marketSessions.getSessionAdjustments();
+      const utcH = new Date().getUTCHours();
+      const fgData = state.prices?._meta?.fearGreed;
+      const humanContext = humanEventLayer.classify({
+        fearGreedIndex: fgData?.value || null,
+        volRatio: state.prices?.BTCUSDT?.volRatio || 1,
+        priceChange1h: state.prices?.BTCUSDT?.change1h || 0,
+        utcH,
+        isBlackSwan: false
+      });
+      lastHumanState = humanContext.state;
+
+      // ── Mother Code: Circuit Breaker (LVL 5+) ──
+      const xpNow = expProgress(state.pnl.exp || 0);
+      if (xpNow.level >= 5 && consecutiveLosses >= 5) {
+        console.log('[CIRCUIT BREAKER] ⚡ 5 consecutive losses — pausing 10min');
+        await new Promise(r => setTimeout(r, 600000));
+        consecutiveLosses = 0;
+      }
+
+      // ── Mother Code: Apoptosis check (LVL 10+) ──
+      if (xpNow.level >= 10) {
+        const apo = apoptosis.shouldTrigger(state.pnl.fund || 0, consecutiveLosses, xpNow.level);
+        if (apo?.trigger) {
+          await apoptosis.triggerApoptosis(apo.reason, state.positions, state.pnl);
+          return;
+        }
+      }
+
+      // Clean up old particle filter markets
+      particleFilter.cleanup();
+
       await checkResolutions();
-      await doScan(state);
+
+      // ── Mother Code: Polymerase Shadow Learning ──
+      try {
+        await polymerase.checkShadowResolutions(polyFetch);
+      } catch (e) { }
+
+      // ── Child Learning: Resolve shadow predictions ──
+      try {
+        const prices = await fetchAllPrices();
+        childLearning.checkResolutions(prices);
+      } catch (e) { }
+
+      // Skip scan if NEWS_SHOCK
+      if (lastHumanState !== 'NEWS_SHOCK') {
+        await doScan(state);
+      } else {
+        console.log('[HUMAN] ⛔ NEWS_SHOCK detected — skipping scan cycle');
+      }
 
       // Adan Faction Explanations (Golden Round Table)
       if (Math.random() < 0.2) {

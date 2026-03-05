@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ADAN · Training Command Center</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    :root {
+      --bg: #ccc8bc;
+      --bg2: #ddd9cc;
+      --bg3: #e8e4d8;
+      --bg4: #f0ece2;
+      --border: #1a1a1a;
+      --border2: #3a3a2a;
+      --purple: #5a1a8a;
+      --cyan: #1a4a8a;
+      --green: #1a5a1a;
+      --red: #8a1a1a;
+      --yellow: #7a5a10;
+      --grey: #666655;
+      --text: #1a1a1a;
+      --text2: #3a3a2a;
+      --dim: #888878;
+      --shadow: 3px 3px 0 #1a1a1a;
+      --shadow-sm: 2px 2px 0 #1a1a1a;
+      --font: 'VT323', monospace;
+      --mono: 'JetBrains Mono', monospace;
+      --pixel: 'Press Start 2P', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 16px;
+      min-height: 100vh;
+      image-rendering: pixelated
+    }
+
+    /* Topbar */
+    .topbar {
+      background: var(--bg3);
+      border-bottom: 3px solid var(--border);
+      padding: 0 16px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 3px 0 var(--border)
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px
+    }
+
+    .logo {
+      font-size: 11px;
+      font-family: var(--pixel);
+      letter-spacing: 0;
+      color: var(--text)
+    }
+
+    .logo span {
+      color: var(--purple)
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: var(--mono);
+      font-size: 13px
+    }
+
+    .topbar-badge {
+      font-family: var(--pixel);
+      font-size: 7px;
+      padding: 4px 10px;
+      border: 2px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      letter-spacing: 1px
+    }
+
+    .badge-paper {
+      background: var(--yellow);
+      color: #fff
+    }
+
+    .badge-live {
+      background: var(--green);
+      color: #fff
+    }
+
+    /* Layout */
+    .main {
+      padding: 16px;
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 12px
+    }
+
+    /* Cards */
+    .card {
+      background: var(--bg3);
+      border: 2px solid var(--border);
+      padding: 14px;
+      box-shadow: var(--shadow);
+      position: relative
+    }
+
+    .card-full {
+      grid-column: 1/-1
+    }
+
+    .card-title {
+      font-size: 9px;
+      font-family: var(--pixel);
+      letter-spacing: 0;
+      text-transform: uppercase;
+      color: var(--text);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 8px
+    }
+
+    .card-title::before {
+      content: '▶';
+      color: var(--purple);
+      font-size: 8px
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 0;
+      border-bottom: 1px dashed var(--border2)
+    }
+
+    .stat-row:last-child {
+      border-bottom: none
+    }
+
+    .stat-lbl {
+      color: var(--text2);
+      font-size: 13px;
+      font-family: var(--font)
+    }
+
+    .stat-val {
+      font-weight: 600;
+      font-size: 14px;
+      font-family: var(--mono)
+    }
+
+    /* Certification */
+    .cert-score {
+      font-family: var(--pixel);
+      font-size: 40px;
+      color: var(--purple);
+      text-align: center;
+      padding: 10px 0;
+      text-shadow: 2px 2px 0 rgba(90, 26, 138, 0.2)
+    }
+
+    .cert-status {
+      font-family: var(--pixel);
+      font-size: 8px;
+      text-align: center;
+      letter-spacing: 2px;
+      padding: 6px 12px;
+      border: 2px solid;
+      display: inline-block;
+      margin: 0 auto 12px;
+      width: 100%
+    }
+
+    .cert-bar-track {
+      height: 16px;
+      background: var(--bg);
+      border: 2px solid var(--border);
+      overflow: hidden;
+      position: relative;
+      box-shadow: inset 2px 2px 0 var(--border2)
+    }
+
+    .cert-bar-fill {
+      height: 100%;
+      transition: width .8s steps(20);
+      image-rendering: pixelated
+    }
+
+    .cert-bar-label {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--pixel);
+      font-size: 7px;
+      color: var(--text);
+      mix-blend-mode: difference;
+      z-index: 1
+    }
+
+    /* Checks */
+    .check-card {
+      padding: 10px;
+      border: 2px solid var(--border);
+      background: var(--bg4);
+      box-shadow: var(--shadow-sm);
+      position: relative;
+      overflow: hidden
+    }
+
+    .check-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 3px;
+      height: 100%
+    }
+
+    .check-card.pass::before {
+      background: var(--green)
+    }
+
+    .check-card.fail::before {
+      background: var(--red)
+    }
+
+    .check-card.crit::before {
+      background: var(--purple)
+    }
+
+    .check-label {
+      font-family: var(--pixel);
+      font-size: 7px;
+      color: var(--text2);
+      letter-spacing: 1px;
+      margin-bottom: 4px
+    }
+
+    .check-value {
+      font-family: var(--mono);
+      font-size: 18px;
+      font-weight: 600
+    }
+
+    .check-target {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--grey)
+    }
+
+    .check-badge {
+      font-family: var(--pixel);
+      font-size: 6px;
+      padding: 2px 6px;
+      border: 1px solid;
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      letter-spacing: 1px
+    }
+
+    /* Modules */
+    .mod-chip {
+      display: inline-block;
+      padding: 4px 8px;
+      font-family: var(--pixel);
+      font-size: 7px;
+      border: 2px solid;
+      margin: 3px;
+      box-shadow: var(--shadow-sm);
+      letter-spacing: 1px;
+      transition: all .15s
+    }
+
+    .mod-chip.active {
+      border-color: var(--green);
+      color: var(--green);
+      background: rgba(26, 90, 26, 0.08)
+    }
+
+    .mod-chip.locked {
+      border-color: var(--grey);
+      color: var(--grey);
+      background: rgba(102, 102, 85, 0.05)
+    }
+
+    .mod-chip:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: 4px 4px 0 var(--border)
+    }
+
+    /* Human state bars */
+    .hbar-track {
+      height: 12px;
+      background: var(--bg);
+      border: 2px solid var(--border);
+      flex: 1;
+      overflow: hidden
+    }
+
+    .hbar-fill {
+      height: 100%;
+      transition: width .6s steps(12);
+      image-rendering: pixelated
+    }
+
+    .hbar-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px
+    }
+
+    .hbar-label {
+      font-family: var(--pixel);
+      font-size: 6px;
+      color: var(--text2);
+      letter-spacing: 1px;
+      width: 100px;
+      text-align: right
+    }
+
+    .hbar-count {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text);
+      width: 30px;
+      text-align: right
+    }
+
+    /* Brier trend */
+    .brier-dot {
+      width: 10px;
+      height: 10px;
+      border: 2px solid var(--border);
+      display: inline-block;
+      margin: 2px;
+      transition: all .15s
+    }
+
+    .brier-dot:hover {
+      transform: scale(1.5)
+    }
+
+    /* Log feed */
+    .log-feed {
+      background: var(--bg);
+      border: 2px solid var(--border);
+      padding: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text2);
+      max-height: 200px;
+      overflow-y: auto;
+      box-shadow: inset 2px 2px 0 var(--border2)
+    }
+
+    .log-line {
+      padding: 2px 0;
+      border-bottom: 1px dotted var(--border2)
+    }
+
+    .log-line:last-child {
+      border-bottom: none
+    }
+
+    /* Back link */
+    .back-link {
+      font-family: var(--pixel);
+      font-size: 8px;
+      color: var(--cyan);
+      text-decoration: none;
+      letter-spacing: 1px;
+      border: 2px solid var(--cyan);
+      padding: 4px 10px;
+      box-shadow: var(--shadow-sm);
+      transition: all .1s
+    }
+
+    .back-link:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: 4px 4px 0 var(--border)
+    }
+
+    /* Heartbeat animation */
+    @keyframes heartbeat {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .3
+      }
+    }
+
+    .alive-dot {
+      width: 6px;
+      height: 6px;
+      display: inline-block;
+      animation: heartbeat 1.5s ease infinite
+    }
+
+    /* Responsive */
+    @media(max-width:768px) {
+
+      .grid-2,
+      .grid-3,
+      .grid-4 {
+        grid-template-columns: 1fr
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="topbar">
+    <div class="topbar-left">
+      <a href="/" class="back-link">◀ DASHBOARD</a>
+      <div class="logo"><span>ADAN</span> · Training Command Center</div>
+    </div>
+    <div class="topbar-right">
+      <div class="topbar-badge badge-paper" id="mode-badge">● PAPER TRADE</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--grey)" id="timestamp">--</div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- CERTIFICATION -->
+    <div class="card card-full">
+      <div class="card-title">Live Trading Certification</div>
+      <div style="text-align:center;margin-bottom:8px">
+        <div style="font-family:var(--pixel);font-size:7px;color:var(--grey);letter-spacing:2px;margin-bottom:4px">
+          CERTIFICATION PROGRESS</div>
+        <div class="cert-score" id="cert-score">0%</div>
+        <div class="cert-status" id="cert-status" style="border-color:var(--red);color:var(--red)">JUST STARTED</div>
+      </div>
+      <div class="cert-bar-track">
+        <div class="cert-bar-fill" id="cert-bar" style="width:0%;background:var(--red)"></div>
+        <div class="cert-bar-label">100% required to go live · Critical checks are mandatory</div>
+      </div>
+    </div>
+
+    <!-- CHECKS -->
+    <div class="grid-3" id="checks-grid"></div>
+
+    <!-- CORE METRICS -->
+    <div class="grid-4">
+      <div class="card">
+        <div class="card-title">Win Rate</div>
+        <div id="m-wr" style="font-family:var(--pixel);font-size:22px;color:var(--text)">--%</div>
+        <div id="m-wl" style="font-family:var(--mono);font-size:12px;color:var(--grey);margin-top:4px">--W / --L</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Brier Score</div>
+        <div id="m-brier" style="font-family:var(--pixel);font-size:22px;color:var(--text)">N/A</div>
+        <div id="m-brier-status" style="font-family:var(--mono);font-size:12px;color:var(--grey);margin-top:4px">
+          building...</div>
+      </div>
+      <div class="card">
+        <div class="card-title">ADAN Level</div>
+        <div id="m-level" style="font-family:var(--pixel);font-size:22px;color:var(--purple)">LVL --</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--grey);margin-top:4px">paper trade</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Vault (Paper)</div>
+        <div id="m-fund" style="font-family:var(--pixel);font-size:22px;color:var(--green)">$--</div>
+        <div id="m-net" style="font-family:var(--mono);font-size:12px;color:var(--grey);margin-top:4px">net: --</div>
+      </div>
+    </div>
+
+    <!-- LMSR + POLYMERASE -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">LMSR Edge Engine</div>
+        <div class="stat-row"><span class="stat-lbl">Total Detections</span><span class="stat-val"
+            id="lmsr-total">0</span></div>
+        <div class="stat-row"><span class="stat-lbl">Avg Edge Found</span><span class="stat-val" id="lmsr-edge"
+            style="color:var(--purple)">0%</span></div>
+        <div class="stat-row"><span class="stat-lbl">Bet Rate</span><span class="stat-val" id="lmsr-bet"
+            style="color:var(--green)">0%</span></div>
+        <div class="stat-row"><span class="stat-lbl">Skip Rate</span><span class="stat-val" id="lmsr-skip"
+            style="color:var(--red)">0%</span></div>
+        <div class="stat-row"><span class="stat-lbl">Strong Bets (>10%)</span><span class="stat-val"
+            id="lmsr-strong">0</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Polymerase Gate Blocks</div>
+        <div class="stat-row"><span class="stat-lbl">Total Blocks</span><span class="stat-val" id="poly-total"
+            style="color:var(--red)">0</span></div>
+        <div id="poly-reasons" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <!-- BRIER TREND + HUMAN STATES -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Brier Score Trend (5 Periods)</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--grey);margin-bottom:8px">↓ lower is better ·
+          target: <0.15< /div>
+            <div id="brier-trend"
+              style="display:flex;align-items:flex-end;gap:4px;height:80px;border-bottom:2px solid var(--border);padding-bottom:4px">
+            </div>
+            <div style="display:flex;gap:12px;margin-top:6px;font-family:var(--pixel);font-size:6px">
+              <span>■ <span style="color:var(--green)">GOOD</span></span>
+              <span>■ <span style="color:var(--yellow)">FAIR</span></span>
+              <span>■ <span style="color:var(--red)">POOR</span></span>
+            </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Human State Distribution</div>
+          <div id="human-states"></div>
+        </div>
+      </div>
+
+      <!-- MODULES -->
+      <div class="card card-full">
+        <div class="card-title">Mother Code · Module Status</div>
+        <div id="modules-grid" style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center"></div>
+      </div>
+
+      <!-- SOUL + LOGS -->
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Soul Rules Learned</div>
+          <div id="soul-count" style="font-family:var(--pixel);font-size:28px;color:var(--purple);margin-bottom:4px">0
+          </div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--grey)">target: 100+ rules</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:6px">Each rule = one learned
+            pattern from real trades</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Live Log Feed</div>
+          <div class="log-feed" id="log-feed">
+            <div class="log-line" style="color:var(--grey)">Waiting for logs...</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div
+      style="text-align:center;padding:16px;font-family:var(--pixel);font-size:6px;color:var(--grey);letter-spacing:2px">
+      ADAN TRAINING COMMAND CENTER · PAPER TRADE MODE
+      <span style="float:right" id="refresh-countdown">NEXT REFRESH: --s</span>
+    </div>
+
+    <script>
+      const REFRESH_MS = 10000;
+      let countdown = REFRESH_MS / 1000;
+
+      const MODULES = [
+        { name: 'Market Sessions', minLvl: 4 }, { name: 'Human Events', minLvl: 4 }, { name: 'LMSR Engine', minLvl: 4 },
+        { name: 'Particle Filter', minLvl: 4 }, { name: 'Greeks Adapter', minLvl: 4 }, { name: 'Copula Risk', minLvl: 4 },
+        { name: 'Polymerase', minLvl: 5 }, { name: 'Metabolism', minLvl: 6 }, { name: 'Circuit Breaker', minLvl: 5 },
+        { name: 'Stem Cells', minLvl: 8 }, { name: 'Anti-Hypnosis', minLvl: 10 }, { name: 'Apoptosis', minLvl: 10 },
+        { name: 'Dream Mode v2', minLvl: 15 }, { name: 'Sovereign', minLvl: 100 }
+      ];
+
+      const HUMAN_STATES = ['RATIONAL_MARKET', 'SLEEPING_HERD', 'HERD_PANIC', 'HERD_FOMO', 'DEAD_ZONE_TRAP', 'NEWS_SHOCK'];
+      const STATE_COLORS = { RATIONAL_MARKET: 'var(--green)', SLEEPING_HERD: 'var(--cyan)', HERD_PANIC: 'var(--red)', HERD_FOMO: 'var(--yellow)', DEAD_ZONE_TRAP: 'var(--grey)', NEWS_SHOCK: 'var(--purple)' };
+
+      async function refresh() {
+        try {
+          const r = await fetch('/api/training-metrics');
+          const d = await r.json();
+
+          document.getElementById('timestamp').textContent = new Date().toLocaleString();
+
+          // Certification
+          const cert = d.certification || {};
+          const score = cert.score || 0;
+          document.getElementById('cert-score').textContent = score + '%';
+          const statusEl = document.getElementById('cert-status');
+          const statusText = (cert.status || 'JUST_STARTED').replace(/_/g, ' ');
+          statusEl.textContent = statusText;
+          const statusColor = score >= 100 ? 'var(--green)' : score >= 50 ? 'var(--yellow)' : 'var(--red)';
+          statusEl.style.borderColor = statusColor;
+          statusEl.style.color = statusColor;
+          document.getElementById('cert-score').style.color = statusColor === 'var(--green)' ? 'var(--green)' : 'var(--purple)';
+
+          const bar = document.getElementById('cert-bar');
+          bar.style.width = Math.min(score, 100) + '%';
+          bar.style.background = score >= 75 ? 'var(--green)' : score >= 50 ? 'var(--yellow)' : score >= 25 ? 'var(--purple)' : 'var(--red)';
+
+          // Checks
+          const checksGrid = document.getElementById('checks-grid');
+          checksGrid.innerHTML = (cert.checks || []).map(function (c) {
+            const cls = c.passed ? 'pass' : c.critical ? 'crit' : 'fail';
+            const icon = c.passed ? '✓' : '✗';
+            const valStr = c.value !== null && c.value !== undefined ? c.value + c.unit : 'N/A';
+            const badgeColor = c.critical ? 'var(--purple)' : 'var(--grey)';
+            return '<div class="check-card ' + cls + '">' +
+              '<div class="check-badge" style="border-color:' + badgeColor + ';color:' + badgeColor + '">' + (c.critical ? 'CRITICAL' : c.weight + 'pts') + '</div>' +
+              '<div class="check-label">' + icon + ' ' + c.label + '</div>' +
+              '<div class="check-value" style="color:' + (c.passed ? 'var(--green)' : 'var(--red)') + '">' + valStr + '</div>' +
+              '<div class="check-target" style="margin-top:2px">' + c.description + '</div>' +
+              '</div>';
+          }).join('');
+
+          // Core metrics
+          const pnl = d.pnl || {};
+          document.getElementById('m-wr').textContent = (pnl.wr || 0).toFixed(1) + '%';
+          document.getElementById('m-wr').style.color = pnl.wr >= 60 ? 'var(--green)' : pnl.wr >= 50 ? 'var(--yellow)' : 'var(--red)';
+          document.getElementById('m-wl').textContent = (pnl.wins || 0) + 'W / ' + (pnl.losses || 0) + 'L';
+          document.getElementById('m-level').textContent = 'LVL ' + (pnl.level || 0);
+          document.getElementById('m-fund').textContent = '$' + Math.round(pnl.balance || 0).toLocaleString();
+          document.getElementById('m-net').textContent = 'net: ' + (pnl.net >= 0 ? '+' : '') + '$' + (pnl.net || 0).toFixed(2);
+          document.getElementById('m-net').style.color = (pnl.net || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+
+          // Brier
+          const brier = d.brier || {};
+          if (brier.score !== null && brier.score !== undefined) {
+            document.getElementById('m-brier').textContent = brier.score.toFixed(4);
+            document.getElementById('m-brier').style.color = brier.score < 0.15 ? 'var(--green)' : brier.score < 0.25 ? 'var(--yellow)' : 'var(--red)';
+            document.getElementById('m-brier-status').textContent = brier.n + ' resolved · ' + brier.status;
+          } else {
+            document.getElementById('m-brier').textContent = 'N/A';
+            document.getElementById('m-brier-status').textContent = 'building...';
+          }
+
+          // LMSR
+          const lmsr = d.lmsr || {};
+          document.getElementById('lmsr-total').textContent = lmsr.totalDetections || 0;
+          document.getElementById('lmsr-edge').textContent = (lmsr.avgEdge || 0) + '%';
+          document.getElementById('lmsr-bet').textContent = (lmsr.betRate || 0) + '%';
+          document.getElementById('lmsr-skip').textContent = (lmsr.skipRate || 0) + '%';
+          document.getElementById('lmsr-strong').textContent = lmsr.strongBets || 0;
+
+          // Polymerase
+          const poly = d.polymerase || {};
+          document.getElementById('poly-total').textContent = poly.totalBlocks || 0;
+          const reasonsEl = document.getElementById('poly-reasons');
+          const reasons = poly.reasons || {};
+          reasonsEl.innerHTML = Object.keys(reasons).length > 0
+            ? Object.entries(reasons).map(function (e) {
+              return '<div class="stat-row"><span class="stat-lbl" style="font-size:11px">' + e[0] + '</span><span class="stat-val" style="color:var(--red)">' + e[1] + '</span></div>';
+            }).join('')
+            : '<div style="font-family:var(--mono);font-size:11px;color:var(--grey)">No blocks yet — Polymerase is watching</div>';
+
+          // Brier trend
+          const trendEl = document.getElementById('brier-trend');
+          const trend = brier.trend || [];
+          if (trend.length > 0) {
+            const maxV = Math.max(...trend, 0.3);
+            trendEl.innerHTML = trend.map(function (v) {
+              const h = Math.max(4, (v / maxV) * 70);
+              const c = v < 0.15 ? 'var(--green)' : v < 0.25 ? 'var(--yellow)' : 'var(--red)';
+              return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end">' +
+                '<div style="font-family:var(--mono);font-size:9px;color:var(--grey);margin-bottom:2px">' + v.toFixed(3) + '</div>' +
+                '<div style="width:100%;height:' + h + 'px;background:' + c + ';border:2px solid var(--border)"></div>' +
+                '</div>';
+            }).join('');
+          } else {
+            trendEl.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--grey);padding:20px;text-align:center">Accumulating data...</div>';
+          }
+
+          // Human states
+          const humanEl = document.getElementById('human-states');
+          const sb = (d.human || {}).stateBreakdown || {};
+          const totalH = Object.values(sb).reduce(function (a, b) { return a + b; }, 0) || 1;
+          humanEl.innerHTML = HUMAN_STATES.map(function (s) {
+            const v = sb[s] || 0;
+            const pct = (v / totalH * 100).toFixed(0);
+            const color = STATE_COLORS[s] || 'var(--grey)';
+            return '<div class="hbar-row">' +
+              '<div class="hbar-label">' + s.replace(/_/g, ' ') + '</div>' +
+              '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>' +
+              '<div class="hbar-count">' + v + '</div>' +
+              '</div>';
+          }).join('');
+
+          // Modules
+          const modsEl = document.getElementById('modules-grid');
+          const level = pnl.level || 0;
+          modsEl.innerHTML = MODULES.map(function (m) {
+            const active = level >= m.minLvl;
+            const cls = active ? 'active' : 'locked';
+            const dot = active ? '<span class="alive-dot" style="background:var(--green);margin-right:4px"></span>' : '';
+            return '<div class="mod-chip ' + cls + '">' + dot + m.name + '<span style="margin-left:6px;color:var(--dim);font-size:6px">LVL ' + m.minLvl + '+</span></div>';
+          }).join('');
+
+          // Soul
+          document.getElementById('soul-count').textContent = (d.soul || {}).totalRules || 0;
+
+          // Logs
+          try {
+            const lr = await fetch('/api/logs');
+            const ld = await lr.json();
+            const logFeed = document.getElementById('log-feed');
+            if (ld.lines && ld.lines.length > 0) {
+              logFeed.innerHTML = ld.lines.slice(-20).map(function (l) {
+                return '<div class="log-line">' + l.replace(/</g, '&lt;').slice(0, 120) + '</div>';
+              }).join('');
+              logFeed.scrollTop = logFeed.scrollHeight;
+            }
+          } catch (e) { }
+
+          countdown = REFRESH_MS / 1000;
+        } catch (e) {
+          console.error('Refresh error:', e);
+        }
+      }
+
+      refresh();
+      setInterval(refresh, REFRESH_MS);
+      setInterval(function () {
+        countdown = Math.max(0, countdown - 1);
+        document.getElementById('refresh-countdown').textContent = 'NEXT REFRESH: ' + countdown + 's';
+      }, 1000);
+    </script>
+</body>
+
+</html>

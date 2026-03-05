@@ -46,7 +46,13 @@ export class QuotaManager {
     }
 
     _save() {
-        fs.writeFileSync(QUOTA_FILE, JSON.stringify(this.q, null, 2));
+        if (this._saving) return;
+        this._saving = true;
+        try {
+            fs.writeFileSync(QUOTA_FILE, JSON.stringify(this.q, null, 2));
+        } finally {
+            this._saving = false;
+        }
     }
 
     // ── GEMMA (Cerebro 24/7) ─────────────────────────────────────────────────

@@ -66,6 +66,19 @@ Additionally, `soul_manager.js` acts as a context limiter. Instead of passing AD
 
 ---
 
+## 📈 Advanced Quantitative Framework (v3.0 Addition)
+
+In the latest v3.0 evolution, ADAN has been upgraded with a strict, math-first logic layer to penalize LLM hallucinations and enforce strict risk management before ANY trade is executed.
+
+### Core Quant Features:
+1. **Regime Classifier:** Detects 60-minute rolling volatility and trend strength (Efficiency Ratio) to classify the market as `TRENDING`, `VOLATILE`, or `MEAN_REVERTING`. 
+2. **Fractional Kelly Gate:** Applies a Bayesian uncertainty penalty to bet sizing. If the LLM confidence is low (<70%), it slashes the Kelly stake to `1/8`. If confidence is supreme (>=90%), it permits a progressive `1/2` Kelly allocation.
+3. **EV (Expected Value) Gate:** Replaced the legacy order entry with `Agent_evaluate_and_trade`. If the mathematically calculated Expected Value of a trade is $\le 0$ after factoring in edges and probabilities, the trade is **HARD REJECTED**, regardless of LLM conviction.
+4. **Regime-Weighted Consensus:** The Child Learning nodes no longer vote democratically. Their votes are dynamically weighted by their historical accuracy *in the specific current market regime* (e.g., a child that excels in VOLATILE markets gets 2x voting power during chop).
+5. **Diversity Penalty (Shannon Entropy):** During the Genetic Crossover phase of child agents, the system measures the Shannon Entropy ($H$) of the gene pool. If $H < 0.5$ (danger of monoculture), it forces a 3x mutation rate to ensure the swarm does not suffer from groupthink.
+
+---
+
 ## 📡 The Dashboard
 
 While the terminal node runs, ADAN serves a real-time HTTP dashboard locally at:
@@ -100,3 +113,10 @@ ADAN_MODE=TRAINING   # TRAINING (Paper) or LIVE
 node adan-pred.js
 ```
 *Leave the terminal open and visit the dashboard at `http://localhost:3141`.*
+
+### Backtest & Simulation Tools
+Run the following scripts to validate strategies and test ADAN's quantitative models on historical data:
+```bash
+node backtest.js             # Replays ADAN's 294 raw trades through current Mother Code filters
+node backtest-historical.js  # Downloads full Polymarket action history and simulates strategies
+```

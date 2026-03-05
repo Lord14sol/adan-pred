@@ -605,8 +605,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
     <div style="font-size:10px;color:var(--grey)" id="scan-info"></div>
   </div>
   <div class="topbar-right">
-    <div class="topbar-stat"><span class="val" id="top-fund">--</span><span class="lbl">Fund</span></div>
+    <div class="topbar-stat"><span class="val" id="top-fund">--</span><span class="lbl">Vault</span></div>
     <div class="topbar-stat"><span class="val" id="top-net">--</span><span class="lbl">Net P&L</span></div>
+    <div class="topbar-stat"><span class="val" id="top-active">--</span><span class="lbl">Active Pos</span></div>
     <div class="topbar-stat"><span class="val" id="top-wr">--</span><span class="lbl">Win Rate</span></div>
     <div class="topbar-stat"><span class="val" id="top-trades">--</span><span class="lbl">Trades</span></div>
   </div>
@@ -679,6 +680,25 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
     <div class="card">
       <div class="card-title">Skill Tree</div>
       <div class="skills-wrap" id="skills-wrap"></div>
+    </div>
+
+    <!-- Mother Code v2.0 · Quant Intelligence -->
+    <div class="card">
+      <div class="card-title">Mother Code v2.0</div>
+      <div class="stat-row"><span class="stat-lbl">Session</span><span class="stat-val" id="mc-session" style="color:var(--cyan)">--</span></div>
+      <div class="stat-row"><span class="stat-lbl">Human State</span><span class="stat-val" id="mc-human" style="color:var(--green)">--</span></div>
+      <div class="stat-row"><span class="stat-lbl">LMSR Avg Edge</span><span class="stat-val" id="mc-lmsr-edge" style="color:var(--purple)">--%</span></div>
+      <div class="stat-row"><span class="stat-lbl">LMSR Bet/Skip</span><span class="stat-val" id="mc-lmsr-rate" style="color:var(--cyan)">--/--</span></div>
+      <div class="stat-row"><span class="stat-lbl">Brier Score</span><span class="stat-val" id="mc-brier" style="color:var(--green)">--</span></div>
+      <div class="stat-row"><span class="stat-lbl">Polymerase Blocks</span><span class="stat-val" id="mc-poly" style="color:var(--red)">0</span></div>
+      <div class="stat-row"><span class="stat-lbl">Certification</span><span class="stat-val" id="mc-cert" style="color:var(--yellow)">0%</span></div>
+      <div style="margin-top:8px">
+        <div style="font-family:var(--pixel);font-size:7px;color:var(--grey);letter-spacing:2px;margin-bottom:6px">MODULE STATUS</div>
+        <div id="mc-modules" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+      </div>
+      <div style="margin-top:8px;text-align:center">
+        <a href="/training" target="_blank" style="font-family:var(--pixel);font-size:8px;color:var(--cyan);text-decoration:none;letter-spacing:1px;border:1px solid var(--cyan);padding:4px 10px;display:inline-block">OPEN TRAINING CENTER →</a>
+      </div>
     </div>
 
   </div>
@@ -1365,6 +1385,59 @@ async function refresh() {
       brainData = await br.json();
     } catch(e) {}
 
+    // Fetch Mother Code v2.0 metrics
+    let mcData = null;
+    try {
+      const mcr = await fetch('/api/training-metrics');
+      mcData = await mcr.json();
+    } catch(e) {}
+
+    // Populate Mother Code panel
+    if (mcData) {
+      const MC_MODULES = [
+        {id:'market_sessions',name:'SES',minLevel:4},{id:'human_events',name:'HUM',minLevel:4},
+        {id:'lmsr',name:'LMSR',minLevel:4},{id:'particle',name:'PF',minLevel:4},
+        {id:'greeks',name:'GRK',minLevel:4},{id:'copula',name:'COP',minLevel:4},
+        {id:'polymerase',name:'POLY',minLevel:5},{id:'metabolism',name:'MET',minLevel:6},
+        {id:'circuit',name:'CB',minLevel:5},{id:'stem',name:'STEM',minLevel:8},
+        {id:'apoptosis',name:'APO',minLevel:10}
+      ];
+      const mcLevel = mcData.pnl?.level || xp?.level || 0;
+      const modsEl = document.getElementById('mc-modules');
+      if (modsEl) {
+        modsEl.innerHTML = MC_MODULES.map(function(m) {
+          const active = mcLevel >= m.minLevel;
+          const color = active ? 'var(--green)' : 'var(--grey)';
+          const bg = active ? 'rgba(73,190,96,0.15)' : 'rgba(100,100,100,0.1)';
+          return '<span style="font-family:var(--pixel);font-size:7px;padding:2px 5px;border:1px solid ' + color + ';color:' + color + ';background:' + bg + '">' + m.name + '</span>';
+        }).join('');
+      }
+      const sesEl = document.getElementById('mc-session');
+      if (sesEl) sesEl.textContent = mcData.human?.stateBreakdown ? Object.keys(mcData.human.stateBreakdown)[0] || '--' : '--';
+      const humEl = document.getElementById('mc-human');
+      if (humEl) {
+        var topState = '--';
+        var sb = mcData.human?.stateBreakdown || {};
+        var maxC = 0;
+        for (var sk in sb) { if (sb[sk] > maxC) { maxC = sb[sk]; topState = sk; } }
+        humEl.textContent = topState.replace(/_/g, ' ');
+        humEl.style.color = topState === 'RATIONAL_MARKET' ? 'var(--green)' : topState.includes('PANIC') ? 'var(--red)' : topState.includes('FOMO') ? 'var(--yellow)' : 'var(--cyan)';
+      }
+      const lmsrEdgeEl = document.getElementById('mc-lmsr-edge');
+      if (lmsrEdgeEl) lmsrEdgeEl.textContent = (mcData.lmsr?.avgEdge || 0) + '%';
+      const lmsrRateEl = document.getElementById('mc-lmsr-rate');
+      if (lmsrRateEl) lmsrRateEl.textContent = (mcData.lmsr?.betRate || 0) + '% / ' + (mcData.lmsr?.skipRate || 0) + '%';
+      const brierEl = document.getElementById('mc-brier');
+      if (brierEl) brierEl.textContent = mcData.brier?.score !== null && mcData.brier?.score !== undefined ? mcData.brier.score.toFixed(4) + ' (' + (mcData.brier.status || '') + ')' : 'building...';
+      const polyEl = document.getElementById('mc-poly');
+      if (polyEl) polyEl.textContent = mcData.polymerase?.totalBlocks || 0;
+      const certEl = document.getElementById('mc-cert');
+      if (certEl) {
+        certEl.textContent = (mcData.certification?.score || 0) + '% · ' + (mcData.certification?.status || '').replace(/_/g, ' ');
+        certEl.style.color = mcData.certification?.score >= 100 ? 'var(--green)' : mcData.certification?.score >= 50 ? 'var(--yellow)' : 'var(--red)';
+      }
+    }
+
     window._lastNFData = d; // for fast neural-flow spinner
     const pnl = d.pnl, xp = d.xp;
     const pct = pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0;
@@ -1380,11 +1453,24 @@ async function refresh() {
     stEl.style.color = sm === 'critical' || sm === 'survival' ? 'var(--red)' : sm === 'cautious' ? 'var(--yellow)' : '';
     document.getElementById('scan-info').textContent = st?.lastScan ? 'Last scan: ' + st.lastScan + ' · Next: ~' + st.nextScanIn + 'min' : '';
 
-    // Topbar
-    document.getElementById('top-fund').textContent = '\$' + (pnl.fund || 0).toFixed(2);
+    const activeEl = document.getElementById('top-active');
+    const _topOpen = d.positions?.open || [];
+    const _topCount = _topOpen.length;
+    let activeStake = 0;
+    _topOpen.forEach(function(p){ activeStake += parseFloat(p.stake || 0); });
+    
+    // Fund = total vault (cash + active bets)
+    const totalVault = (pnl.fund || 0) + activeStake;
+    document.getElementById('top-fund').textContent = '\\$' + totalVault.toFixed(2);
+
     const netEl = document.getElementById('top-net');
-    netEl.textContent = (pnl.net >= 0 ? '+' : '') + '\$' + (pnl.net || 0).toFixed(2);
+    netEl.textContent = (pnl.net >= 0 ? '+' : '') + '\\$' + (pnl.net || 0).toFixed(2);
     netEl.style.color = pnl.net >= 0 ? 'var(--green)' : 'var(--red)';
+    
+    if (activeEl) {
+      activeEl.textContent = _topCount > 0 ? _topCount + ' (\\$' + activeStake.toFixed(0) + ')' : '0';
+      activeEl.style.color = _topCount > 0 ? 'var(--cyan)' : 'var(--grey)';
+    }
     const wrEl = document.getElementById('top-wr');
     wrEl.textContent = pct + '%';
     wrEl.style.color = pct >= 55 ? 'var(--green)' : pct >= 40 ? 'var(--yellow)' : 'var(--red)';
@@ -2770,6 +2856,146 @@ setInterval(stepAdanWorld, 200);
         soulRules: soulRulesLite,
         config
       }));
+    } else if (req.url === '/api/training-metrics') {
+      // ── Training Metrics API ───────────────────────────────────────────
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      try {
+        const ADAN_DIR = path.join(process.env.HOME, '.adan-pred');
+
+        // 1. Brier Score from calibration.jsonl
+        let brierData = { score: null, n: 0, status: 'INSUFFICIENT_DATA', trend: [] };
+        try {
+          const calLines = fs.readFileSync(path.join(ADAN_DIR, 'calibration.jsonl'), 'utf8').split('\n').filter(Boolean);
+          const resolved = calLines.map(l => { try { return JSON.parse(l); } catch { return null; } })
+            .filter(l => l && l.resolved && l.outcome !== null).slice(-500);
+          if (resolved.length >= 10) {
+            const score = resolved.reduce((s, p) => s + Math.pow(p.pHat - p.outcome, 2), 0) / resolved.length;
+            const status = score < 0.10 ? 'EXCELLENT' : score < 0.15 ? 'GOOD' : score < 0.20 ? 'FAIR' : score < 0.25 ? 'POOR' : 'RANDOM';
+            const trend = [];
+            const perWeek = Math.floor(resolved.length / 5);
+            for (let i = 0; i < 5; i++) {
+              const chunk = resolved.slice(i * perWeek, (i + 1) * perWeek);
+              if (chunk.length > 0) trend.push(parseFloat((chunk.reduce((a, p) => a + Math.pow(p.pHat - p.outcome, 2), 0) / chunk.length).toFixed(4)));
+            }
+            brierData = { score: parseFloat(score.toFixed(4)), n: resolved.length, status, trend };
+          }
+        } catch { }
+
+        // 2. LMSR edge stats
+        let lmsrStats = { totalDetections: 0, avgEdge: 0, betRate: 0, skipRate: 0, strongBets: 0 };
+        try {
+          const edgeLines = fs.readFileSync(path.join(ADAN_DIR, 'edge_detections.jsonl'), 'utf8').split('\n').filter(Boolean);
+          const edges = edgeLines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).slice(-200);
+          if (edges.length > 0) {
+            const bets = edges.filter(e => e.hasSufficientEdge).length;
+            lmsrStats = {
+              totalDetections: edges.length,
+              avgEdge: parseFloat((edges.reduce((s, e) => s + Math.abs(e.edge || 0), 0) / edges.length * 100).toFixed(2)),
+              betRate: parseFloat((bets / edges.length * 100).toFixed(1)),
+              skipRate: parseFloat(((edges.length - bets) / edges.length * 100).toFixed(1)),
+              strongBets: edges.filter(e => (e.edge || 0) >= 0.10).length
+            };
+          }
+        } catch { }
+
+        // 3. Polymerase blocks
+        let polymeraseStats = { totalBlocks: 0, reasons: {} };
+        try {
+          const polyLines = fs.readFileSync(path.join(ADAN_DIR, 'polymerase_blocks.jsonl'), 'utf8').split('\n').filter(Boolean);
+          const blocks = polyLines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).slice(-200);
+          const reasons = {};
+          blocks.forEach(b => { reasons[b.reason] = (reasons[b.reason] || 0) + 1; });
+          polymeraseStats = { totalBlocks: blocks.length, reasons };
+        } catch { }
+
+        // 4. Human event states
+        let humanStats = { stateBreakdown: {} };
+        try {
+          const humanLines = fs.readFileSync(path.join(ADAN_DIR, 'human_events.jsonl'), 'utf8').split('\n').filter(Boolean);
+          const events = humanLines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).slice(-500);
+          const states = {};
+          events.forEach(e => { states[e.state] = (states[e.state] || 0) + 1; });
+          humanStats.stateBreakdown = states;
+        } catch { }
+
+        // 5. PnL stats
+        const pnl = loadPnL();
+        const total = (pnl.wins || 0) + (pnl.losses || 0);
+        const xp = expProgress(pnl.exp || 0);
+        const pnlStats = {
+          wr: total > 0 ? parseFloat(((pnl.wins / total) * 100).toFixed(2)) : 0,
+          level: xp.level || 0,
+          balance: pnl.fund || 0,
+          wins: pnl.wins || 0,
+          losses: pnl.losses || 0,
+          net: pnl.net || 0
+        };
+
+        // 6. Soul rules
+        let soulStats = { totalRules: 0 };
+        try {
+          const soul = fs.readFileSync(path.join(ADAN_DIR, 'SOUL.md'), 'utf8');
+          soulStats.totalRules = (soul.match(/^##\s/gm) || []).length;
+        } catch { }
+
+        // 7. Certification score
+        const checks = [
+          { id: 'WR_60', label: 'Win Rate ≥ 60%', description: '4 consecutive weeks above 60%', value: pnlStats.wr, target: 60, unit: '%', passed: pnlStats.wr >= 60, critical: true, weight: 25 },
+          { id: 'BRIER_15', label: 'Brier Score < 0.15', description: 'Institutional-level calibration', value: brierData.score, target: 0.15, unit: '', passed: brierData.score !== null && brierData.score < 0.15, critical: true, weight: 25 },
+          { id: 'TRADES_500', label: '500+ Resolved Trades', description: 'Statistically significant sample', value: brierData.n, target: 500, unit: ' trades', passed: brierData.n >= 500, critical: true, weight: 20 },
+          { id: 'SOUL_100', label: '100+ Soul Rules', description: 'Learned from experience', value: soulStats.totalRules, target: 100, unit: ' rules', passed: soulStats.totalRules >= 100, critical: false, weight: 10 },
+          { id: 'LEVEL_12', label: 'Level ≥ 12', description: 'Anti-Hypnosis unlocked', value: pnlStats.level, target: 12, unit: '', passed: pnlStats.level >= 12, critical: false, weight: 10 },
+          { id: 'LMSR_EDGE', label: 'Avg LMSR Edge > 6%', description: 'Mathematical edge detected', value: lmsrStats.avgEdge, target: 6, unit: '%', passed: lmsrStats.avgEdge >= 6, critical: false, weight: 10 }
+        ];
+        const totalWeight = checks.reduce((s, c) => s + c.weight, 0);
+        const earnedWeight = checks.filter(c => c.passed).reduce((s, c) => s + c.weight, 0);
+        const certScore = parseFloat((earnedWeight / totalWeight * 100).toFixed(1));
+        const criticalPassed = checks.filter(c => c.critical).every(c => c.passed);
+        const certStatus = certScore >= 100 && criticalPassed ? 'CERTIFIED_FOR_LIVE'
+          : certScore >= 75 ? 'ALMOST_READY' : certScore >= 50 ? 'TRAINING_WELL'
+            : certScore >= 25 ? 'EARLY_TRAINING' : 'JUST_STARTED';
+
+        res.end(JSON.stringify({
+          timestamp: new Date().toISOString(),
+          brier: brierData,
+          lmsr: lmsrStats,
+          polymerase: polymeraseStats,
+          human: humanStats,
+          pnl: pnlStats,
+          soul: soulStats,
+          certification: { score: certScore, status: certStatus, checks, criticalPassed }
+        }));
+      } catch (err) {
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+
+    } else if (req.url === '/api/logs') {
+      // ── Log Feed API ───────────────────────────────────────────────────
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      try {
+        const logPath = path.join(process.env.HOME, '.adan-pred', 'adan.log');
+        const content = fs.readFileSync(logPath, 'utf8');
+        const lines = content.split('\n').filter(Boolean).slice(-100);
+        res.end(JSON.stringify({ lines }));
+      } catch {
+        res.end(JSON.stringify({ lines: ['Log file not available — ADAN writes to stdout'] }));
+      }
+      return;
+
+    } else if (req.url === '/training') {
+      // ── Training Dashboard ─────────────────────────────────────────────
+      try {
+        const htmlPath = path.join(process.cwd(), 'src', 'ui', 'training-dashboard.html');
+        const trainingHtml = fs.readFileSync(htmlPath, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(trainingHtml);
+      } catch (err) {
+        res.writeHead(500);
+        res.end('Training dashboard not found: ' + err.message);
+      }
+      return;
+
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(HTML);

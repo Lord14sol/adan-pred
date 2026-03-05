@@ -54,15 +54,28 @@ async function fetchPolymarkets(strat) {
     }
   }));
 
-  // ── Sort: 5M Up/Down first (shortest close), then by time ascending ──
+  // ── Sort: By Volume and Edge ──
+  // Instead of pushing Up/Down always to the top (which starves the bot with short-expiry markets),
+  // we sort purely by proximity to close, but shuffle the top 20 to ensure variety
   all.sort((a, b) => {
-    // Up/Down markets always float to top
-    if (a._isUpDown && !b._isUpDown) return -1;
-    if (!a._isUpDown && b._isUpDown) return 1;
     const aMs = a.endDate ? new Date(a.endDate).getTime() : maxMs;
     const bMs = b.endDate ? new Date(b.endDate).getTime() : maxMs;
     return aMs - bMs;
   });
+
+  // Keep a mix of UpDown and regular markets if we have too many
+  const upDown = all.filter(m => m._isUpDown);
+  const regular = all.filter(m => !m._isUpDown);
+
+  // Return interleaved array to guarantee variety
+  const mixed = [];
+  let i = 0, j = 0;
+  while (i < upDown.length || j < regular.length) {
+    if (i < upDown.length) mixed.push(upDown[i++]);
+    if (j < regular.length) mixed.push(regular[j++]);
+  }
+
+  return mixed;
 
   return all;
 }
