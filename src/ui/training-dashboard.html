@@ -465,6 +465,8 @@
       <div class="logo"><span>ADAN</span> · Training Command Center</div>
     </div>
     <div class="topbar-right">
+      <div class="topbar-badge" id="bot-status-badge"
+        style="background:var(--red);color:#fff;font-size:7px;margin-right:8px">● BOT: OFFLINE</div>
       <div class="topbar-badge" id="regime-badge"
         style="background:var(--cyan);color:#fff;font-size:7px;margin-right:8px">● REGIME: UNKNOWN</div>
       <div class="topbar-badge badge-paper" id="mode-badge">● PAPER TRADE</div>
@@ -549,6 +551,16 @@
       <div id="open-positions"
         style="font-family:var(--mono);font-size:12px;color:var(--text2);max-height:150px;overflow-y:auto">
         <div style="color:var(--grey)">No open trades in the vault.</div>
+      </div>
+    </div>
+
+    <!-- GHOST TRADES / SHADOW BETS -->
+    <div class="card card-full">
+      <div class="card-title">👻 Ghost Trades (Shadow Bets) <span id="ghost-acc"
+          style="margin-left:8px;color:var(--purple);font-family:var(--mono);font-size:12px">--</span></div>
+      <div id="ghost-positions"
+        style="font-family:var(--mono);font-size:12px;color:var(--text2);max-height:180px;overflow-y:auto">
+        <div style="color:var(--grey)">No shadow bets recorded yet.</div>
       </div>
     </div>
 
@@ -687,6 +699,16 @@
           document.getElementById('lmsr-skip').textContent = (lmsr.skipRate || 0) + '%';
           document.getElementById('lmsr-strong').textContent = lmsr.strongBets || 0;
 
+          // Bot Status
+          const botBadge = document.getElementById('bot-status-badge');
+          if (d.heartbeat) {
+            botBadge.textContent = '● BOT: ONLINE';
+            botBadge.style.background = 'var(--green)';
+          } else {
+            botBadge.textContent = '● BOT: OFFLINE';
+            botBadge.style.background = 'var(--red)';
+          }
+
           // Quant & Regime
           const q = d.quant || {};
           const regEl = document.getElementById('regime-badge');
@@ -705,6 +727,33 @@
             }).join('')
             : '<div style="font-family:var(--mono);font-size:11px;color:var(--grey)">No risk blocks yet</div>';
 
+          // Shadows
+          const shadowStats = poly.shadowStats || null;
+          if (shadowStats) {
+             const netPnl = shadowStats.savedPnl - shadowStats.missedPnl;
+             document.getElementById('ghost-acc').innerHTML = shadowStats.accuracy + '% block accuracy | Net Saved: <span style="color:' + (netPnl >= 0 ? 'var(--green)' : 'var(--red)') + '">$' + (netPnl >= 0 ? '+' : '') + netPnl.toFixed(2) + '</span>';
+             const ghostEl = document.getElementById('ghost-positions');
+             if (shadowStats.recent && shadowStats.recent.length > 0) {
+                 ghostEl.innerHTML = shadowStats.recent.map(function(s) {
+                    const sideCol = s.side === 'YES' ? 'var(--green)' : 'var(--red)';
+                    let resHtml = '<span style="color:var(--yellow);width:90px;display:inline-block;text-align:right">PENDING</span>';
+                    if (s.resolved) {
+                       if (s.wouldHaveWon) {
+                          resHtml = '<span style="color:var(--red);width:90px;display:inline-block;text-align:right">MISSED +$' + (s.wouldHavePnl).toFixed(2) + '</span>';
+                       } else {
+                          resHtml = '<span style="color:var(--green);width:90px;display:inline-block;text-align:right">SAVED -$' + Math.abs(s.wouldHavePnl).toFixed(2) + '</span>';
+                       }
+                    }
+                    return '<div class="stat-row" style="border-bottom:1px dotted var(--border2);justify-content:flex-start">' +
+                      '<span style="width:40px;font-weight:600;color:' + sideCol + '">' + (s.side || 'YES') + '</span>' +
+                      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">' + (s.marketTitle || 'Unknown') + '</span>' +
+                      '<span style="margin-left:12px;color:var(--purple);font-weight:600;width:150px;font-size:10px;text-align:right">' + (s.blockReason || 'BLOCKED').slice(0, 25) + '</span>' +
+                      '<span style="margin-left:12px;">' + resHtml + '</span>' +
+                      '</div>';
+                 }).join('');
+             }
+          }
+
           // Open Positions
           const pos = d.positions || {};
           const openP = pos.open || [];
@@ -712,14 +761,14 @@
           if (openP.length === 0) {
             document.getElementById('open-positions').innerHTML = '<div style="color:var(--grey);padding:10px 0">No open trades in the vault.</div>';
           } else {
-            document.getElementById('open-positions').innerHTML = openP.map(function(p) {
-              const edge = ((p.edge||0) * 100).toFixed(1);
+            document.getElementById('open-positions').innerHTML = openP.map(function (p) {
+              const edge = ((p.edge || 0) * 100).toFixed(1);
               const edgeCol = edge > 0 ? 'var(--green)' : 'var(--red)';
               const sideCol = p.side === 'YES' ? 'var(--green)' : 'var(--red)';
               return '<div class="stat-row" style="border-bottom:1px dotted var(--border2);justify-content:flex-start">' +
-                '<span style="width:50px;font-weight:600;color:' + sideCol + '">' + (p.side||'YES') + '</span>' + 
-                '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">' + (p.marketTitle||'Unknown') + '</span>' +
-                '<span style="margin-left:12px;color:var(--purple);font-weight:600;width:60px;text-align:right">$' + (p.stake||0) + '</span>' +
+                '<span style="width:50px;font-weight:600;color:' + sideCol + '">' + (p.side || 'YES') + '</span>' +
+                '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">' + (p.marketTitle || 'Unknown') + '</span>' +
+                '<span style="margin-left:12px;color:var(--purple);font-weight:600;width:60px;text-align:right">$' + (p.stake || 0) + '</span>' +
                 '<span style="margin-left:12px;color:' + edgeCol + ';width:90px;text-align:right">' + (edge >= 0 ? '+' : '') + edge + '% edge</span>' +
                 '</div>';
             }).join('');

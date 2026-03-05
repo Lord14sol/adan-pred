@@ -9,6 +9,7 @@ import {
 } from '../core/config.js';
 import { signalLabel } from '../api/binance.js';
 import { quota } from '../core/quota_manager.js';
+import { polymerase } from '../core/polymerase.js';
 
 // ── Panel — fixed 72 cols, always fits terminal ───────────────────────────
 const PW = 72;
@@ -462,7 +463,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 .calib-asset{font-size:8px;color:var(--grey);text-transform:uppercase;font-weight:600;font-family:var(--pixel)}
 .calib-pct{font-size:16px;font-weight:700;font-family:var(--mono);margin:2px 0}
 .calib-trades{font-size:9px;color:var(--grey)}
-@media(max-width:900px){.main{grid-template-columns:1fr}}
+@media(max-width:900px){
+  .main{grid-template-columns:1fr; gap:10px}
+  .sidebar{border-right:none; padding-right:0}
+  .content{border-right:none; padding:0}
+  .right-column{padding-left:0}
+}
 /* ── Pixel Avatar ─────────────────────────────────────────────── */
 .avatar-card{text-align:center;padding:14px 10px 10px}
 .avatar-wrap{position:relative;display:inline-block;margin-bottom:6px}
@@ -588,7 +594,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 .pulse{animation:pulse 1.5s infinite}
 @keyframes pulse{0%{opacity:1}50%{opacity:0.4}100%{opacity:1}}
 /* ── Hour heatmap ─────────────────────────────────────────────── */
-.hour-grid{display:grid;grid-template-columns:repeat(24,1fr);gap:1px;margin-top:6px}
+.hour-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:2px;margin-top:10px}
 .hour-cell{height:20px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;font-family:var(--mono);border:1px solid var(--border2)}
 </style>
 </head>
@@ -701,6 +707,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
       </div>
     </div>
 
+    <!-- Live Markets (Moved to Sidebar exactly below Mother Code) -->
+    <div class="card">
+      <div class="card-title">Live Markets Scanner</div>
+      <div id="markets-wrap" style="display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+
   </div>
   <div class="content">
 
@@ -791,46 +803,177 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
     </div>
 
     <!-- ADAN World Conway Grid -->
-    <div class="card" id="adan-world-card">
-      <div class="card-title">ADAN WORLD · Cellular Automaton</div>
-      <canvas id="adan-world-cvs" width="600" height="200" style="width:100%;height:auto;background:var(--bg4);border:2px solid var(--border);box-shadow:inset 2px 2px 0 var(--border2);image-rendering:pixelated;"></canvas>
-    </div>
-
-    <!-- Brain Log: Decisions + Reasoning -->
-      <div class="card-title">🧠 BRAIN LOG · Decisions &amp; Learning</div>
-      <div id="decisions-wrap"></div>
-    </div>
-
-    <div style="display:flex;flex-direction:column;gap:14px">
-
-      <!-- Open Positions -->
-      <div class="card">
-        <div class="card-title">Live Bets <span id="open-count" style="color:var(--cyan)"></span></div>
-        <div id="positions-wrap"></div>
+    <div class="right-column" style="display:flex; flex-direction:column; gap:20px;">
+      <div class="card" id="adan-world-card">
+        <div class="card-title">ADAN WORLD · Cellular Automaton</div>
+        <canvas id="adan-world-cvs" width="600" height="200" style="width:100%;height:auto;background:var(--bg4);border:2px solid var(--border);box-shadow:inset 2px 2px 0 var(--border2);image-rendering:pixelated;"></canvas>
       </div>
 
-      <!-- Markets + Hour Heatmap -->
+      <!-- Brain Log: Decisions + Reasoning -->
       <div class="card">
-        <div class="card-title">Live Markets</div>
-        <div id="markets-wrap"></div>
-        <div style="margin-top:12px">
-          <div style="font-size:9px;color:var(--grey);letter-spacing:1px;margin-bottom:4px">HOUR WIN RATE (UTC)</div>
+        <div class="card-title">🧠 BRAIN LOG · Decisions &amp; Learning</div>
+        <div id="decisions-wrap"></div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <!-- Open Positions -->
+        <div class="card">
+          <div class="card-title">Live Bets <span id="open-count" style="color:var(--cyan)"></span></div>
+          <div id="positions-wrap"></div>
+        </div>
+        <!-- Hour Heatmap -->
+        <div class="card">
+          <div class="card-title">Hour Win Rate (UTC)</div>
           <div class="hour-grid" id="hour-grid"></div>
         </div>
       </div>
-
+      </div>
     </div>
-
-    <!-- History -->
-    <div class="card">
-      <div class="card-title">Trade History · Full Record</div>
-      <div id="history-wrap"></div>
-    </div>
-
   </div>
 </div>
 
+<!-- BOTTOM ROW: History (Full Width Native) -->
+  <div style="width: 100%; max-width: 1800px; padding: 0 16px 20px 16px; margin: 0 auto; box-sizing: border-box;">
+    <!-- History / Ghosts Toggle Panel -->
+    <div class="card" style="margin: 0;">
+      <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+        <span id="history-panel-title">Trade History · Full Record</span>
+        <div style="display:flex; gap: 8px;">
+           <button class="btn-dag active" id="btn-hist-real" onclick="toggleHistoryTab('real')" style="padding:4px 8px; font-size:10px;">📜 REAL TRADES</button>
+           <button class="btn-dag" id="btn-hist-ghost" onclick="toggleHistoryTab('ghost')" style="padding:4px 8px; font-size:10px;">👻 SHADOW BETS</button>
+        </div>
+      </div>
+      <div id="history-wrap" style="max-height: 400px; overflow-y: auto;"></div>
+      <div id="ghost-history-wrap" style="max-height: 400px; overflow-y: auto; display: none;"></div>
+      
+      <!-- History Pagination Controls -->
+      <div id="history-pagination" style="display:flex; gap: 5px; margin-top: 10px; justify-content: center; font-family: var(--mono); font-size: 10px;">
+        <button class="btn-dag" onclick="changeHistPage(-1)">◀ PREV</button>
+        <span id="hist-page-info" style="color:var(--text2); padding: 4px;">Page 1</span>
+        <button class="btn-dag" onclick="changeHistPage(1)">NEXT ▶</button>
+      </div>
+    </div>
+  </div>
+
 <script>
+// --- UI HISTORY AND PAGINATION BOILERPLATE ---
+let currentHistTab = 'real';
+let realHistPage = 0;
+let ghostHistPage = 0;
+const HL_PAGE_SIZE = 20;
+
+window.toggleHistoryTab = function(tab) {
+  currentHistTab = tab;
+  const br = document.getElementById('btn-hist-real');
+  const bg = document.getElementById('btn-hist-ghost');
+  if(br) br.classList.toggle('active', tab === 'real');
+  if(bg) bg.classList.toggle('active', tab === 'ghost');
+  
+  const hw = document.getElementById('history-wrap');
+  const gw = document.getElementById('ghost-history-wrap');
+  if(hw) hw.style.display = tab === 'real' ? 'block' : 'none';
+  if(gw) gw.style.display = tab === 'ghost' ? 'block' : 'none';
+  
+  const pTitle = document.getElementById('history-panel-title');
+  if(pTitle) {
+    if (tab === 'real') pTitle.innerText = 'Trade History · Full Record';
+    else pTitle.innerText = '👻 Ghost Trades (Shadow Bets)';
+  }
+  if (window.renderHistoryPanel) window.renderHistoryPanel();
+};
+
+window.changeHistPage = function(dir) {
+  if (currentHistTab === 'real') {
+    realHistPage = Math.max(0, realHistPage + dir);
+  } else {
+    ghostHistPage = Math.max(0, ghostHistPage + dir);
+  }
+  if (window.renderHistoryPanel) window.renderHistoryPanel();
+};
+
+window.renderHistoryPanel = function() {
+  if (typeof window._lastNFData === 'undefined' || !window._lastNFData) return;
+  const closed = (window._lastNFData.positions?.closed||[]).slice().reverse();
+  const shadows = (window._lastNFData.shadowStats?.recentShadows||[]).slice().reverse();
+  
+  if (currentHistTab === 'real') {
+    renderTabItems(closed, realHistPage, 'history-wrap', drawRealTrade);
+    updatePaginationInfo(closed.length, realHistPage);
+  } else {
+    renderTabItems(shadows, ghostHistPage, 'ghost-history-wrap', drawGhostTrade);
+    updatePaginationInfo(shadows.length, ghostHistPage);
+  }
+};
+
+function updatePaginationInfo(total, page) {
+  const totPages = Math.ceil(total / HL_PAGE_SIZE) || 1;
+  let p = page + 1;
+  if (p > totPages) p = totPages;
+  const pi = document.getElementById('hist-page-info');
+  if(pi) pi.innerHTML = 'Page ' + p + ' / ' + totPages + ' <span style="color:var(--grey)">(' + total + ' total)</span>';
+  
+  if (page >= totPages && total > 0) {
+     if (currentHistTab === 'real') realHistPage = Math.max(0, totPages - 1);
+     if (currentHistTab === 'ghost') ghostHistPage = Math.max(0, totPages - 1);
+  }
+}
+
+function renderTabItems(items, page, containerId, rowFn) {
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  const start = page * HL_PAGE_SIZE;
+  const pageItems = items.slice(start, start + HL_PAGE_SIZE);
+  
+  // Accumulator Injection when traversing Ghost tab
+  if (containerId === 'ghost-history-wrap') {
+       const accArea = '<div style="display:flex; gap:10px; margin-bottom:12px; border-bottom:1px solid var(--border2); padding-bottom:10px;">' +
+         '<div><span style="font-size:10px;color:var(--grey)">NET SAVED</span> <div style="color:var(--green);font-family:var(--mono)">+$' + Math.max(0, (window._lastNFData.shadowStats?.savedPnl||0)).toFixed(2) + '</div></div>' +
+         '<div><span style="font-size:10px;color:var(--grey)">NET MISSED</span> <div style="color:var(--red);font-family:var(--mono)">-$' + Math.abs(Math.min(0, (window._lastNFData.shadowStats?.missedPnl||0))).toFixed(2) + '</div></div>' +
+         '<div><span style="font-size:10px;color:var(--grey)">ACCURACY</span> <div style="color:var(--purple);font-family:var(--mono)">' + (window._lastNFData.shadowStats?.accuracy||0) + '%</div></div>' +
+       '</div>';
+       if (pageItems.length === 0) {
+         container.innerHTML = accArea + '<div style="color:var(--grey);font-size:12px;padding:12px 0">No shadow bets found.</div>';
+       } else {
+         container.innerHTML = accArea + pageItems.map(rowFn).join('');
+       }
+  } else {
+       if (pageItems.length === 0) {
+         container.innerHTML = '<div style="color:var(--grey);font-size:12px;padding:12px 0">No records found.</div>';
+       } else {
+         container.innerHTML = pageItems.map(rowFn).join('');
+       }
+  }
+}
+
+function drawRealTrade(c) {
+  const w = c.result === 'WIN';
+  return '<div class="hist-row">' +
+    '<div class="hist-badge ' + (w ? 'hist-win' : 'hist-loss') + '">' + (w ? 'WIN' : 'LOSS') + '</div>' +
+    '<div class="hist-info">' +
+    '<div class="hist-title">' + (c.marketTitle || 'Unknown Market') + '</div>' +
+    '<div class="hist-sub">' + (c.asset || '').toUpperCase() + ' · edge: ' + ((c.edge || 0) * 100).toFixed(1) + '% · ' + (c.entryTime?.slice(11, 16) || '') + '</div>' +
+    '</div>' +
+    '<div class="hist-pnl" style="color:' + (w ? 'var(--green)' : 'var(--red)') + '">' + (w ? '+' : '') + '$' + (c.pnl || 0).toFixed(2) + '</div>' +
+    '</div>';
+}
+
+function drawGhostTrade(s) {
+  const sideCol = s.side === 'YES' ? 'var(--green)' : 'var(--red)';
+  let resHtml = '<span style="color:var(--yellow);width:90px;display:inline-block;text-align:right">PENDING</span>';
+  if (s.resolved) {
+     if (s.wouldHaveWon) resHtml = '<span style="color:var(--red);width:90px;display:inline-block;text-align:right">MISSED +$' + (s.wouldHavePnl).toFixed(2) + '</span>';
+     else resHtml = '<span style="color:var(--green);width:90px;display:inline-block;text-align:right">SAVED +$' + Math.abs(s.wouldHavePnl).toFixed(2) + '</span>';
+  }
+  return '<div class="hist-row">' +
+    '<div class="hist-info">' +
+    '<div class="hist-title"><span style="color:' + sideCol + ';font-weight:600">' + (s.side || 'YES') + '</span> ' + (s.marketTitle || 'Unknown') + '</div>' +
+    '<div class="hist-sub"><span style="color:var(--purple);font-weight:600">' + (s.blockReason || 'BLOCKED') + '</span></div>' +
+    '</div>' +
+    '<div class="hist-pnl">' + resHtml + '<div style="font-size:8px;color:var(--grey);margin-top:4px">' + new Date(s.timestamp).toLocaleTimeString() + '</div></div>' +
+    '</div>';
+}
+// --- END OF UI FUNCTIONS ---
+
 // ── Avatar Customization V2 (Distinct SVGs) ──────────────────────────────
 const baseLegs = '<rect x="8" y="74" width="16" height="12" fill="#0d0d18"/><rect x="32" y="74" width="16" height="12" fill="#0d0d18"/><rect x="10" y="74" width="2" height="12" fill="#111128"/><rect x="34" y="74" width="2" height="12" fill="#111128"/><rect x="6" y="86" width="20" height="8" fill="#060610"/><rect x="30" y="86" width="20" height="8" fill="#060610"/><rect x="6" y="86" width="20" height="2" fill="#161628"/><rect x="30" y="86" width="20" height="2" fill="#161628"/><rect x="22" y="90" width="4" height="4" fill="#0d0d20"/><rect x="46" y="90" width="4" height="4" fill="#0d0d20"/>';
 const baseHead = '<rect x="4" y="12" width="4" height="24" fill="#1a0e05"/><rect x="48" y="12" width="4" height="24" fill="#1a0e05"/><rect id="avatar-skin" x="8" y="12" width="40" height="24" fill="#e0b98a"/><rect x="26" y="24" width="4" height="2" fill="#c8996a"/><rect x="18" y="30" width="4" height="2" fill="#b07840"/><rect x="22" y="32" width="12" height="2" fill="#b07840"/><rect x="34" y="30" width="4" height="2" fill="#b07840"/><rect x="12" y="36" width="28" height="4" fill="#94a3b8"/><rect x="20" y="36" width="12" height="4" fill="#cbd5e1"/>';
@@ -1108,10 +1251,10 @@ function showParentDetail(type) {
         </div>
       </div>
       <div class="child-close" onclick="document.getElementById('child-modal').style.display='none'">X</div>
-    </div>
-    
+    </div >
+
     <div class="child-body">
-      
+
       <div class="child-section">
         <div class="child-sec-title">FOUNDATION LOGIC</div>
         <div style="font-size:12px;line-height:1.5;color:var(--text2);background:var(--bg);padding:10px;border-left:4px solid \${colors[type]}">
@@ -1125,10 +1268,10 @@ function showParentDetail(type) {
           <div><span class="lbl">ACTIVE CHILDREN</span><div class="val" style="color:var(--cyan)">\${activeLineage.length} Nodes</div></div>
           <div><span class="lbl">PRUNED (DEAD)</span><div class="val" style="color:var(--red)">\${lineageChildren.length - activeLineage.length} Nodes</div></div>
           <div><span class="lbl">LINEAGE WIN RATE</span><div class="val" style="color:\${avgWR>=50?'var(--green)':'var(--red)'}">\${avgWR}%</div></div>
-          <div><span class="lbl">REAL-TIME EDGE</span><div class="val" style="color:var(--green)">+ \${((pIntel?.signal?.conf || 0)/10).toFixed(2)}%</div></div>
+          <div><span class="lbl">REAL-TIME EDGE</span><div class="val" style="color:var(--green)">+ \${((pIntel?.signal?.conf || 0) / 10).toFixed(2)}%</div></div>
         </div>
       </div>
-      
+
     </div>
   \`;
   modal.style.display='block';
@@ -1438,6 +1581,7 @@ async function refresh() {
       }
     }
 
+    window._dashboardState = d; 
     window._lastNFData = d; // for fast neural-flow spinner
     const pnl = d.pnl, xp = d.xp;
     const pct = pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0;
@@ -1643,39 +1787,31 @@ async function refresh() {
 
     // Markets
     const mkts=st?.markets||[];
-    if(mkts.length===0){
-      document.getElementById('markets-wrap').innerHTML='<div style="color:var(--grey);font-size:12px;padding:12px 0">No active markets</div>';
-    } else {
-      document.getElementById('markets-wrap').innerHTML=mkts.slice(0,6).map(m=>{
-        const edgeVal=(m.edge||0)*100;
-        const eCol=Math.abs(edgeVal)>=5?'green':'grey';
-        return \`<div class="mkt-row">
-          <div class="mkt-asset">\${(m.asset||'?').toUpperCase().slice(0,3)}</div>
-          <div class="mkt-title" title="\${m.title||''}">\${(m.title||'').slice(0,35)}</div>
-          <div class="mkt-price" style="color:var(--cyan)">\${((m.yesPrice||0)*100).toFixed(0)}%</div>
-          <div class="mkt-edge" style="color:var(--\${eCol})">\${edgeVal>0?'+':''}\${edgeVal.toFixed(1)}%</div>
-          <div class="mkt-time">\${formatCountdown(m.closesAt)}</div>
-        </div>\`;
-      }).join('');
+    const mw = document.getElementById('markets-wrap');
+    if(mw) {
+      if(mkts.length===0){
+        mw.innerHTML='<div style="color:var(--grey);font-size:12px;padding:12px 0">No active markets. Scanning...</div>';
+      } else {
+        mw.innerHTML=mkts.map(m=>{
+          const edgeVal=(m.edge||0)*100;
+          const eCol=Math.abs(edgeVal)>=5?'green':'grey';
+          return \`<div class="mkt-row" style="background:var(--bg); border: 1px solid var(--border2); padding: 8px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
+               <div class="mkt-asset">\${(m.asset||'?').toUpperCase().slice(0,3)}</div>
+               <div class="mkt-edge" style="color:var(--\${eCol})">\${edgeVal>0?'+':''}\${edgeVal.toFixed(1)}% Edge</div>
+            </div>
+            <div class="mkt-title" title="\${m.title||''}" style="font-size:12px; margin-bottom: 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">\${(m.title||'').slice(0,50)}</div>
+            <div style="display:flex; justify-content:space-between; font-size: 10px; color: var(--grey);">
+               <div class="mkt-price" style="color:var(--cyan)">Price: \${((m.yesPrice||0)*100).toFixed(0)}¢</div>
+               <div class="mkt-time">Closes: \${formatCountdown(m.closesAt)}</div>
+            </div>
+          </div>\`;
+        }).join('');
+      }
     }
 
-    // History
-    const closed=(d.positions?.closed||[]).slice(-8).reverse();
-    if(closed.length===0){
-      document.getElementById('history-wrap').innerHTML='<div style="color:var(--grey);font-size:12px;padding:12px 0">No trades yet</div>';
-    } else {
-      document.getElementById('history-wrap').innerHTML=closed.map(c=>{
-        const w=c.result==='WIN';
-        return \`<div class="hist-row">
-          <div class="hist-badge \${w?'hist-win':'hist-loss'}">\${w?'WIN':'LOSS'}</div>
-          <div class="hist-info">
-            <div class="hist-title">\${(c.marketTitle||'').slice(0,50)}</div>
-            <div class="hist-sub">\${(c.asset||'').toUpperCase()} · edge: \${((c.edge||0)*100).toFixed(1)}% · \${c.entryTime?.slice(11,16)||''}</div>
-          </div>
-          <div class="hist-pnl" style="color:\${w?'var(--green)':'var(--red)'}">\${w?'+':''}\$\${c.pnl}</div>
-        </div>\`;
-      }).join('');
-    }
+    // Render Paginated History (Real & Ghost)
+    if(window.renderHistoryPanel) window.renderHistoryPanel();
 
     // Avatar
     updateAvatar(d, brainData);
@@ -1836,7 +1972,7 @@ function updateHourHeatmap(d) {
     const wr = t>0 ? s.wins/t : null;
     const bg = wr===null ? '#111118' : wr>=0.6 ? '#0a2010' : wr>=0.4 ? '#1a1400' : '#200a0a';
     const fc = wr===null ? '#374151' : wr>=0.6 ? '#34d399' : wr>=0.4 ? '#fbbf24' : '#f87171';
-    const label = wr===null ? h : (wr*100).toFixed(0);
+    const label = wr===null ? h : (wr*100).toFixed(0) + '%';
     return \`<div class="hour-cell" style="background:\${bg};color:\${fc}" title="Hour \${h} UTC: \${s.wins}W \${s.losses}L">\${label}</div>\`;
   }).join('');
 }
@@ -2853,6 +2989,7 @@ setInterval(stepAdanWorld, 200);
           brainStats: brainManager.brainStats
         },
         quota: quota.status(),
+        shadowStats: polymerase.getStats(),
         soulRules: soulRulesLite,
         config
       }));
@@ -2907,7 +3044,7 @@ setInterval(stepAdanWorld, 200);
           const reasons = {};
           blocks.forEach(b => { reasons[b.reason] = (reasons[b.reason] || 0) + 1; });
           polymeraseStats = { totalBlocks: blocks.length, reasons };
-          
+
           if (fs.existsSync(path.join(ADAN_DIR, 'ev_blocks.jsonl'))) {
             evBlocksCount = fs.readFileSync(path.join(ADAN_DIR, 'ev_blocks.jsonl'), 'utf8').split('\n').filter(Boolean).length;
           }
@@ -2963,6 +3100,7 @@ setInterval(stepAdanWorld, 200);
 
         res.end(JSON.stringify({
           timestamp: new Date().toISOString(),
+          heartbeat: true,
           brier: brierData,
           lmsr: lmsrStats,
           polymerase: polymeraseStats,
@@ -2971,9 +3109,9 @@ setInterval(stepAdanWorld, 200);
           soul: soulStats,
           positions: pos,
           quant: {
-             evBlocks: evBlocksCount,
-             regime: _dashboardState?.prices?._meta?.regime || 'UNKNOWN',
-             regimeEfficiency: _dashboardState?.prices?._meta?.regimeEfficiency || 0
+            evBlocks: evBlocksCount,
+            regime: _dashboardState?.prices?._meta?.regime || 'UNKNOWN',
+            regimeEfficiency: _dashboardState?.prices?._meta?.regimeEfficiency || 0
           },
           certification: { score: certScore, status: certStatus, checks, criticalPassed }
         }));
