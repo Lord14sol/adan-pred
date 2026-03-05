@@ -144,7 +144,38 @@ export class SmartMoneyTracker {
         if (analysis.isVPINToxic) {
             parts.push(`🛑 VPIN TOXIC FLOW WARNING: Extreme volume+price action. Highly informed traders are positioning. CAUTION.`);
         }
-        return parts.join('\n');
+    }
+
+    async getWhaleConsensus(marketId) {
+        if (!marketId) return { signal: 'NEUTRAL', weight: 0 };
+        try {
+            // Simulated whale tracking via activity endpoint
+            // In a real implementation, we would fetch: https://gamma-api.polymarket.com/activity?market_id=...
+            const activity = await httpGet(`${GAMMA_API}/activity?market_id=${marketId}&limit=50`);
+            if (!activity || !Array.isArray(activity)) return { signal: 'NEUTRAL', weight: 0 };
+
+            const whales = activity.filter(a => parseFloat(a.size) > 5000); // $5k+ is a whale on small markets
+            if (whales.length === 0) return { signal: 'NEUTRAL', weight: 0 };
+
+            let yesVol = 0, noVol = 0;
+            whales.forEach(w => {
+                if (w.side === 'BUY') {
+                    if (w.outcome === 'YES') yesVol += parseFloat(w.size);
+                    else noVol += parseFloat(w.size);
+                }
+            });
+
+            const total = yesVol + noVol;
+            if (total < 10000) return { signal: 'NEUTRAL', weight: 0 };
+
+            const yesPct = yesVol / total;
+            if (yesPct > 0.7) return { signal: 'BULLISH', weight: Math.min(100, (yesPct - 0.5) * 200) };
+            if (yesPct < 0.3) return { signal: 'BEARISH', weight: Math.min(100, (0.5 - yesPct) * 200) };
+
+            return { signal: 'MIXED', weight: 0 };
+        } catch (e) {
+            return { signal: 'NEUTRAL', weight: 0 };
+        }
     }
 }
 

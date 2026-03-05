@@ -2900,12 +2900,17 @@ setInterval(stepAdanWorld, 200);
 
         // 3. Polymerase blocks
         let polymeraseStats = { totalBlocks: 0, reasons: {} };
+        let evBlocksCount = 0;
         try {
           const polyLines = fs.readFileSync(path.join(ADAN_DIR, 'polymerase_blocks.jsonl'), 'utf8').split('\n').filter(Boolean);
           const blocks = polyLines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).slice(-200);
           const reasons = {};
           blocks.forEach(b => { reasons[b.reason] = (reasons[b.reason] || 0) + 1; });
           polymeraseStats = { totalBlocks: blocks.length, reasons };
+          
+          if (fs.existsSync(path.join(ADAN_DIR, 'ev_blocks.jsonl'))) {
+            evBlocksCount = fs.readFileSync(path.join(ADAN_DIR, 'ev_blocks.jsonl'), 'utf8').split('\n').filter(Boolean).length;
+          }
         } catch { }
 
         // 4. Human event states
@@ -2918,8 +2923,9 @@ setInterval(stepAdanWorld, 200);
           humanStats.stateBreakdown = states;
         } catch { }
 
-        // 5. PnL stats
+        // 5. PnL stats & Positions
         const pnl = loadPnL();
+        const pos = loadPositions();
         const total = (pnl.wins || 0) + (pnl.losses || 0);
         const xp = expProgress(pnl.exp || 0);
         const pnlStats = {
@@ -2963,6 +2969,12 @@ setInterval(stepAdanWorld, 200);
           human: humanStats,
           pnl: pnlStats,
           soul: soulStats,
+          positions: pos,
+          quant: {
+             evBlocks: evBlocksCount,
+             regime: _dashboardState?.prices?._meta?.regime || 'UNKNOWN',
+             regimeEfficiency: _dashboardState?.prices?._meta?.regimeEfficiency || 0
+          },
           certification: { score: certScore, status: certStatus, checks, criticalPassed }
         }));
       } catch (err) {

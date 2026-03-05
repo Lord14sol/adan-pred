@@ -465,6 +465,8 @@
       <div class="logo"><span>ADAN</span> · Training Command Center</div>
     </div>
     <div class="topbar-right">
+      <div class="topbar-badge" id="regime-badge"
+        style="background:var(--cyan);color:#fff;font-size:7px;margin-right:8px">● REGIME: UNKNOWN</div>
       <div class="topbar-badge badge-paper" id="mode-badge">● PAPER TRADE</div>
       <div style="font-family:var(--mono);font-size:11px;color:var(--grey)" id="timestamp">--</div>
     </div>
@@ -531,10 +533,22 @@
             id="lmsr-strong">0</span></div>
       </div>
       <div class="card">
-        <div class="card-title">Polymerase Gate Blocks</div>
-        <div class="stat-row"><span class="stat-lbl">Total Blocks</span><span class="stat-val" id="poly-total"
+        <div class="card-title">Mathematical Risk Gates</div>
+        <div class="stat-row"><span class="stat-lbl">Polymerase Blocks</span><span class="stat-val" id="poly-total"
             style="color:var(--red)">0</span></div>
+        <div class="stat-row"><span class="stat-lbl">EV Gate Rejects</span><span class="stat-val" id="ev-blocks"
+            style="color:var(--purple)">0</span></div>
         <div id="poly-reasons" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <!-- LIVE POSITIONS -->
+    <div class="card card-full">
+      <div class="card-title">Live Open Trades <span id="open-count"
+          style="margin-left:8px;color:var(--cyan)">(0)</span></div>
+      <div id="open-positions"
+        style="font-family:var(--mono);font-size:12px;color:var(--text2);max-height:150px;overflow-y:auto">
+        <div style="color:var(--grey)">No open trades in the vault.</div>
       </div>
     </div>
 
@@ -673,6 +687,13 @@
           document.getElementById('lmsr-skip').textContent = (lmsr.skipRate || 0) + '%';
           document.getElementById('lmsr-strong').textContent = lmsr.strongBets || 0;
 
+          // Quant & Regime
+          const q = d.quant || {};
+          const regEl = document.getElementById('regime-badge');
+          regEl.textContent = '● REGIME: ' + (q.regime || 'UNKNOWN');
+          regEl.style.background = q.regime === 'TRENDING' ? 'var(--green)' : q.regime === 'VOLATILE' ? 'var(--red)' : q.regime === 'MEAN_REVERTING' ? 'var(--purple)' : 'var(--grey)';
+          document.getElementById('ev-blocks').textContent = q.evBlocks || 0;
+
           // Polymerase
           const poly = d.polymerase || {};
           document.getElementById('poly-total').textContent = poly.totalBlocks || 0;
@@ -682,7 +703,27 @@
             ? Object.entries(reasons).map(function (e) {
               return '<div class="stat-row"><span class="stat-lbl" style="font-size:11px">' + e[0] + '</span><span class="stat-val" style="color:var(--red)">' + e[1] + '</span></div>';
             }).join('')
-            : '<div style="font-family:var(--mono);font-size:11px;color:var(--grey)">No blocks yet — Polymerase is watching</div>';
+            : '<div style="font-family:var(--mono);font-size:11px;color:var(--grey)">No risk blocks yet</div>';
+
+          // Open Positions
+          const pos = d.positions || {};
+          const openP = pos.open || [];
+          document.getElementById('open-count').textContent = '(' + openP.length + ')';
+          if (openP.length === 0) {
+            document.getElementById('open-positions').innerHTML = '<div style="color:var(--grey);padding:10px 0">No open trades in the vault.</div>';
+          } else {
+            document.getElementById('open-positions').innerHTML = openP.map(function(p) {
+              const edge = ((p.edge||0) * 100).toFixed(1);
+              const edgeCol = edge > 0 ? 'var(--green)' : 'var(--red)';
+              const sideCol = p.side === 'YES' ? 'var(--green)' : 'var(--red)';
+              return '<div class="stat-row" style="border-bottom:1px dotted var(--border2);justify-content:flex-start">' +
+                '<span style="width:50px;font-weight:600;color:' + sideCol + '">' + (p.side||'YES') + '</span>' + 
+                '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">' + (p.marketTitle||'Unknown') + '</span>' +
+                '<span style="margin-left:12px;color:var(--purple);font-weight:600;width:60px;text-align:right">$' + (p.stake||0) + '</span>' +
+                '<span style="margin-left:12px;color:' + edgeCol + ';width:90px;text-align:right">' + (edge >= 0 ? '+' : '') + edge + '% edge</span>' +
+                '</div>';
+            }).join('');
+          }
 
           // Brier trend
           const trendEl = document.getElementById('brier-trend');

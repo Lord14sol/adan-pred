@@ -1887,6 +1887,15 @@ async function evaluate_and_trade(decision) {
     return;
   }
 
+  // Whale Wallet Tracking Consensus
+  const whaleData = await smartMoney.getWhaleConsensus(market.id || market.conditionId);
+  if (whaleData.signal !== 'NEUTRAL') {
+    const boost = whaleData.weight / 1000; // max +10% boost to prob
+    const oldProb = myProb;
+    const adjustedProb = whaleData.signal === 'BULLISH' ? Math.min(0.99, myProb + boost) : Math.max(0.01, myProb - boost);
+    console.log(`[WHALE TRACKER] 🐋 ${whaleData.signal} Consensus detected (${whaleData.weight.toFixed(0)} pts). Adjusting prob: ${(oldProb * 100).toFixed(1)}% -> ${(adjustedProb * 100).toFixed(1)}%`);
+  }
+
   const obData = orderBook.analyze(smData);
   const effectiveEdge = obData.available ? orderBook.adjustEdge(edge, obData) : edge;
   if (obData.available && obData.recommendation === 'AVOID_WIDE_SPREAD') {
@@ -1942,6 +1951,10 @@ async function evaluate_and_trade(decision) {
 
   if (ev <= 0) {
     console.log(`[EV GATE] ⛔ NEGATIVE EV: Math dictates PASS. EV = ${ev.toFixed(4)}. Market: $${market.title.slice(0, 30)}...`);
+    try {
+      const evLogPath = path.join(DIR, 'ev_blocks.jsonl');
+      fs.appendFileSync(evLogPath, JSON.stringify({ ts: new Date().toISOString(), marketId: market.id, title: market.title, ev, p, rawOdds, side }) + '\n');
+    } catch { }
     return;
   }
 
@@ -2006,6 +2019,13 @@ async function evaluate_and_trade(decision) {
     : (1 - (pState?.trueProbability || market.yesPrice));
   lmsrEngine.recordPrediction(predId, effectiveProb, side);
 
+  // ═══ QUANT: Limit Order Sniper ═══
+  // Passive sniping: place order 0.5% better than last price to capture spread or avoid slippage
+  const bestBid = market.bestBid || market.yesPrice;
+  const bestAsk = market.bestAsk || market.yesPrice;
+  const sniperPrice = side === 'YES' ? Math.min(bestBid + 0.005, 0.99) : Math.max(bestAsk - 0.005, 0.01);
+  console.log(`[LIMIT SNIPER] 🎯 Snipe Target: ${(sniperPrice * 100).toFixed(1)}% (Mark: ${(market.yesPrice * 100).toFixed(1)}%)`);
+
   const pos = loadPositions();
   pos.open.push({
     id: Date.now().toString(),
@@ -2014,6 +2034,8 @@ async function evaluate_and_trade(decision) {
     asset: market.asset || 'other',
     side, myProb,
     marketPrice: market.yesPrice,
+    sniperPrice, // The passive limit price we are "sniping" at
+    isLimitSnipe: true,
     edge, confidence,
     stake,
     entryTime: new Date().toISOString(),
