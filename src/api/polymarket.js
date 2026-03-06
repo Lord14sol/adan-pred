@@ -47,6 +47,7 @@ async function fetchPolymarkets(strat) {
     for (const m of list) {
       if (seen.has(m.id)) continue;
       const title = (m.question || m.title || '');
+      if (!CRYPTO_RE.test(title)) continue; // Only crypto markets
       seen.add(m.id);
       const endMs = m.endDate ? new Date(m.endDate).getTime() : 0;
       if (endMs <= nowMs || endMs > maxMs) continue;
@@ -85,13 +86,20 @@ const pfStates = {}; // Market ID -> Particle Filter state
 
 function expit(x) { return 1 / (1 + Math.exp(-x)); }
 function logit(p) { return Math.log(Math.max(0.001, Math.min(0.999, p)) / (1 - Math.max(0.001, Math.min(0.999, p)))); }
+// Box-Muller transform for Gaussian noise (coherent with Gaussian likelihood)
+function gaussianRandom() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
 
 function applyParticleFilter(marketId, obsPrice) {
   if (!pfStates[marketId]) {
     const N = 1000;
     const priorLogit = logit(obsPrice);
     const particles = new Float64Array(N);
-    for (let i = 0; i < N; i++) particles[i] = priorLogit + (Math.random() * 0.5 - 0.25);
+    for (let i = 0; i < N; i++) particles[i] = priorLogit + gaussianRandom() * 0.25;
     const weights = new Float64Array(N);
     weights.fill(1 / N);
     pfStates[marketId] = { particles, weights, N };
@@ -106,7 +114,7 @@ function applyParticleFilter(marketId, obsPrice) {
 
   for (let i = 0; i < state.N; i++) {
     // Propagate: random walk in logit space (approx normal with uniform bounds)
-    state.particles[i] += (Math.random() * 2 - 1) * processVol;
+    state.particles[i] += gaussianRandom() * processVol;
     const prob = expit(state.particles[i]);
     // Reweight
     const logL = -0.5 * Math.pow((obsPrice - prob) / obsNoise, 2);

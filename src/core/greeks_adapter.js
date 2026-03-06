@@ -13,12 +13,27 @@ function normalCDF(x) {
     return x >= 0 ? c : 1 - c;
 }
 
-export function calculateGreeks(yesPrice, hoursToClose, impliedVol = 0.8) {
+export function calculateGreeks(yesPrice, hoursToClose, options = {}) {
     if (!yesPrice || yesPrice <= 0 || yesPrice >= 1 || hoursToClose <= 0) return null;
 
     const T = hoursToClose / 8760; // hours to years
     const sqrtT = Math.sqrt(T);
-    const S = yesPrice, K = 0.5, sigma = impliedVol, r = RISK_FREE_RATE;
+    const S = yesPrice;
+    // Strike K = current market price (not fixed 0.5)
+    const K = options.strikePrice || yesPrice;
+    const r = RISK_FREE_RATE;
+
+    // IV estimation: prefer spread-based, fallback to historical vol
+    let sigma;
+    if (options.spread && options.spread > 0) {
+        // IV ≈ spread / (2 × √(T/365))
+        sigma = Math.max(0.1, Math.min(3.0, options.spread / (2 * Math.sqrt(T))));
+    } else if (options.historicalVol && options.historicalVol > 0) {
+        // Use Binance historical volatility of underlying asset
+        sigma = options.historicalVol;
+    } else {
+        sigma = 0.8; // default fallback
+    }
 
     const d1 = (Math.log(S / K) + (r + sigma ** 2 / 2) * T) / (sigma * sqrtT);
     const d2 = d1 - sigma * sqrtT;
@@ -41,6 +56,7 @@ export function calculateGreeks(yesPrice, hoursToClose, impliedVol = 0.8) {
         exitUrgency,
         holdRecommendation,
         hoursToClose: parseFloat(hoursToClose.toFixed(2)),
-        timeDecayPerDay: (Math.abs(theta) * 100).toFixed(4) + '%/day'
+        timeDecayPerDay: (Math.abs(theta) * 100).toFixed(4) + '%/day',
+        impliedVol: parseFloat(sigma.toFixed(4))
     };
 }

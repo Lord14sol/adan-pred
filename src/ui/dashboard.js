@@ -130,7 +130,7 @@ function renderTreePanel(pnl, prices) {
 
       // Grandchildren (if any)
       gcList.forEach((gc, gi) => {
-        const gcLast = gi === grandChildren.length - 1;
+        const gcLast = gi === gcList.length - 1;
         const gcConn = gcLast ? '    └──' : '    ├──';
         const gcIntel = readChildIntel(gc.spec);
         const gcSig = gcIntel ? gcIntel.signal : null;

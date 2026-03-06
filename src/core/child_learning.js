@@ -56,6 +56,8 @@ class ChildLearningEngine {
      * Called from runChildScanner() whenever a child emits a non-NEUTRAL signal
      */
     recordPrediction(childId, { direction, confidence, asset, marketId, marketCloseTime, reasons, regime = 'UNKNOWN' }) {
+        // Save entryPrice at prediction time for accurate resolution
+        const sym = this._assetToSymbol(asset);
         const shadow = {
             childId,
             direction,       // 'UP' or 'DOWN'
@@ -66,6 +68,7 @@ class ChildLearningEngine {
             reasons: reasons || [],
             regime,         // TRENDING, VOLATILE, MEAN_REVERTING
             ts: new Date().toISOString(),
+            entryPrice: null, // Set externally or from prices
             resolved: false,
             correct: null,
         };
@@ -99,17 +102,18 @@ class ChildLearningEngine {
                 const currentPrice = prices?.[sym]?.price;
                 if (!currentPrice) continue;
 
-                // We need the price at prediction time vs now
-                // Since we can't perfectly track, we use price direction from trend
-                const priceData = prices[sym];
-                if (!priceData) continue;
+                // Compare against entry price saved at prediction time
+                let actualDirection;
+                if (s.entryPrice && s.entryPrice > 0) {
+                    const pctChange = (currentPrice - s.entryPrice) / s.entryPrice;
+                    actualDirection = pctChange > 0.001 ? 'UP' : pctChange < -0.001 ? 'DOWN' : 'NEUTRAL';
+                } else {
+                    // Fallback: use 5m trend if no entryPrice saved
+                    const priceData = prices[sym];
+                    actualDirection = priceData && priceData.trend5m > 0.05 ? 'UP' :
+                        priceData && priceData.trend5m < -0.05 ? 'DOWN' : 'NEUTRAL';
+                }
 
-                // Use the 5m trend as a proxy for what happened
-                const actualDirection = (priceData.trend5m > 0.05) ? 'UP' :
-                    (priceData.trend5m < -0.05) ? 'DOWN' : 'NEUTRAL';
-
-                // If market was neutral, mark as correct if child said NEUTRAL, wrong otherwise
-                // But children don't emit NEUTRAL (we only record non-NEUTRAL), so:
                 const correct = (s.direction === actualDirection);
 
                 s.resolved = true;

@@ -92,7 +92,7 @@ async function checkResolutions() {
       updateCalibration(p.asset, false);
       appendToSoul(`\n### MISTAKE — ${new Date().toISOString()}:\nLOSS on "${p.marketTitle}" (${p.asset}). My: ${(p.myProb * 100).toFixed(0)}% vs market: ${(p.marketPrice * 100).toFixed(0)}%. Edge was ${(p.edge * 100).toFixed(1)}%. Brier Score: ${brierScore}\n`);
     }
-    const h = new Date().getHours().toString();
+    const h = new Date().getUTCHours().toString();
     if (!pnl2.hourStats) pnl2.hourStats = {};
     if (!pnl2.hourStats[h]) pnl2.hourStats[h] = { wins: 0, losses: 0 };
     won ? pnl2.hourStats[h].wins++ : pnl2.hourStats[h].losses++;

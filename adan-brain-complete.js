@@ -85,6 +85,7 @@ const ATLAS = {
                     });
                 }
             );
+            req.setTimeout(5000, () => { req.destroy(); reject(new Error('ATLAS timeout')); });
             req.on('error', reject);
             req.write(data);
             req.end();
@@ -126,6 +127,7 @@ const ATLAS = {
 
             // Find walls: clusters of size within 0.3% of mid price
             const midPx = (parseFloat(bids[0]?.px || 0) + parseFloat(asks[0]?.px || 0)) / 2;
+            if (midPx <= 0) return { buyWalls: [], sellWalls: [], skew: 'UNKNOWN', midPx: 0, coin };
 
             const sellWalls = asks
                 .filter(({ px, sz }) => {
@@ -228,6 +230,9 @@ const APPLE = {
             return score;
         }, 0);
 
+        // Cap newsScore to avoid minor news accumulating to VIRUS trigger
+        const cappedNewsScore = Math.min(newsScore, 12);
+
         // Macro trend
         let macroTrend = 'NEUTRAL';
         if (fg >= 68) macroTrend = 'BULLISH';
@@ -235,12 +240,12 @@ const APPLE = {
         if (fg <= 15) macroTrend = 'EXTREME_FEAR';
         if (fg >= 85) macroTrend = 'EXTREME_GREED';
 
-        const blackSwanDetected = newsScore >= 7;
-        const positiveNarrative = newsScore <= -3 && fg >= 60;
+        const blackSwanDetected = cappedNewsScore >= 7;
+        const positiveNarrative = cappedNewsScore <= -3 && fg >= 60;
 
         return {
             fearGreed: fg,
-            newsScore,
+            newsScore: cappedNewsScore,
             macroTrend,
             blackSwanDetected,
             positiveNarrative,
@@ -758,10 +763,12 @@ class BrainTransitionManager {
         const stats = this.brainStats[this.currentBrain];
 
         // Momentum lock: 3+ consecutive wins → stay 2 more cycles
+        // Exception: VIRUS (priority 1) and SENTINEL (priority 2) always pass through
         if (
             selected !== this.currentBrain &&
             stats.consecutiveWins >= 3 &&
-            stats.lockedUntilCycle > this.cycleCount
+            stats.lockedUntilCycle > this.cycleCount &&
+            BRAINS[selected].priority > 2
         ) {
             console.log(`[🔒 BRAIN LOCK] ${this.currentBrain} momentum locked (${stats.consecutiveWins} wins) — override blocked`);
             return this.currentBrain;
@@ -859,7 +866,7 @@ class BrainTransitionManager {
 // Injects brain system prompt + all Golden Round Table data
 // ─────────────────────────────────────────────────────────────
 
-function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext }) {
+function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, metaCalibCtx, episodicAccuracy }) {
     const brain = BRAINS[brainName];
     if (!brain) throw new Error(`Unknown brain: ${brainName}`);
 
@@ -910,6 +917,14 @@ ${JSON.stringify(marketData, null, 2)}
 ${regimeContext}
 ━━━ CHILDREN CONSENSUS ━━━
 ${childConsensus >= 0.75 ? `STRONG CONSENSUS: ${(childConsensus * 100).toFixed(0)}% agreement → +3% edge bonus` : `WEAK: ${(childConsensus * 100).toFixed(0)}%`}
+
+${intelSummary ? `━━━ CHILD INTELLIGENCE REPORTS ━━━\n${intelSummary}` : ''}
+
+${cascadeSignal ? `━━━ BTC LEAD-LAG CORRELATION ━━━\n${typeof cascadeSignal === 'string' ? cascadeSignal : JSON.stringify(cascadeSignal)}` : ''}
+
+${metaCalibCtx ? `━━━ META CALIBRATION ━━━\n${metaCalibCtx}` : ''}
+
+${episodicAccuracy ? `━━━ EPISODIC ACCURACY ━━━\n${episodicAccuracy}` : ''}
 
 Analyze as ${brainName}-ADAN. Apply brain-specific rules and signal weights.
 Output: BET YES / BET NO / SKIP
@@ -970,6 +985,10 @@ async function runBrainCycle({
     totalTrades,         // number
     coins,               // e.g. ['BTC', 'ETH', 'SOL']
     oracleContext,       // string
+    intelSummary,        // string — child intel reports
+    cascadeSignal,       // object — BTC lead-lag correlation
+    metaCalibCtx,        // string — meta calibration context
+    episodicAccuracy,    // string — episodic accuracy
     brainManager,        // BrainTransitionManager instance
     onStatus,            // optional callback(status)
 }) {
@@ -1031,6 +1050,10 @@ async function runBrainCycle({
         childConsensus,
         marketQuestion: polymarketQuestion,
         oracleContext,
+        intelSummary,
+        cascadeSignal,
+        metaCalibCtx,
+        episodicAccuracy,
     });
 
     // ── 5. Call Hybrid Router ─────────────────────────────────

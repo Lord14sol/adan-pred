@@ -3,7 +3,7 @@ import { BINANCE_API, G, Y, R, D, BOLD, X } from '../core/config.js';
 // ── Binance helpers ──────────────────────────────────────────────────────────
 async function fetchBinancePrice(symbol) {
   try {
-    const r = await fetch(`${BINANCE_API} /ticker/price ? symbol = ${symbol} `);
+    const r = await fetch(`${BINANCE_API}/ticker/price?symbol=${symbol}`);
     const d = await r.json();
     return parseFloat(d.price) || null;
   } catch { return null; }
@@ -44,28 +44,51 @@ function calcVolatility(closes) {
 
 function calcRSI(closes, period = 14) {
   if (closes.length < period + 1) return 50;
-  let gains = 0, losses = 0;
-  for (let i = closes.length - period; i < closes.length; i++) {
+  // Phase 1: SMA of gains/losses over first `period` candles
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
     const diff = closes[i] - closes[i - 1];
-    if (diff > 0) gains += diff; else losses += Math.abs(diff);
+    if (diff > 0) avgGain += diff; else avgLoss += Math.abs(diff);
   }
-  if (losses === 0) return 100;
-  return 100 - (100 / (1 + gains / losses));
+  avgGain /= period;
+  avgLoss /= period;
+  // Phase 2: Wilder smoothing for remaining candles
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? Math.abs(diff) : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+  }
+  if (avgLoss === 0) return 100;
+  return 100 - (100 / (1 + avgGain / avgLoss));
 }
 
 function calcMACD(closes) {
-  // EMA helper
-  const ema = (arr, period) => {
-    const k = 2 / (period + 1); let e = arr[0];
-    arr.forEach(v => { e = v * k + e * (1 - k); });
-    return e;
+  // EMA series helper — returns array of EMA values
+  const emaSeries = (arr, period) => {
+    const k = 2 / (period + 1);
+    const result = [arr[0]];
+    for (let i = 1; i < arr.length; i++) {
+      result.push(arr[i] * k + result[i - 1] * (1 - k));
+    }
+    return result;
   };
   if (closes.length < 26) return { macd: 0, signal: 0, hist: 0 };
-  const ema12 = ema(closes.slice(-26), 12);
-  const ema26 = ema(closes.slice(-26), 26);
-  const macd = ema12 - ema26;
-  // Signal = 9-period EMA of MACD (approximated)
-  const signal = macd * 0.85; // simplified
+  // EMA-12 and EMA-26 over full close array
+  const ema12Series = emaSeries(closes, 12);
+  const ema26Series = emaSeries(closes, 26);
+  // MACD line = EMA12 - EMA26 (from index 25 onward for meaningful values)
+  const macdSeries = ema12Series.map((v, i) => v - ema26Series[i]);
+  const macdValid = macdSeries.slice(25); // at least 26 values before this is meaningful
+  if (macdValid.length < 9) {
+    const macd = macdValid[macdValid.length - 1] || 0;
+    return { macd, signal: macd, hist: 0 };
+  }
+  // Signal line = EMA-9 of MACD series
+  const signalSeries = emaSeries(macdValid, 9);
+  const macd = macdValid[macdValid.length - 1];
+  const signal = signalSeries[signalSeries.length - 1];
   return { macd, signal, hist: macd - signal };
 }
 

@@ -211,7 +211,7 @@ async function fetchAllPrices() {
       fetchBinanceKlines(sym, '1m', 30),
       fetchBinanceKlines(sym, '5m', 30),
       fetchBinanceKlines(sym, '15m', 20),
-      fetchBinanceKlines(sym, '1h', 8),   // ← macro trend (8 hourly candles)
+      fetchBinanceKlines(sym, '1h', 20),   // ← macro trend (20 hourly candles for RSI1h)
       fetchOrderBookWalls(sym)
     ]);
     if (!klines1m.length) return;
@@ -343,7 +343,7 @@ async function runChildScanner(spec, allPrices, allMarkets) {
 
     // ═══ CHILD LEARNING: Record prediction as shadow bet ═══
     if (sig.dir !== 'NEUTRAL') {
-      childLearning.recordPrediction(spec.id, {
+      const shadow = childLearning.recordPrediction(spec.id, {
         direction: sig.dir,
         confidence: sig.conf,
         asset: spec.assetName,
@@ -352,6 +352,7 @@ async function runChildScanner(spec, allPrices, allMarkets) {
         reasons: sig.reason ? sig.reason.split(', ') : [],
         regime: d?.regime || 'UNKNOWN',
       });
+      if (shadow) shadow.entryPrice = d?.price || 0;
     }
 
     const intel = {
@@ -782,7 +783,7 @@ function runEvaScanner(appleReport, snakeReport, pnl) {
   const fund = pnl.fund ?? 10000;
   const treasury = pnl.treasury ?? 0;
   const totalCapital = fund + treasury;
-  const openPositions = pnl.openPositions || 0;
+  const openPositions = loadPositions().open.length;
   const maxPos = MAX_POSITIONS;
   const wr = pnl.trades > 0 ? pnl.wins / pnl.trades : 0.5;
   const net = pnl.net ?? 0;
@@ -1675,6 +1676,8 @@ async function think(markets, prices, pnl, openPos, state) {
 ⚡ CORRELATION RULE: If BTC macro=${btcMacroDir} & BTC 5m is ${btcMicro5m < -0.2 ? 'FALLING ← PROHIBIT YES on ETH/SOL' : 'stable/rising → ETH/SOL YES allowed'}`
     : '';
 
+  // priceContext and marketsText are now redundant — all data goes through runBrainCycle
+  // But we keep priceContext for dashboard display only
   const priceContext = (btcCorrelationRule ? btcCorrelationRule + '\n\n' : '') +
     Object.entries(prices).filter(([k]) => k !== '_meta').map(([sym, d]) => {
       if (!d) return '';
@@ -1772,8 +1775,11 @@ async function think(markets, prices, pnl, openPos, state) {
       totalTrades: pnl.trades || 0,
       coins: ['BTC', 'ETH', 'SOL'],
       oracleContext: oracle.getPromptContext(prices),
+      intelSummary,
+      cascadeSignal,
+      metaCalibCtx,
+      episodicAccuracy,
       brainManager,
-      // anthropicClient removed, handled by routeLLM
       onStatus: (msg) => {
         state.status = msg;
         _startThinkSpin(msg); // Update terminal spinner with current step
@@ -1815,8 +1821,10 @@ async function think(markets, prices, pnl, openPos, state) {
     action: shouldBet ? 'BET' : 'SKIP',
     market: chosen,
     side: finalSide,
+    targetSide: finalSide,
     myProb: decision.probability || 0.5,
     edge: decision.edge || 0,
+    edge_pct: (decision.edge || 0) * 100,
     confidence: decision.confidence || 0,
     apiTokens: 3000, // Appx
     brainStake: decision.stake // Pass the exact stake computed by EVA/Kelly
@@ -1864,8 +1872,8 @@ function kellyStake(pnl, side, myProb, marketYesPrice, edge, confidence = 50) {
 }
 
 // ── 4. Agent evaluate_and_trade (Master System Prompt) ──────────────────────
-async function evaluate_and_trade(decision) {
-  const { market, side, myProb, edge, confidence, thought } = decision;
+async function evaluate_and_trade(decision, prices, state) {
+  let { market, side, myProb, edge, confidence, thought } = decision;
   const pnlNow = loadPnL();
   const xpData = expProgress(pnlNow.exp || 0);
   const kellyOn = xpData.level >= 4;
@@ -1873,7 +1881,7 @@ async function evaluate_and_trade(decision) {
 
   // ═══ MOTHER CODE: Polymerase gate ═══
   const polyResult = level >= 5
-    ? polymerase.simulate(market, { targetSide: side }, PAPER_BET_SIZE, level)
+    ? polymerase.simulate(market, decision, PAPER_BET_SIZE, level)
     : { approved: true, reason: 'BELOW_LVL5' };
   if (!polyResult.approved) {
     console.log('[POLYMERASE] ⛔ BLOCKED:', polyResult.reason, '—', (market.title || '').slice(0, 40));
@@ -1894,6 +1902,7 @@ async function evaluate_and_trade(decision) {
     const oldProb = myProb;
     const adjustedProb = whaleData.signal === 'BULLISH' ? Math.min(0.99, myProb + boost) : Math.max(0.01, myProb - boost);
     console.log(`[WHALE TRACKER] 🐋 ${whaleData.signal} Consensus detected (${whaleData.weight.toFixed(0)} pts). Adjusting prob: ${(oldProb * 100).toFixed(1)}% -> ${(adjustedProb * 100).toFixed(1)}%`);
+    myProb = adjustedProb; // whale adjustment now applies
   }
 
   const obData = orderBook.analyze(smData);
@@ -1905,9 +1914,12 @@ async function evaluate_and_trade(decision) {
 
   // ═══ QUANT: LMSR edge check ═══
   const sessionAdj = lastSessionAdj || marketSessions.getSessionAdjustments();
+  const primaryData = prices['BTCUSDT'] || {};
   const lmsrResult = lmsrEngine.calculateFairValue({
     yesPrice: market.yesPrice,
-    fearGreedIndex: null, volRatio: 1, priceChange1h: 0,
+    fearGreedIndex: prices._meta?.fearGreed?.value || null,
+    volRatio: primaryData?.vol?.ratio || 1,
+    priceChange1h: primaryData?.chg || 0,
     rsi14: market.priceData?.rsi || undefined,
     bbPosition: market.priceData?.bbPct || undefined,
     sessionEdge: sessionAdj.edgeMultiplier,
@@ -1931,7 +1943,11 @@ async function evaluate_and_trade(decision) {
 
   // ═══ QUANT: Greeks timing ═══
   const hoursToClose = market.closesAt ? (new Date(market.closesAt) - Date.now()) / 3600000 : 48;
-  const greeks = calculateGreeks(market.yesPrice, hoursToClose);
+  const greeks = calculateGreeks(market.yesPrice, hoursToClose, {
+    strikePrice: market.yesPrice,
+    spread: smData.available ? smData.spread : 0,
+    historicalVol: primaryData?.volatility || 0
+  });
   if (greeks) {
     console.log('[GREEKS] Delta:', greeks.delta.toFixed(4),
       '| Exit urgency:', (greeks.exitUrgency * 100).toFixed(0) + '%',
@@ -2049,6 +2065,7 @@ async function evaluate_and_trade(decision) {
 
   const pnl = loadPnL();
   pnl.fund = parseFloat(((pnl.fund || 100) - stake).toFixed(2));
+  pnl.openPositions = (pnl.openPositions || 0) + 1;
   savePnL(pnl);
   awardExp(20);
   // Log hypothesis for episodic memory
@@ -2172,7 +2189,15 @@ async function checkResolutions() {
     const p = pos.open[i];
     if (p.resolved || !p.closesAt) continue;
     const endMs = new Date(p.closesAt).getTime();
-    if (Date.now() < endMs) continue; // not yet closed
+    if (Date.now() < endMs) {
+      // Greeks exit timing check for still-open positions
+      const hoursLeft = (endMs - Date.now()) / 3600000;
+      const exitGreeks = calculateGreeks(p.marketPrice, hoursLeft);
+      if (exitGreeks && exitGreeks.exitUrgency > 0.7 && p.pnl == null) {
+        console.log(`[GREEKS EXIT] 📊 "${(p.marketTitle || '').slice(0, 40)}" — Exit urgency: ${(exitGreeks.exitUrgency * 100).toFixed(0)}% | ${exitGreeks.holdRecommendation}`);
+      }
+      continue;
+    }
 
     // Fetch market result from Polymarket
     const data = await polyFetch('/markets/' + p.marketId);
@@ -2192,8 +2217,9 @@ async function checkResolutions() {
     const SLIPPAGE = 0.015; // 1.5% per side
     let pnlVal;
     if (won) {
-      // p.marketPrice was already saved as the TARGET side price at entry time. No need to flip it twice.
-      const mult = 1 / Math.max(p.marketPrice, 0.01);
+      // For NO bets, effective price is (1 - marketPrice) since marketPrice stores YES price
+      const effectivePrice = p.side === 'YES' ? p.marketPrice : (1 - p.marketPrice);
+      const mult = 1 / Math.max(effectivePrice, 0.01);
       const slippageCost = parseFloat((p.stake * SLIPPAGE * 2).toFixed(2)); // entry + exit slippage
       pnlVal = parseFloat((p.stake * (mult - 1) - slippageCost).toFixed(2));
     } else {
@@ -2246,6 +2272,7 @@ async function checkResolutions() {
 
     const pnl2 = loadPnL();
     pnl2.trades = (pnl2.trades || 0) + 1;
+    pnl2.openPositions = Math.max(0, (pnl2.openPositions || 0) - 1);
     if (won) {
       pnl2.wins = (pnl2.wins || 0) + 1; pnl2.streak = (pnl2.streak || 0) + 1;
       const tpct = typeof TREE_RULES !== 'undefined' ? TREE_RULES.treasuryPct : 0.1;
@@ -2273,7 +2300,7 @@ async function checkResolutions() {
       updateCalibration(p.asset, false);
       appendToSoul(`\n### MISTAKE — ${new Date().toISOString()}:\nLOSS on "${p.marketTitle}" (${p.asset}). My: ${(p.myProb * 100).toFixed(0)}% vs market: ${(p.marketPrice * 100).toFixed(0)}%. Edge was ${(p.edge * 100).toFixed(1)}%. Brier Score: ${brierScore}\n`);
     }
-    const h = new Date().getHours().toString();
+    const h = new Date().getUTCHours().toString();
     if (!pnl2.hourStats) pnl2.hourStats = {};
     if (!pnl2.hourStats[h]) pnl2.hourStats[h] = { wins: 0, losses: 0 };
     won ? pnl2.hourStats[h].wins++ : pnl2.hourStats[h].losses++;
@@ -2347,13 +2374,18 @@ async function doScan(state) {
   const rawMkts = await fetchPolymarkets(strat);
   const allMarkets = rawMkts.map(m => normalizePolymarket(m, prices)).filter(m => m && m.id && m.title);
 
+  // 2.1 Mesa Redonda: Apple/Snake/Eva intel generation (before children read it)
+  try {
+    runMesaRedonda(prices, allMarkets, pnl);
+  } catch (e) { console.error('[MESA REDONDA] Error:', e.message); }
+
   // Separate: ACTIVE NOW (close <4h) vs FUTURE (close >4h)
   const nowMs2 = Date.now();
   const activeNow = allMarkets.filter(m => m.closesAt && (new Date(m.closesAt) - nowMs2) < 4 * 3600 * 1000);
   const future = allMarkets.filter(m => !m.closesAt || (new Date(m.closesAt) - nowMs2) >= 4 * 3600 * 1000);
 
   // Show display: active first, then future
-  const markets = activeNow.length > 0 ? activeNow : future;
+  let markets = activeNow.length > 0 ? activeNow : future;
 
   // Rough edge sort (display only)
   markets.forEach(m => { if (m.edge == null) m.edge = Math.abs(m.yesPrice - 0.5) * 0.4; });
@@ -2384,7 +2416,7 @@ async function doScan(state) {
 
     // ── DREAM MODE — off-hours self-reflection (AGI Layer 6) ─────────────
     if (!pnl._lastDream || (Date.now() - new Date(pnl._lastDream || 0).getTime()) > 3600000) {
-      dreamMode().catch(() => { });
+      dreamMode(pnl).catch(() => { });
     }
 
     // ── NIGHT WATCH BROAD SCANNER ─────────────
@@ -2397,7 +2429,7 @@ async function doScan(state) {
     if (validFallback.length > 0) {
       state.markets = validFallback.map(m => normalizePolymarket(m, prices));
       markets = state.markets; // Override loop target so the brain processes them
-      state.thought = `🌙 VIGILIA NOCTURNA: Mercados Crypto a corto plazo cerrados.\nEscaneando \${validFallback.length} mercados globales (Política, Deportes, etc.) para entrenar a los Avatares toda la noche.`;
+      state.thought = `🌙 VIGILIA NOCTURNA: Mercados Crypto a corto plazo cerrados.\nEscaneando ${validFallback.length} mercados globales (Política, Deportes, etc.) para entrenar a los Avatares toda la noche.`;
     } else {
       state.thought = 'Polymarket API offline. Retrying in ' + Math.round(SCAN_INTERVAL_MS / 60000) + 'min.';
       state.mode = 'result'; state.lastScan = new Date().toLocaleTimeString();
@@ -2451,7 +2483,7 @@ async function doScan(state) {
   // Enforce Max 60% Treasury Utilization
   const currentTreasury = pnl.treasury || 10000;
   let lockedCapital = 0;
-  openPos.forEach(p => { lockedCapital += (p.amount || 0); });
+  openPos.forEach(p => { lockedCapital += (p.stake || 0); });
   const lockupRatio = lockedCapital / currentTreasury;
 
   if (lockupRatio >= 0.60) {
@@ -2478,7 +2510,8 @@ async function doScan(state) {
   state.lastScan = new Date().toLocaleTimeString();
   state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
 
-  if (decision.action === 'BET' && decision.market) await evaluate_and_trade(decision);
+  console.log(`[DEBUG] Decision: ${decision.action}, Market: ${decision.market ? decision.market.title : 'NULL'}`);
+  if (decision.action === 'BET' && decision.market) await evaluate_and_trade(decision, prices, state);
 
   render(state);
 }
@@ -2628,8 +2661,7 @@ async function main() {
 
       // ── Child Learning: Resolve shadow predictions ──
       try {
-        const prices = await fetchAllPrices();
-        childLearning.checkResolutions(prices);
+        childLearning.checkResolutions(state.prices || {});
       } catch (e) { }
 
       // Skip scan if NEWS_SHOCK
@@ -2639,17 +2671,7 @@ async function main() {
         console.log('[HUMAN] ⛔ NEWS_SHOCK detected — skipping scan cycle');
       }
 
-      // Adan Faction Explanations (Golden Round Table)
-      if (Math.random() < 0.2) {
-        const explanations = [
-          "APPLE (Context): I scan the macro horizon. Fear, greed, and global narratives define the 'Playbook'.",
-          "SNAKE (Execution): Volatility is my venom. I identify the highest-edge markets where others hesitate.",
-          "EVA (Risk): I am the shield. No child or parent enters a trade without my seal of safety.",
-          "MESA REDONDA: Our unity allows ADAN to transcend the chaos of the markets."
-        ];
-        const msg = explanations[Math.floor(Math.random() * explanations.length)];
-        appendToSoul(msg);
-      }
+      // Faction explanations removed — was polluting SOUL.md with random noise
 
       state.pnl = loadPnL();
       state.positions = loadPositions();
@@ -2660,6 +2682,33 @@ async function main() {
 
   setTimeout(loop, 2000);
   setInterval(() => { state.pnl = loadPnL(); state.positions = loadPositions(); if (state.mode === 'idle') render(state); }, 30000);
+
+  // ── Oracle Fast Loop: independent 60s cycle for front-running ──
+  setInterval(async () => {
+    try {
+      const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+      await Promise.all(symbols.map(async sym => {
+        const klines = await fetchBinanceKlines(sym, '1m', 5);
+        if (!klines.length) return;
+        const closes = klines.map(k => k.close);
+        const price = closes[closes.length - 1];
+        oracle.recordPrice(sym, {
+          price,
+          rsi: calcRSI(closes),
+          vol: calcVolumeProfile(klines),
+          trend1m: calcTrend(closes),
+          closes
+        });
+      }));
+      // Check for strong signals
+      for (const sym of symbols) {
+        const sig = oracle.analyze(sym);
+        if (sig.hasSignal && (sig.signalType === 'STRONG_MOVE' || sig.signalType === 'FLASH_MOVE')) {
+          console.log(`[ORACLE FAST] ⚡ ${sym}: ${sig.signalType} ${sig.direction} (${sig.magnitude.toFixed(2)}%)`);
+        }
+      }
+    } catch (e) { /* oracle fast loop error — silent */ }
+  }, 60000);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

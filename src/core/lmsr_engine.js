@@ -11,9 +11,17 @@ const EDGE_LOG = path.join(DIR, 'edge_detections.jsonl');
 
 export class LMSREngine {
     constructor() {
-        this.b = 100; // Polymarket liquidity parameter
+        this.b = 100; // Default Polymarket liquidity parameter
         this.predictionLog = [];
         this._loadHistory();
+    }
+
+    // Dynamic b estimation from market liquidity
+    estimateB(volume24h) {
+        if (volume24h && volume24h > 0) {
+            return Math.max(10, volume24h / 10);
+        }
+        return 100; // fallback
     }
 
     _loadHistory() {
@@ -26,9 +34,10 @@ export class LMSREngine {
     }
 
     // Inverse LMSR: given market price, get implied momentum
-    getImpliedShares(yesPrice) {
+    getImpliedShares(yesPrice, volume24h) {
         if (yesPrice <= 0 || yesPrice >= 1) return 0;
-        return this.b * Math.log(yesPrice / (1 - yesPrice));
+        const b = this.estimateB(volume24h);
+        return b * Math.log(yesPrice / (1 - yesPrice));
     }
 
     // Bayesian fair value calculator

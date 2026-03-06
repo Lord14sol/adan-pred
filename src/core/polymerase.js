@@ -45,9 +45,14 @@ export class Polymerase {
         // Gate 2: close window valid — ADAPTIVE threshold from learning data
         const hoursToClose = closesAt ? (new Date(closesAt) - Date.now()) / 3600000 : 0;
         const minWindow = this._getAdaptiveThreshold('CLOSE_WINDOW');
-        if (!addCheck(2, 'CLOSE_WINDOW', hoursToClose >= minWindow && hoursToClose <= 168,
-            `hoursToClose=${hoursToClose.toFixed(1)}, minWindow=${minWindow.toFixed(2)}`)) {
-            return this._block(checks, `Close window invalid: ${hoursToClose.toFixed(1)}h`, market, decision, stake);
+
+        // EDGE OVERRIDE: If edge is extreme (>10%), we can ignore the time gate (down to a 2 min floor)
+        const hasHighEdge = decision && decision.edge_pct >= 10;
+        const finalMinWindow = hasHighEdge ? 0.033 : minWindow; // 0.033h = 2 minutes
+
+        if (!addCheck(2, 'CLOSE_WINDOW', hoursToClose >= finalMinWindow && hoursToClose <= 168,
+            `hoursToClose=${hoursToClose.toFixed(2)}h, minWindow=${finalMinWindow.toFixed(2)}h ${hasHighEdge ? '(EDGE_OVERRIDE)' : ''}`)) {
+            return this._block(checks, `Close window invalid: ${hoursToClose.toFixed(2)}h`, market, decision, stake);
         }
 
         // Gate 3: recovery potential >= 40%
@@ -224,7 +229,7 @@ export class Polymerase {
 
     _getAdaptiveThreshold(gateName) {
         // Mother Code v3.0 — Continuous Evolutionary Curve
-        const defaults = { CLOSE_WINDOW: 0.5 }; // 30 min base
+        const defaults = { CLOSE_WINDOW: 0.1 }; // 6 min base (Allow 15 min buckets with discovery lag)
         const data = this.learning[gateName];
 
         if (!data || data.totalBlocks < 15) return defaults[gateName] || 0.5;

@@ -144,6 +144,7 @@ export class SmartMoneyTracker {
         if (analysis.isVPINToxic) {
             parts.push(`🛑 VPIN TOXIC FLOW WARNING: Extreme volume+price action. Highly informed traders are positioning. CAUTION.`);
         }
+        return parts.join('\n');
     }
 
     async getWhaleConsensus(marketId) {
