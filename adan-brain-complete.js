@@ -1167,7 +1167,7 @@ function parseDecision(text) {
         action,
         confidence: confMatch ? Math.min(100, parseFloat(confMatch[1])) : 60,
         edge: edgeMatch ? parseFloat(edgeMatch[1]) / (parseFloat(edgeMatch[1]) > 1 ? 100 : 1) : 0.05,
-        probability: probMatch ? parseFloat(probMatch[1]) : 0.5,
+        probability: probMatch ? (parseFloat(probMatch[1]) > 1 ? parseFloat(probMatch[1]) / 100 : parseFloat(probMatch[1])) : 0.5,
     };
 }
 
