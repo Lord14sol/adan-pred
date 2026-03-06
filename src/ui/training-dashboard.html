@@ -730,18 +730,18 @@
           // Shadows
           const shadowStats = poly.shadowStats || null;
           if (shadowStats) {
-             const netPnl = shadowStats.savedPnl - shadowStats.missedPnl;
-             document.getElementById('ghost-acc').innerHTML = shadowStats.accuracy + '% block accuracy | Net Saved: <span style="color:' + (netPnl >= 0 ? 'var(--green)' : 'var(--red)') + '">$' + (netPnl >= 0 ? '+' : '') + netPnl.toFixed(2) + '</span>';
+             document.getElementById('ghost-acc').innerHTML = shadowStats.accuracy + '% block accuracy | Saved: <span style="color:var(--green)">$' + (shadowStats.savedPnl||0).toFixed(2) + '</span> | Missed: <span style="color:var(--red)">$' + (shadowStats.missedPnl||0).toFixed(2) + '</span>';
              const ghostEl = document.getElementById('ghost-positions');
-             if (shadowStats.recent && shadowStats.recent.length > 0) {
-                 ghostEl.innerHTML = shadowStats.recent.map(function(s) {
+             const shadows = shadowStats.recentShadows || [];
+             if (shadows.length > 0) {
+                 ghostEl.innerHTML = shadows.map(function(s) {
                     const sideCol = s.side === 'YES' ? 'var(--green)' : 'var(--red)';
                     let resHtml = '<span style="color:var(--yellow);width:90px;display:inline-block;text-align:right">PENDING</span>';
                     if (s.resolved) {
                        if (s.wouldHaveWon) {
                           resHtml = '<span style="color:var(--red);width:90px;display:inline-block;text-align:right">MISSED +$' + (s.wouldHavePnl).toFixed(2) + '</span>';
                        } else {
-                          resHtml = '<span style="color:var(--green);width:90px;display:inline-block;text-align:right">SAVED -$' + Math.abs(s.wouldHavePnl).toFixed(2) + '</span>';
+                          resHtml = '<span style="color:var(--green);width:90px;display:inline-block;text-align:right">SAVED +$' + Math.abs(s.wouldHavePnl).toFixed(2) + '</span>';
                        }
                     }
                     return '<div class="stat-row" style="border-bottom:1px dotted var(--border2);justify-content:flex-start">' +
