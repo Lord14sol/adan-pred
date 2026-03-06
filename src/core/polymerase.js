@@ -223,23 +223,30 @@ export class Polymerase {
     }
 
     _getAdaptiveThreshold(gateName) {
-        // Default thresholds
-        const defaults = { CLOSE_WINDOW: 0.5 }; // 30 min default
-
+        // Mother Code v3.0 — Continuous Evolutionary Curve
+        const defaults = { CLOSE_WINDOW: 0.5 }; // 30 min base
         const data = this.learning[gateName];
-        if (!data || data.totalBlocks < 20) {
-            return defaults[gateName] || 0.5; // Not enough data, use default
+
+        if (!data || data.totalBlocks < 15) return defaults[gateName] || 0.5;
+
+        if (gateName === 'CLOSE_WINDOW') {
+            // If accuracy < 50%, we are clearly blocking too many winners.
+            // We scale the window down linearly: 50% acc = full window, 35% acc = min window.
+            let multiplier = 1.0;
+
+            if (data.accuracy < 50) {
+                // The more negative the netValue, the faster we drop the wall
+                const panicFactor = Math.min(2.0, Math.abs(data.netValue || 0) / 5000);
+                multiplier = Math.max(0.05, (data.accuracy - 35) / (15 / panicFactor));
+            } else if (data.accuracy > 80) {
+                // High accuracy means we are successfully avoiding losers — tighten the screw.
+                multiplier = 1.25;
+            }
+
+            const finalWindow = defaults[gateName] * multiplier;
+            return finalWindow;
         }
 
-        // If accuracy < 50% (blocking more winners than losers), loosen the gate
-        // If accuracy > 80%, tighten the gate
-        if (data.accuracy < 50 && gateName === 'CLOSE_WINDOW') {
-            // Gate is too aggressive — lower the min window
-            return Math.max(0.08, defaults[gateName] * 0.7); // ~5 min floor
-        } else if (data.accuracy > 80) {
-            // Gate is nailing it — tighten further
-            return Math.min(1.0, defaults[gateName] * 1.3); // ~40 min ceiling
-        }
         return defaults[gateName] || 0.5;
     }
 
@@ -325,7 +332,7 @@ export class Polymerase {
             missedPnl: parseFloat(missedPnl.toFixed(2)),
             netValue: parseFloat((savedPnl - missedPnl).toFixed(2)),
             perGate: this.learning,
-            recentShadows: this.shadows.slice(-10).reverse()
+            recentShadows: this.shadows.slice(-100).reverse()
         };
     }
 }

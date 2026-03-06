@@ -894,7 +894,7 @@ window.changeHistPage = function(dir) {
 window.renderHistoryPanel = function() {
   if (typeof window._lastNFData === 'undefined' || !window._lastNFData) return;
   const closed = (window._lastNFData.positions?.closed||[]).slice().reverse();
-  const shadows = (window._lastNFData.shadowStats?.recentShadows||[]).slice();
+  const shadows = (window._lastNFData.shadowStats?.recentShadows||[]).slice().sort((a,b) => b.id.localeCompare(a.id));
   
   if (currentHistTab === 'real') {
     renderTabItems(closed, realHistPage, 'history-wrap', drawRealTrade);
@@ -929,7 +929,7 @@ function renderTabItems(items, page, containerId, rowFn) {
        const stats = window._lastNFData.shadowStats || {};
        const accArea = '<div style="display:flex; gap:10px; margin-bottom:12px; border-bottom:1px solid var(--border2); padding-bottom:10px;">' +
          '<div><span style="font-size:10px;color:var(--grey)">NET SAVED</span> <div style="color:var(--green);font-family:var(--mono)">+$' + (stats.savedPnl||0).toFixed(2) + '</div></div>' +
-         '<div><span style="font-size:10px;color:var(--grey)">NET MISSED</span> <div style="color:var(--red);font-family:var(--mono)">-$' + (stats.missedPnl||0).toFixed(2) + '</div></div>' +
+         '<div><span style="font-size:10px;color:var(--grey)">NET MISSED</span> <div style="color:var(--red);font-family:var(--mono)">-$' + (window._lastNFData.shadowStats?.missedPnl||0).toFixed(2) + '</div></div>' +
          '<div><span style="font-size:10px;color:var(--grey)">ACCURACY</span> <div style="color:var(--purple);font-family:var(--mono)">' + (stats.accuracy||0) + '%</div></div>' +
        '</div>';
        if (pageItems.length === 0) {
