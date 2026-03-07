@@ -1066,7 +1066,7 @@ async function runBrainCycle({
 
     // ── 5. Call Hybrid Router ─────────────────────────────────
     console.log(`[ADAN] 🤔 ${activeBrain} thinking via Hybrid Router (Heavy)...`);
-    const aiEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B' : 'Gemini-2.5-Flash';
+    const aiEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B (local)' : 'Gemini-2.5-Flash';
     if (onStatus) onStatus(`🤔 ${activeBrain} thinking via ${aiEngine}...`);
 
     const thought = await routeLLM({

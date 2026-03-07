@@ -1996,7 +1996,7 @@ function updateDecisionsLog(d) {
   if (isThinking) {
     const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
     const frame  = frames[Math.floor(Date.now()/150) % frames.length];
-    const aiEngine = (window.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Local Qwen3.5 0.8b' : 'Claude Sonnet 4.6';
+    const aiEngine = (window.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B (local)' : 'Gemini-2.5-Flash';
     const brainName = d.state?.currentBrain || 'ADAN';
     const currentStep = d.state?.status || 'Analyzing market data...';
     
@@ -2209,7 +2209,7 @@ function updateNeuralFlow(d) {
 
     const dot = document.getElementById('cmd-live-dot');
     const txt = document.getElementById('cmd-live-txt');
-    const aiEngine = (window.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Local Qwen3.5' : 'Sonnet 4.6';
+    const aiEngine = (window.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B' : 'Gemini-2.5-Flash';
     if (dot) dot.className = 'cmd-live-dot' + (isThinking ? ' thinking' : (btc ? '' : ' idle'));
     if (txt) {
         txt.textContent = isThinking ? \`THINKING — \${aiEngine} analyzing\` : isDone ? 'DECISION MADE' : (btc ? 'MONITORING · live prices' : 'INITIALIZING');
@@ -3191,7 +3191,8 @@ function render(s) {
   console.log(M + BOLD + '  ║  ███ ███ ███  ███▀▄  ███  ███  ███  ███                        ║');
   console.log(M + BOLD + '  ║  ███▀███ ███  ██▀▀█  ███  ███  ███  ███                        ║');
   console.log(M + BOLD + '  ║  A D A N - P R E D  v2   ·   Web4 Autonomaton   ·   2026       ║');
-  console.log(M + BOLD + '  ║  Polymarket  ·  Binance  ·  Claude Sonnet 4.6  ·  by Lord      ║');
+  const bannerEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B (local)' : 'Gemini-2.5-Flash';
+  console.log(M + BOLD + '  ║  Polymarket  ·  Binance  ·  ' + bannerEngine.padEnd(22) + '·  by Lord      ║');
   console.log(M + BOLD + '  ║  ' + C + BOLD + 'Dashboard: http://localhost:3141' + M + BOLD + '  ·  auto-refresh 5s            ║');
   console.log(M + BOLD + '  ╚══════════════════════════════════════════════════════════════════╝' + X + '\n');
 
@@ -3399,7 +3400,8 @@ function render(s) {
   if (s.mode === 'thinking') {
     const sp = _SPIN_F[Math.floor(Date.now() / 150) % _SPIN_F.length];
     console.log('\n' + Y + '┌' + DIV + '┐' + X);
-    console.log(trow('  ' + sp + ' ADAN THINKING  —  Binance loaded · Sonnet 4.6 analyzing...', BOLD + Y, Y));
+    const thinkEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B' : 'Gemini-2.5-Flash';
+    console.log(trow('  ' + sp + ' ADAN THINKING  —  Binance loaded · ' + thinkEngine + ' analyzing...', BOLD + Y, Y));
     console.log(trow('  Flow: Candles ' + sp + ' Trend ' + sp + ' Polymarket odds ' + sp + ' Edge calc ' + sp + ' BET or SKIP', D, Y));
     console.log(Y + '└' + DIV + '┘' + X + '\n');
     _startThinkSpin();

@@ -2639,7 +2639,7 @@ async function main() {
     if (fs.existsSync(envPath)) {
       const envContent = fs.readFileSync(envPath, 'utf8');
       for (const line of envContent.split('\n')) {
-        const match = line.match(/^([A-Z_]+)=(.+)$/);
+        const match = line.match(/^([A-Z_]+)=([^#\n]+)/);
         if (match) process.env[match[1]] = match[2].trim();
       }
     }
