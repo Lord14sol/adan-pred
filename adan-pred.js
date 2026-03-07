@@ -84,6 +84,8 @@ import { featureTracker } from './src/core/feature_attribution.js';
 import { oracle } from './src/core/oracle_front_run.js';
 import { childLearning } from './src/core/child_learning.js';
 import { regimeDetector } from './src/core/regime_classifier.js';
+import { featureImportance } from './src/core/feature_importance.js';
+import { riskOfRuin } from './src/core/risk_of_ruin.js';
 
 let consecutiveLosses = 0;
 let lastHumanState = 'RATIONAL_MARKET';
@@ -290,23 +292,33 @@ const CHILD_SPECS = [
   { id: 'bnb-1hr', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 60 },
 ];
 
-// Simple rule-based signal from Binance data (no Claude needed)
-function childSignal(d) {
+// Rule-based signal using evolved DNA thresholds (no Claude needed)
+// Each child's DNA evolves its own RSI/MACD/trend thresholds over time
+function childSignal(d, dna = null) {
   if (!d) return { dir: 'NEUTRAL', conf: 40, reason: 'no data' };
+  // Use evolved DNA thresholds if available, otherwise defaults
+  const rsiOversold = dna?.rsiOversold ?? 35;
+  const rsiOverbought = dna?.rsiOverbought ?? 65;
+  const macdWeight = dna?.macdWeight ?? 1.0;
+  const trendMinPct = dna?.trendMinPct ?? 0.3;
+  const trend15mMinPct = dna?.trend15mMinPct ?? 0.5;
+  const volSpikeThreshold = dna?.volSpikeThreshold ?? 1.5;
+  const minConfidence = dna?.minConfidence ?? 55;
+
   const bearish = [], bullish = [];
-  if (d.rsi < 35) bullish.push('RSI oversold ' + d.rsi.toFixed(0));
-  if (d.rsi > 65) bearish.push('RSI overbought ' + d.rsi.toFixed(0));
-  if (d.macd?.hist < 0) bearish.push('MACD bearish');
-  else if (d.macd?.hist > 0) bullish.push('MACD bullish');
-  if (d.trend5m < -0.3) bearish.push('5m trend ' + d.trend5m.toFixed(2) + '%');
-  if (d.trend5m > 0.3) bullish.push('5m trend +' + d.trend5m.toFixed(2) + '%');
-  if (d.trend15m < -0.5) bearish.push('15m trend ' + d.trend15m?.toFixed(2) + '%');
-  if (d.trend15m > 0.5) bullish.push('15m trend +' + d.trend15m?.toFixed(2) + '%');
+  if (d.rsi < rsiOversold) bullish.push('RSI oversold ' + d.rsi.toFixed(0));
+  if (d.rsi > rsiOverbought) bearish.push('RSI overbought ' + d.rsi.toFixed(0));
+  if (d.macd?.hist < 0 && Math.abs(d.macd.hist) * macdWeight > 0.01) bearish.push('MACD bearish');
+  else if (d.macd?.hist > 0 && d.macd.hist * macdWeight > 0.01) bullish.push('MACD bullish');
+  if (d.trend5m < -trendMinPct) bearish.push('5m trend ' + d.trend5m.toFixed(2) + '%');
+  if (d.trend5m > trendMinPct) bullish.push('5m trend +' + d.trend5m.toFixed(2) + '%');
+  if (d.trend15m < -trend15mMinPct) bearish.push('15m trend ' + d.trend15m?.toFixed(2) + '%');
+  if (d.trend15m > trend15mMinPct) bullish.push('15m trend +' + d.trend15m?.toFixed(2) + '%');
   if (d.vol?.trend === 'falling') bearish.push('vol falling');
-  if (d.vol?.spike) bullish.push('vol spike');
+  if (d.vol?.spike || (d.vol?.ratio && d.vol.ratio > volSpikeThreshold)) bullish.push('vol spike');
   const score = bullish.length - bearish.length;
-  if (score <= -2) return { dir: 'DOWN', conf: Math.min(85, 55 + bearish.length * 8), reason: bearish.slice(0, 3).join(', ') };
-  if (score >= 2) return { dir: 'UP', conf: Math.min(85, 55 + bullish.length * 8), reason: bullish.slice(0, 3).join(', ') };
+  if (score <= -2) return { dir: 'DOWN', conf: Math.min(85, minConfidence + bearish.length * 8), reason: bearish.slice(0, 3).join(', ') };
+  if (score >= 2) return { dir: 'UP', conf: Math.min(85, minConfidence + bullish.length * 8), reason: bullish.slice(0, 3).join(', ') };
   return { dir: 'NEUTRAL', conf: 40, reason: 'conflicted signals' };
 }
 
@@ -316,7 +328,8 @@ async function runChildScanner(spec, allPrices, allMarkets) {
     if (!fs.existsSync(INTEL_DIR)) fs.mkdirSync(INTEL_DIR, { recursive: true });
     const priceKey = spec.asset;
     const d = allPrices[priceKey];
-    const sig = childSignal(d);
+    const dna = childLearning.getChildDNA(spec.id);
+    const sig = childSignal(d, dna);
 
     // Find relevant markets for this child
     const myMarkets = allMarkets.filter(m =>
@@ -1779,6 +1792,8 @@ async function think(markets, prices, pnl, openPos, state) {
       cascadeSignal,
       metaCalibCtx,
       episodicAccuracy,
+      featureImportanceCtx: featureImportance.getPromptContext(),
+      riskOfRuinCtx: riskOfRuin.getDashboardStr(pnl, PAPER_BET_SIZE),
       brainManager,
       onStatus: (msg) => {
         state.status = msg;
@@ -1856,8 +1871,19 @@ function kellyStake(pnl, side, myProb, marketYesPrice, edge, confidence = 50) {
   if (confidence >= 90) kellyFraction = 0.50; // 1/2 Kelly
   else if (confidence < 70) kellyFraction = 0.125; // 1/8 Kelly
 
-  const finalKelly = kelly * kellyFraction;
+  // Drawdown-based Kelly scaling: reduce when in drawdown
   const fund = pnl.fund || 10000;
+  if (!pnl.peakFund || fund > pnl.peakFund) pnl.peakFund = fund;
+  const drawdownPct = 1 - (fund / (pnl.peakFund || fund));
+  const drawdownPenalty = Math.max(0.2, 1 - drawdownPct * 2);
+  // If drawdown = 25%, penalty = 0.5 (half the Kelly normal)
+  kellyFraction *= drawdownPenalty;
+
+  // Risk of Ruin gate: reduce stakes if ruin probability too high
+  const rorResult = riskOfRuin.fromPnL(pnl, fund * kelly * kellyFraction || PAPER_BET_SIZE);
+  kellyFraction *= rorResult.stakeMultiplier;
+
+  const finalKelly = kelly * kellyFraction;
   const raw = fund * finalKelly;
 
   // Dynamic max based on WR — protect capital when losing
@@ -1965,8 +1991,10 @@ async function evaluate_and_trade(decision, prices, state) {
   const potentialProfit = (1 / Math.max(rawOdds, 0.01)) - 1;
   const ev = (p * potentialProfit) - (1 - p);
 
-  if (ev <= 0) {
-    console.log(`[EV GATE] ⛔ NEGATIVE EV: Math dictates PASS. EV = ${ev.toFixed(4)}. Market: $${market.title.slice(0, 30)}...`);
+  // Minimum EV threshold: must cover spreads and slippage
+  const minEV = 0.001; // ~0.1% minimum edge to cover friction
+  if (ev < minEV) {
+    console.log(`[EV GATE] ⛔ ${ev <= 0 ? 'NEGATIVE' : 'INSUFFICIENT'} EV: ${ev.toFixed(4)} (min: ${minEV}). Market: ${(market.title || '').slice(0, 30)}...`);
     try {
       const evLogPath = path.join(DIR, 'ev_blocks.jsonl');
       fs.appendFileSync(evLogPath, JSON.stringify({ ts: new Date().toISOString(), marketId: market.id, title: market.title, ev, p, rawOdds, side }) + '\n');
@@ -2027,6 +2055,27 @@ async function evaluate_and_trade(decision, prices, state) {
       smartMoneySignal: smData.signal || 'NO_DATA',
       spreadPct: obData.spreadPct || 0
     }));
+  } catch (e) { }
+
+  // ═══ FEATURE IMPORTANCE: Record entry for Point-Biserial ranking ═══
+  try {
+    featureImportance.recordEntry(tradeId, {
+      rsi: market.priceData?.rsi || 50,
+      macdHist: market.priceData?.macd?.hist || 0,
+      bbPosition: market.priceData?.bb?.position || 0.5,
+      vwapDeviation: market.priceData?.vwapDev || 0,
+      fearGreed: state?.prices?._meta?.fearGreed?.value || 50,
+      newsScore: 0,
+      fundingRate: market.priceData?.funding || 0,
+      oiChange: 0,
+      whaleWalls: 0,
+      regime: market.priceData?.regime || 'NORMAL',
+      sessionEdge: sessionAdj.multiplier || 1,
+      humanState: lastHumanState || 'RATIONAL_MARKET',
+      oracleSignal: 0,
+      volRatio: market.priceData?.volRatio || 1,
+      trendStrength: market.priceData?.trend || 0
+    });
   } catch (e) { }
 
   // ═══ LMSR: Record prediction for Brier Score ═══
@@ -2250,7 +2299,12 @@ async function checkResolutions() {
       }
     }
     metabolism.recordTradePnL(pnlVal || 0);
+    // Record return for dynamic copula correlations
+    try { copulaRisk.recordReturn(p.asset || 'btc', pnlVal / Math.max(p.stake, 1)); } catch (e) { }
     if (won) { consecutiveLosses = 0; } else { consecutiveLosses++; }
+    // Resolve feature tracking for this trade
+    try { featureTracker.recordResolution(p.id, won); } catch { }
+    try { featureImportance.resolveEntry(p.id, won); } catch { }
 
     // ── Record Result for Brain Manager
     if (p.brainStake && p.brainStake > 0) {
@@ -2310,17 +2364,18 @@ async function checkResolutions() {
   }
   if (changed) {
     savePositions(pos);
-    const pnlFinal = loadPnL();
+    let pnlFinal = loadPnL();
     if (typeof _agiClient !== 'undefined' && _agiClient) {
       try { autoEvolveSoul(_agiClient, pnlFinal).catch(() => { }); } catch { }
     }
     absorbEliteGenome(pnlFinal);
-    pruneDeadChildren(loadPnL());
-    runTournamentOfDeath(loadPnL());
-    promoteEliteGrandchild(loadPnL());
+    pnlFinal = loadPnL(); // reload once after genetics mutations
+    pruneDeadChildren(pnlFinal);
+    runTournamentOfDeath(pnlFinal);
+    promoteEliteGrandchild(pnlFinal);
     const lastClosed = pos.closed[pos.closed.length - 1];
-    if (lastClosed) evaluateParentPerformance(loadPnL(), lastClosed);
-    checkUsurperPath(loadPnL());
+    if (lastClosed) evaluateParentPerformance(pnlFinal, lastClosed);
+    checkUsurperPath(pnlFinal);
   }
 }
 
@@ -2405,7 +2460,7 @@ async function doScan(state) {
       for (const [sym, d] of Object.entries(prices)) {
         if (!d || sym === '_meta') continue;
         const asset = sym.replace('USDT', '').toLowerCase();
-        const sig = childSignal(d);
+        const sig = childSignal(d, null); // Shadow mode uses base DNA
         if (sig.dir !== 'NEUTRAL' && sig.conf >= 60) {
           logShadowPrediction(asset, sig.dir === 'UP' ? 'UP' : 'DOWN', d.price, 5);
         }

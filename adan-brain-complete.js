@@ -866,7 +866,7 @@ class BrainTransitionManager {
 // Injects brain system prompt + all Golden Round Table data
 // ─────────────────────────────────────────────────────────────
 
-function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, metaCalibCtx, episodicAccuracy }) {
+function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, metaCalibCtx, episodicAccuracy, featureImportanceCtx, riskOfRuinCtx }) {
     const brain = BRAINS[brainName];
     if (!brain) throw new Error(`Unknown brain: ${brainName}`);
 
@@ -925,6 +925,10 @@ ${cascadeSignal ? `━━━ BTC LEAD-LAG CORRELATION ━━━\n${typeof cascad
 ${metaCalibCtx ? `━━━ META CALIBRATION ━━━\n${metaCalibCtx}` : ''}
 
 ${episodicAccuracy ? `━━━ EPISODIC ACCURACY ━━━\n${episodicAccuracy}` : ''}
+
+${featureImportanceCtx ? `━━━ FEATURE IMPORTANCE (Point-Biserial) ━━━\n${featureImportanceCtx}` : ''}
+
+${riskOfRuinCtx ? `━━━ RISK OF RUIN ━━━\n${riskOfRuinCtx}` : ''}
 
 Analyze as ${brainName}-ADAN. Apply brain-specific rules and signal weights.
 Output: BET YES / BET NO / SKIP
@@ -989,6 +993,8 @@ async function runBrainCycle({
     cascadeSignal,       // object — BTC lead-lag correlation
     metaCalibCtx,        // string — meta calibration context
     episodicAccuracy,    // string — episodic accuracy
+    featureImportanceCtx, // string — feature importance ranking
+    riskOfRuinCtx,       // string — risk of ruin status
     brainManager,        // BrainTransitionManager instance
     onStatus,            // optional callback(status)
 }) {
@@ -1054,6 +1060,8 @@ async function runBrainCycle({
         cascadeSignal,
         metaCalibCtx,
         episodicAccuracy,
+        featureImportanceCtx,
+        riskOfRuinCtx,
     });
 
     // ── 5. Call Hybrid Router ─────────────────────────────────

@@ -101,13 +101,30 @@ function historicalKelly(asset, assetStats, defaultEdge) {
 
 // ── Statistical Significance ──
 function pValue(wins, total) {
-    // One-tailed binomial test: P(X >= wins) under H0: p=0.5
-    // Using normal approximation for large n
+    if (total === 0) return 1;
+    // For small samples (N < 30), use exact binomial
+    if (total < 30) {
+        let pVal = 0;
+        for (let k = wins; k <= total; k++) {
+            pVal += binomCoeff(total, k) * Math.pow(0.5, total);
+        }
+        return Math.min(1, pVal);
+    }
+    // Normal approximation for large n
     const p0 = 0.5;
     const z = (wins / total - p0) / Math.sqrt(p0 * (1 - p0) / total);
-    // Approximate p-value from z-score
     if (z < 0) return 1;
     return 1 - 0.5 * (1 + erf(z / Math.sqrt(2)));
+}
+
+function binomCoeff(n, k) {
+    if (k > n) return 0;
+    if (k === 0 || k === n) return 1;
+    let result = 1;
+    for (let i = 0; i < Math.min(k, n - k); i++) {
+        result *= (n - i) / (i + 1);
+    }
+    return Math.round(result);
 }
 
 function erf(x) {
@@ -218,12 +235,13 @@ async function run() {
             }
 
             if (!blocked) {
-                const pnl = trade.won
-                    ? adjustedStake * (1 / Math.max(trade.marketPrice, 0.01) - 1) * (trade.side === 'YES' ? 1 : 1)
+                const effectivePrice = trade.side === 'YES' ? trade.marketPrice : (1 - trade.marketPrice);
+                const tradeProfit = trade.won
+                    ? adjustedStake * (1 / Math.max(effectivePrice, 0.01) - 1)
                     : -adjustedStake;
-                // Use actual PnL proportionally if stake changed
+                // Use proportional PnL if stake was adjusted by Kelly
                 const pnlActual = scenario.filters.kelly
-                    ? (trade.won ? (trade.pnl / (parseFloat(trade.stake) || 1)) * adjustedStake : -adjustedStake)
+                    ? tradeProfit
                     : parseFloat(trade.pnl) || 0;
 
                 balance += pnlActual;

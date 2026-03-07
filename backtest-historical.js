@@ -72,7 +72,9 @@ function sharpeRatio(returns) {
     if (returns.length < 2) return 0;
     const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
     const std = Math.sqrt(returns.reduce((a, b) => a + (b - mean) ** 2, 0) / (returns.length - 1));
-    return std > 0 ? (mean / std) * Math.sqrt(252) : 0; // Annualized
+    // Annualize: crypto trades ~365 days, estimate trades_per_day from data
+    const tradesPerDay = Math.max(1, returns.length / 30); // rough estimate
+    return std > 0 ? (mean / std) * Math.sqrt(tradesPerDay * 365) : 0;
 }
 
 function maxDrawdown(equity) {
@@ -277,25 +279,16 @@ async function run() {
             const decision = strategy.decideFn(market, profile);
             if (!decision.bet) { skipped++; continue; }
 
-            // Simulate result using ADAN's historical accuracy
-            const asset = market.question.includes('Bitcoin') ? 'BTC' :
-                market.question.includes('Ethereum') ? 'ETH' :
-                    market.question.includes('Solana') ? 'SOL' : 'OTHER';
-            const utcH = new Date(market.endDate).getUTCHours();
-            const awr = profile.assetWR[asset] || { w: 53, l: 47 };
-            const hwr = profile.hourWR[utcH] || { w: 54, l: 46 };
+            // Use REAL outcomePrices to determine winner (not Math.random)
+            let outcomePrices;
+            try { outcomePrices = JSON.parse(market.outcomePrices || '[0.5,0.5]'); }
+            catch { outcomePrices = [0.5, 0.5]; }
+            const yesResolved = parseFloat(outcomePrices[0]) >= 0.99;
+            const won = (decision.side === 'YES' && yesResolved) || (decision.side === 'NO' && !yesResolved);
 
-            // Blended accuracy: 60% asset WR + 40% hour WR
-            const assetAcc = awr.w / Math.max(awr.w + awr.l, 1);
-            const hourAcc = hwr.w / Math.max(hwr.w + hwr.l, 1);
-            const blendedAcc = 0.6 * assetAcc + 0.4 * hourAcc;
-
-            // Simulate win/loss based on blended accuracy
-            const won = Math.random() < blendedAcc;
-
-            const prices = JSON.parse(market.outcomePrices || '[0.5,0.5]');
-            const price = decision.side === 'YES' ? parseFloat(prices[0]) : parseFloat(prices[1]);
-            const pnl = won ? decision.stake * (1 / Math.max(price, 0.01) - 1) : -decision.stake;
+            const entryPrices = JSON.parse(market.outcomePrices || '[0.5,0.5]');
+            const effectivePrice = decision.side === 'YES' ? parseFloat(entryPrices[0]) : (1 - parseFloat(entryPrices[0]));
+            const pnl = won ? decision.stake * (1 / Math.max(effectivePrice, 0.01) - 1) : -decision.stake;
 
             balance += pnl;
             returns.push(pnl / decision.stake);
