@@ -187,5 +187,275 @@
     },
     "resolved": false,
     "won": null
+  },
+  {
+    "id": "1772833655608",
+    "timestamp": "2026-03-06T21:47:35.608Z",
+    "features": {
+      "fearGreed": 18,
+      "fearBucket": "EXTREME_FEAR",
+      "fundingRate": {
+        "rate": -0.002176,
+        "label": "NEUTRAL",
+        "signal": "neutral"
+      },
+      "fundingBucket": "POS_STRONG",
+      "trendStrength": 0,
+      "volRatio": 1,
+      "session": "New York",
+      "humanState": "RATIONAL_MARKET",
+      "utcHour": 21,
+      "hourBucket": "US_EVENING",
+      "edge": 0.04,
+      "confidence": 60,
+      "asset": "BTC",
+      "smartMoneySig": "NO_DATA",
+      "spreadPct": 0
+    },
+    "resolved": false,
+    "won": null
+  },
+  {
+    "id": "1772836528518",
+    "timestamp": "2026-03-06T22:35:28.518Z",
+    "features": {
+      "fearGreed": 18,
+      "fearBucket": "EXTREME_FEAR",
+      "fundingRate": {
+        "rate": -0.013058000000000002,
+        "label": "NEUTRAL",
+        "signal": "neutral"
+      },
+      "fundingBucket": "POS_STRONG",
+      "trendStrength": 0,
+      "volRatio": 1,
+      "session": "Los Angeles",
+      "humanState": "RATIONAL_MARKET",
+      "utcHour": 22,
+      "hourBucket": "US_EVENING",
+      "edge": 0.042,
+      "confidence": 60,
+      "asset": "SOL",
+      "smartMoneySig": "NO_DATA",
+      "spreadPct": 0
+    },
+    "resolved": false,
+    "won": null
+  },
+  {
+    "id": "1772836847246",
+    "timestamp": "2026-03-06T22:40:47.247Z",
+    "features": {
+      "fearGreed": 18,
+      "fearBucket": "EXTREME_FEAR",
+      "fundingRate": {
+        "rate": -0.002176,
+        "label": "NEUTRAL",
+        "signal": "neutral"
+      },
+      "fundingBucket": "POS_STRONG",
+      "trendStrength": 0,
+      "volRatio": 1,
+      "session": "Los Angeles",
+      "humanState": "RATIONAL_MARKET",
+      "utcHour": 22,
+      "hourBucket": "US_EVENING",
+      "edge": 0.035,
+      "confidence": 60,
+      "asset": "BTC",
+      "smartMoneySig": "NO_DATA",
+      "spreadPct": 0
+    },
+    "resolved": false,
+    "won": null
+  },
+  {
+    "id": "1772837164455",
+    "timestamp": "2026-03-06T22:46:04.456Z",
+    "features": {
+      "fearGreed": 18,
+      "fearBucket": "EXTREME_FEAR",
+      "fundingRate": {
+        "rate": -0.002176,
+        "label": "NEUTRAL",
+        "signal": "neutral"
+      },
+      "fundingBucket": "POS_STRONG",
+      "trendStrength": 0,
+      "volRatio": 1,
+      "session": "Los Angeles",
+      "humanState": "RATIONAL_MARKET",
+      "utcHour": 22,
+      "hourBucket": "US_EVENING",
+      "edge": 0.042,
+      "confidence": 60,
+      "asset": "BTC",
+      "smartMoneySig": "NO_DATA",
+      "spreadPct": 0
+    },
+    "resolved": false,
+    "won": null
+  },
+  {
+    "id": "1772837492799",
+    "timestamp": "2026-03-06T22:51:32.799Z",
+    "features": {
+      "fearGreed": 18,
+      "fearBucket": "EXTREME_FEAR",
+      "fundingRate": {
+        "rate": -0.002176,
+        "label": "NEUTRAL",
+        "signal": "neutral"
+      },
+      "fundingBucket": "POS_STRONG",
+      "trendStrength": 0,
+      "volRatio": 1,
+      "session": "Los Angeles",
+      "humanState": "RATIONAL_MARKET",
+      "utcHour": 22,
+      "hourBucket": "US_EVENING",
+      "edge": 0.05,
+      "confidence": 60,
+      "asset": "BTC",
+      "smartMoneySig": "NO_DATA",
+      "spreadPct": 0
+    },
+    "resolved": false,
+    "won": null
+  },
+  {
+    "id": "1772837813319",
+    "timestamp": "2026-03-06T22:56:53.320Z",
+    "features": {
+      "fearGreed": 18,
+      "fearBucket": "EXTREME_FEAR",
+      "fundingRate": {
+        "rate": -0.013058000000000002,
+        "label": "NEUTRAL",
+        "signal": "neutral"
+      },
+      "fundingBucket": "POS_STRONG",
+      "trendStrength": 0,
+      "volRatio": 1,
+      "session": "Los Angeles",
+      "humanState": "RATIONAL_MARKET",
+      "utcHour": 22,
+      "hourBucket": "US_EVENING",
+      "edge": 0.044000000000000004,
+      "confidence": 60,
+      "asset": "SOL",
+      "smartMoneySig": "NO_DATA",
+      "spreadPct": 0
+    },
+    "resolved": false,
+    "won": null
+  },
+  {
+    "id": "1772843416003",
+    "timestamp": "2026-03-07T00:30:16.003Z",
+    "features": {
+      "fearGreed": 12,
+      "fearBucket": "EXTREME_FEAR",
+      "fundingRate": {
+        "rate": 0.000619,
+        "label": "NEUTRAL",
+        "signal": "neutral"
+      },
+      "fundingBucket": "POS_STRONG",
+      "trendStrength": 0,
+      "volRatio": 1,
+      "session": "Los Angeles",
+      "humanState": "RATIONAL_MARKET",
+      "utcHour": 0,
+      "hourBucket": "ASIA_NIGHT",
+      "edge": 0.032,
+      "confidence": 60,
+      "asset": "BTC",
+      "smartMoneySig": "NO_DATA",
+      "spreadPct": 0
+    },
+    "resolved": false,
+    "won": null
+  },
+  {
+    "id": "1772843652982",
+    "timestamp": "2026-03-07T00:34:12.982Z",
+    "features": {
+      "fearGreed": 12,
+      "fearBucket": "EXTREME_FEAR",
+      "fundingRate": {
+        "rate": 0.000619,
+        "label": "NEUTRAL",
+        "signal": "neutral"
+      },
+      "fundingBucket": "POS_STRONG",
+      "trendStrength": 0,
+      "volRatio": 1,
+      "session": "Los Angeles",
+      "humanState": "RATIONAL_MARKET",
+      "utcHour": 0,
+      "hourBucket": "ASIA_NIGHT",
+      "edge": 0.04,
+      "confidence": 60,
+      "asset": "BTC",
+      "smartMoneySig": "NO_DATA",
+      "spreadPct": 0
+    },
+    "resolved": false,
+    "won": null
+  },
+  {
+    "id": "1772850668568",
+    "timestamp": "2026-03-07T02:31:08.569Z",
+    "features": {
+      "fearGreed": 12,
+      "fearBucket": "EXTREME_FEAR",
+      "fundingRate": {
+        "rate": 0.000619,
+        "label": "NEUTRAL",
+        "signal": "neutral"
+      },
+      "fundingBucket": "POS_STRONG",
+      "trendStrength": 0,
+      "volRatio": 1,
+      "session": "Shanghai",
+      "humanState": "SLEEPING_HERD",
+      "utcHour": 2,
+      "hourBucket": "ASIA_NIGHT",
+      "edge": 0.02,
+      "confidence": 60,
+      "asset": "BTC",
+      "smartMoneySig": "NO_DATA",
+      "spreadPct": 0
+    },
+    "resolved": false,
+    "won": null
+  },
+  {
+    "id": "1772851308145",
+    "timestamp": "2026-03-07T02:41:48.146Z",
+    "features": {
+      "fearGreed": 12,
+      "fearBucket": "EXTREME_FEAR",
+      "fundingRate": {
+        "rate": -0.006121000000000001,
+        "label": "NEUTRAL",
+        "signal": "neutral"
+      },
+      "fundingBucket": "POS_STRONG",
+      "trendStrength": 0,
+      "volRatio": 1,
+      "session": "Shanghai",
+      "humanState": "SLEEPING_HERD",
+      "utcHour": 2,
+      "hourBucket": "ASIA_NIGHT",
+      "edge": 0.048,
+      "confidence": 60,
+      "asset": "SOL",
+      "smartMoneySig": "NO_DATA",
+      "spreadPct": 0
+    },
+    "resolved": false,
+    "won": null
   }
 ]
