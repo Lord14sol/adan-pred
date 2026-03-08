@@ -2848,7 +2848,19 @@ async function doScan(state) {
     if (!intel || intel.direction === 'NEUTRAL') continue;
 
     const stats = childLearning.getChildStats(spec.id);
-    const acc = stats.totalResolved >= 5 ? stats.accuracy : 50;
+    let acc = stats.totalResolved >= 5 ? stats.accuracy : 50;
+
+    // v5.1 CONTRARIAN FLIP: If child has 100+ preds and <15% accuracy,
+    // they consistently predict WRONG — invert their signal for profit.
+    // A 0% accuracy child flipped becomes ~100%. Pure information theory.
+    let flipped = false;
+    if (stats.totalResolved >= 100 && acc < 15) {
+      intel.direction = intel.direction === 'UP' ? 'DOWN' : 'UP';
+      acc = 100 - acc; // 0% → 100%, 5% → 95%, 14% → 86%
+      flipped = true;
+      console.log(`[CONTRARIAN FLIP] 🔄 ${spec.id} acc was ${stats.accuracy}% over ${stats.totalResolved} preds → FLIPPED to ${intel.direction} (effective acc: ${acc}%)`);
+    }
+
     if (acc < 60) continue;
 
     // Find matching market for this child's asset
@@ -2886,6 +2898,7 @@ async function doScan(state) {
       intel,
       acc,
       childStake,
+      flipped,
     });
     childTradedMarkets.add(matchingMarket.id || matchingMarket.conditionId);
   }
@@ -2902,7 +2915,7 @@ async function doScan(state) {
       myProb: ct.intel.confidence / 100,
       edge: ct.edge,
       confidence: ct.intel.confidence,
-      thought: `[CHILD DIRECT] ${ct.spec} (acc:${ct.acc}% conf:${ct.intel.confidence}%) says ${ct.side}. Mispricing edge: ${(ct.edge*100).toFixed(1)}%. Stake: $${ct.childStake}.`,
+      thought: `[CHILD DIRECT${ct.flipped ? ' CONTRARIAN' : ''}] ${ct.spec} (acc:${ct.acc}% conf:${ct.intel.confidence}%) says ${ct.side}${ct.flipped ? ' (FLIPPED)' : ''}. Mispricing edge: ${(ct.edge*100).toFixed(1)}%. Stake: $${ct.childStake}.`,
       _childDirect: true,
       _childStake: ct.childStake,
       _childSpec: ct.spec,
