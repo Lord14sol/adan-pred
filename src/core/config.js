@@ -17,9 +17,9 @@ const DYN_WEIGHTS_PATH = path.join(DIR, 'dynamic_weights.json'); // P5: auto-mod
 // ── APIs ───────────────────────────────────────────────────────────────────
 const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const BINANCE_API = 'https://api.binance.com/api/v3';
-const SCAN_INTERVAL_MS = 5 * 60 * 1000;
-const MAX_POSITIONS = 9;     // más slots = aprende más rápido
-const MIN_EDGE = 0.05;  // más agresivo en paper = más trades = más data
+const SCAN_INTERVAL_MS = 90 * 1000; // 90sec — TRAINING MODE: max speed
+const MAX_POSITIONS = 15;    // TRAINING: más slots = más trades simultáneos
+const MIN_EDGE = 0.02;  // TRAINING: 2% edge — toma casi todo para aprender
 const PAPER_BET_SIZE = 100;   // $100 por bet = 1% del fondo $10k
 
 // Symbols to track on Binance
@@ -27,9 +27,9 @@ const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'BNBUSDT'];
 
 // ── Default Strategy ────────────────────────────────────────────────────────
 const DEFAULT_STRATEGY = {
-  minEdge: 0.05,    // 5% edge en paper — más agresivo para aprender
-  minLiquidity: 500,
-  maxMarketsCheck: 20,
+  minEdge: 0.02,    // TRAINING: 2% edge — maximize trades for learning
+  minLiquidity: 200, // TRAINING: lower liquidity floor
+  maxMarketsCheck: 30,
   minConfidence: 60,
   maxHoursToClose: 168,
   version: 1,
@@ -41,7 +41,7 @@ const TREE_RULES = {
   // ADAN spawn rules:
   //   LVL 3 → primer hijo (1 máximo)
   //   LVL 4 → hasta 6 hijos
-  maxChildrenGen1: 6,   // max hijos directos del padre (solo al LVL 4+)
+  maxChildrenGen1: 12,  // max hijos directos — full coverage BTC/ETH/SOL/BNB × 5m/15m/1hr
   maxChildrenAtLvl3: 1, // al LVL 3 solo puede tener 1 hijo
   // Nietos (Gen2 → Gen3): cada hijo puede tener hasta 2 nietos
   maxChildrenGen2: 2,   // max nietos por hijo (hijo necesita expChild >= 100)

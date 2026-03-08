@@ -10,9 +10,10 @@ import {
 import { signalLabel } from '../api/binance.js';
 import { quota } from '../core/quota_manager.js';
 import { polymerase } from '../core/polymerase.js';
+import { childLearning } from '../core/child_learning.js';
 
 // ── Panel — fixed 72 cols, always fits terminal ───────────────────────────
-const PW = 72;
+const PW = 76;
 const sep = (col, ch = '═') => col + '╠' + ch.repeat(PW) + '╣' + X;
 const SEP = (col) => col + '╟' + '─'.repeat(PW) + '╢' + X;
 const TOP = col => col + '╔' + '═'.repeat(PW) + '╗' + X;
@@ -22,7 +23,7 @@ function row(txt, col = M) {
   const pad = Math.max(0, PW - clean.length - 2);
   return col + '║ ' + X + txt + ' '.repeat(pad) + col + ' ║' + X;
 }
-const TW = 72, DIV = '─'.repeat(TW + 2);
+const TW = 76, DIV = '─'.repeat(TW + 2);
 function trow(txt, col, bdr) {
   const clean = txt.replace(/\x1b\[[0-9;]*m/g, '');
   return bdr + '│' + X + col + txt + ' '.repeat(Math.max(0, TW - clean.length)) + X + bdr + '│' + X;
@@ -65,8 +66,12 @@ function renderTreePanel(pnl, prices) {
     return col + BOLD + icon + ' ' + sig.dir.padEnd(4) + X + D + ' c:' + (sig.conf || '--') + '%' + X;
   }
 
+  // Gather evolution stats for display
+  const learnData = childLearning.learning || {};
+
   console.log(sep(B));
-  console.log(row(B + BOLD + '  🌳 DYNASTY TREE' + X + D + '  Gen ' + (pnl.generation || 1) + '  │  ADAN + ' + children.length + ' children' + X));
+  console.log(row(B + BOLD + '  🌳 DYNASTY TREE' + X + D + '  Gen ' + (pnl.generation || 1) + '  │  ADAN + ' + children.length + ' children' + X +
+    D + '  │  Track: ' + X + C + 'QUANT' + X));
   console.log(SEP(B));
 
   // ADAN root node
@@ -114,18 +119,26 @@ function renderTreePanel(pnl, prices) {
       const gcReady = canHaveGC && childExp >= childExpNeeded && gcList.length < TREE_RULES.maxChildrenGen2;
       const expBar = childExp >= childExpNeeded ? G + '●' + X : Y + Math.min(childExp, childExpNeeded) + '/' + childExpNeeded + 'xp' + X;
 
-      const nameStr = C + BOLD + (child.name || child.spec).padEnd(10) + X;
-      const specStr = D + child.spec.padEnd(11) + X;
+      const nameStr = C + BOLD + (child.name || child.spec).slice(0, 12).padEnd(12) + X;
       const sigStr = sigBadge(sig);
       const scoreStr = intel ? (intel.intelScore >= 65 ? G : intel.intelScore >= 45 ? Y : R) + BOLD + '[' + intel.intelScore + ']' + X : D + '[--]' + X;
       const ageStr = intel ? D + ' ' + Math.round((Date.now() - new Date(intel.ts).getTime()) / 60000) + 'm' + X : '';
-      const gcStr = gcReady ? ' ' + Y + BOLD + '🌱SPAWN' + X : gcList.length > 0 ? ' ' + B + '(' + gcList.length + 'gc)' + X : '';
+      const gcStr = gcReady ? ' ' + Y + BOLD + '🌱' + X : gcList.length > 0 ? ' ' + B + '(' + gcList.length + 'gc)' + X : '';
+
+      // DNA/evolution info from learning engine
+      const cLearn = learnData[child.id || child.spec];
+      const cGen = cLearn?.dna?.generation || 1;
+      const cResolved = cLearn?.totalResolved || 0;
+      const cAcc = cResolved >= 3 ? Math.round((cLearn?.correct || 0) / cResolved * 100) : null;
+      const accCol = cAcc === null ? D : cAcc >= 55 ? G : cAcc >= 40 ? Y : R;
+      const accStr = cAcc !== null ? accCol + BOLD + cAcc + '%' + X : D + '--' + X;
+      const genStr = D + 'g' + X + Y + cGen + X;
 
       console.log(row(
         '  ' + B + '  ' + connector + ' ' + X +
-        nameStr + ' ' + specStr +
-        ' ' + sigStr + ' ' + scoreStr + ageStr +
-        '  exp:' + expBar + gcStr
+        nameStr + ' ' + sigStr + ' ' + scoreStr + ageStr +
+        ' ' + genStr + ' ' + D + 'acc:' + X + accStr +
+        D + '(' + cResolved + ')' + X + gcStr
       ));
 
       // Grandchildren (if any)
@@ -143,6 +156,68 @@ function renderTreePanel(pnl, prices) {
         ));
       });
     });
+  }
+
+  // ── v4.0: Category children (LLM-informed) ──
+  const CATEGORY_ICONS = { crypto: '🪙', politics: '🏛️', sports: '⚽', macro: '📊', events: '🌐' };
+  const CATEGORY_CHILDREN = ['politics-daily', 'sports-daily', 'macro-weekly', 'events-daily'];
+  const categoryIntels = CATEGORY_CHILDREN.map(specId => {
+    // Read all intel files matching this category child
+    try {
+      const files = fs.readdirSync(INTEL_DIR).filter(f => f.startsWith(specId));
+      if (files.length === 0) return null;
+      const latest = files.map(f => {
+        try { return JSON.parse(fs.readFileSync(path.join(INTEL_DIR, f), 'utf8')); } catch { return null; }
+      }).filter(Boolean).sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
+      return latest;
+    } catch { return null; }
+  }).filter(Boolean);
+
+  if (categoryIntels.length > 0 || CATEGORY_CHILDREN.length > 0) {
+    console.log(SEP(B));
+    console.log(row(B + BOLD + '  🌐 CATEGORY DYNASTY' + X + D + '  │  Track: ' + X + M + 'LLM' + X + D + '  │  Multi-Market v4.0' + X));
+    console.log(SEP(B));
+
+    for (const specId of CATEGORY_CHILDREN) {
+      const cat = specId.split('-')[0]; // politics, sports, macro, events
+      const icon = CATEGORY_ICONS[cat] || '🌐';
+      const intel = categoryIntels.find(i => (i.spec || '').startsWith(specId));
+      const cLearn = learnData[specId];
+      const cGen = cLearn?.dna?.generation || 1;
+      const cResolved = cLearn?.totalResolved || 0;
+      const cAcc = cResolved >= 3 ? Math.round((cLearn?.correct || 0) / cResolved * 100) : null;
+      const accCol = cAcc === null ? D : cAcc >= 55 ? G : cAcc >= 40 ? Y : R;
+      const accStr = cAcc !== null ? accCol + BOLD + cAcc + '%' + X : D + '--' + X;
+
+      if (intel) {
+        const sig = intel.signal;
+        const sigCol = sig?.dir === 'UP' ? G : sig?.dir === 'DOWN' ? R : Y;
+        const sigIcon = sig?.dir === 'UP' ? '▲' : sig?.dir === 'DOWN' ? '▼' : '●';
+        const age = Math.round((Date.now() - new Date(intel.ts).getTime()) / 60000);
+        const title = (intel.market?.title || '').slice(0, 32);
+        console.log(row(
+          '  ' + B + '  ├── ' + X + icon + ' ' +
+          C + BOLD + specId.padEnd(15) + X +
+          sigCol + BOLD + sigIcon + ' ' + (sig?.dir || '?').padEnd(4) + X +
+          D + ' c:' + (sig?.conf || '--') + '%' + X +
+          D + ' e:' + (sig?.edge || '--') + '%' + X +
+          ' ' + D + 'g' + X + Y + cGen + X +
+          ' ' + D + 'acc:' + X + accStr + D + '(' + cResolved + ')' + X +
+          D + ' ' + age + 'm' + X
+        ));
+        if (title) {
+          console.log(row('  ' + B + '  │   ' + X + D + '  "' + title + '"' + X));
+        }
+      } else {
+        console.log(row(
+          '  ' + B + '  ├── ' + X + icon + ' ' +
+          C + BOLD + specId.padEnd(15) + X +
+          D + '  ···  waiting for scan' + X +
+          ' ' + D + 'g' + X + Y + cGen + X +
+          ' ' + D + 'acc:' + X + accStr + D + '(' + cResolved + ')' + X
+        ));
+      }
+    }
   }
 
   // Signal consensus bar
@@ -206,7 +281,7 @@ function startDashboard(brainManager) {
   --bg:#ccc8bc;--bg2:#ddd9cc;--bg3:#e8e4d8;--bg4:#f0ece2;
   --border:#1a1a1a;--border2:#3a3a2a;
   --purple:#5a1a8a;--cyan:#1a4a8a;--green:#1a5a1a;
-  --red:#8a1a1a;--yellow:#7a5a10;--grey:#666655;
+  --red:#8a1a1a;--yellow:#7a5a10;--grey:#666655;--pink:#ec4899;
   --text:#1a1a1a;--text2:#3a3a2a;--dim:#888878;
   --shadow:3px 3px 0 #1a1a1a;--shadow-sm:2px 2px 0 #1a1a1a;
   --font:'VT323',monospace;--mono:'JetBrains Mono',monospace;--pixel:'Press Start 2P',monospace;
@@ -422,6 +497,23 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 
 .d3-node.dimmed { opacity: 0.15; pointer-events: none; }
 .d3-link.dimmed { opacity: 0.15; }
+
+/* LLM category nodes */
+@keyframes llmPulse {
+  0%,100% { filter: drop-shadow(0 0 3px var(--pink)); }
+  50% { filter: drop-shadow(0 0 14px var(--pink)); }
+}
+.d3-node.llm-active rect { animation: llmPulse 1.2s ease infinite; }
+@keyframes linkPulse {
+  0%,100% { stroke-opacity: 0.5; }
+  50% { stroke-opacity: 1; }
+}
+.d3-link.link-active { animation: linkPulse 1.5s ease infinite; }
+
+/* Mini accuracy bar inside FORGE nodes */
+.acc-bar-bg { fill: var(--border2); }
+.acc-bar-fill-good { fill: var(--green); }
+.acc-bar-fill-bad { fill: var(--red); }
 
 @keyframes nodePulse {
   0% { filter: drop-shadow(0 0 2px var(--pulse-color)) }
@@ -734,22 +826,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
       <div class="nf-wrap" id="nf-wrap"></div>
       <div class="dynasty-wrap" id="dynasty-wrap">
         <div class="dynasty-tools">
-          <span class="card-title" style="margin:0;border:none;padding:0">🧬 THE FORGE (DYNASTY DAG)</span>
-          <div style="display:flex; gap: 8px;">
-            <button class="btn-dag" onclick="toggleDagFullscreen()" id="btn-fs">⛶ FULLSCREEN</button>
-            <button class="btn-dag" onclick="toggleGoldenPath()" id="btn-gp">⭐ GOLDEN PATH</button>
+          <span class="card-title" style="margin:0;border:none;padding:0">\uD83D\uDD25 THE FORGE · Agent Network</span>
+          <div style="display:flex; gap: 6px; align-items: center;">
+            <button class="btn-dag" onclick="forgeZoomIn()" title="Zoom In">+</button>
+            <button class="btn-dag" onclick="forgeZoomOut()" title="Zoom Out">\u2212</button>
+            <button class="btn-dag" onclick="forgeFitView()" title="Fit All Nodes">\u25CE FIT</button>
+            <button class="btn-dag" onclick="toggleGoldenPath()" id="btn-gp">\u2B50 GOLDEN PATH</button>
+            <button class="btn-dag" onclick="toggleDagFullscreen()" id="btn-fs">\u26F6 EXPAND</button>
           </div>
         </div>
         <div class="dynasty-panel" id="dynasty-panel"></div>
-        <div id="lasso-tooltip" class="lasso-tooltip"></div>
-        <div id="fuse-modal" class="fuse-modal">
-           <h3 id="fuse-title">FUSE NODES?</h3>
-           <p id="fuse-desc">A new Gen3 descendant will be born combining both AI rulesets.</p>
-           <div class="fuse-actions">
-              <button class="fuse-btn yes" id="fuse-yes">FUSE (GEN3)</button>
-              <button class="fuse-btn no" id="fuse-no">CANCEL</button>
-           </div>
-        </div>
       </div>
     </div>
 
@@ -805,8 +891,20 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
     <!-- ADAN World Conway Grid -->
     <div class="right-column" style="display:flex; flex-direction:column; gap:20px;">
       <div class="card" id="adan-world-card">
-        <div class="card-title">ADAN WORLD · Cellular Automaton</div>
-        <canvas id="adan-world-cvs" width="600" height="200" style="width:100%;height:auto;background:var(--bg4);border:2px solid var(--border);box-shadow:inset 2px 2px 0 var(--border2);image-rendering:pixelated;"></canvas>
+        <div class="card-title">COLONY · Live Ecosystem</div>
+        <div id="adan-world-title" style="font-family:var(--pixel);font-size:8px;color:var(--purple);letter-spacing:1px;padding:4px 8px">COLONY</div>
+        <canvas id="adan-world-cvs" width="800" height="300" style="width:100%;height:auto;background:#0a0a0f;border:2px solid var(--border);box-shadow:inset 2px 2px 0 var(--border2);image-rendering:pixelated;"></canvas>
+        <div id="adan-world-legend" style="display:flex;gap:10px;padding:4px 8px;font-family:var(--pixel);font-size:7px;color:var(--grey);flex-wrap:wrap">
+          <span><span style="display:inline-block;width:8px;height:8px;background:#00ff88;margin-right:3px"></span>Alive Agent</span>
+          <span><span style="display:inline-block;width:8px;height:8px;background:#a855f7;margin-right:3px"></span>ADAN Core</span>
+          <span><span style="display:inline-block;width:8px;height:8px;background:#facc15;margin-right:3px"></span>Apple Oracle</span>
+          <span><span style="display:inline-block;width:8px;height:8px;background:#22d3ee;margin-right:3px"></span>Snake Oracle</span>
+          <span><span style="display:inline-block;width:8px;height:8px;background:#f43f5e;margin-right:3px"></span>Eva Oracle</span>
+          <span><span style="display:inline-block;width:8px;height:8px;background:#ec4899;margin-right:3px"></span>LLM Scanner</span>
+          <span><span style="display:inline-block;width:8px;height:8px;background:#374151;margin-right:3px"></span>Dead Agent</span>
+          <span><span style="display:inline-block;width:8px;height:8px;background:#00ff88;margin-right:3px;animation:pulse 1s infinite"></span>Trade Win</span>
+          <span><span style="display:inline-block;width:8px;height:8px;background:#f43f5e;margin-right:3px;animation:pulse 1s infinite"></span>Trade Loss</span>
+        </div>
       </div>
 
       <!-- Brain Log: Decisions + Reasoning -->
@@ -841,10 +939,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
         <div style="display:flex; gap: 8px;">
            <button class="btn-dag active" id="btn-hist-real" onclick="toggleHistoryTab('real')" style="padding:4px 8px; font-size:10px;">📜 REAL TRADES</button>
            <button class="btn-dag" id="btn-hist-ghost" onclick="toggleHistoryTab('ghost')" style="padding:4px 8px; font-size:10px;">👻 SHADOW BETS</button>
+           <button class="btn-dag" id="btn-hist-dynasty" onclick="toggleHistoryTab('dynasty')" style="padding:4px 8px; font-size:10px;">🧬 DYNASTY BETS</button>
         </div>
       </div>
       <div id="history-wrap" style="max-height: 400px; overflow-y: auto;"></div>
       <div id="ghost-history-wrap" style="max-height: 400px; overflow-y: auto; display: none;"></div>
+      <div id="dynasty-history-wrap" style="max-height: 400px; overflow-y: auto; display: none;"></div>
       
       <!-- History Pagination Controls -->
       <div id="history-pagination" style="display:flex; gap: 5px; margin-top: 10px; justify-content: center; font-family: var(--mono); font-size: 10px;">
@@ -860,24 +960,30 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 let currentHistTab = 'real';
 let realHistPage = 0;
 let ghostHistPage = 0;
+let dynastyHistPage = 0;
 const HL_PAGE_SIZE = 20;
 
 window.toggleHistoryTab = function(tab) {
   currentHistTab = tab;
   const br = document.getElementById('btn-hist-real');
   const bg = document.getElementById('btn-hist-ghost');
+  const bd = document.getElementById('btn-hist-dynasty');
   if(br) br.classList.toggle('active', tab === 'real');
   if(bg) bg.classList.toggle('active', tab === 'ghost');
-  
+  if(bd) bd.classList.toggle('active', tab === 'dynasty');
+
   const hw = document.getElementById('history-wrap');
   const gw = document.getElementById('ghost-history-wrap');
+  const dw = document.getElementById('dynasty-history-wrap');
   if(hw) hw.style.display = tab === 'real' ? 'block' : 'none';
   if(gw) gw.style.display = tab === 'ghost' ? 'block' : 'none';
-  
+  if(dw) dw.style.display = tab === 'dynasty' ? 'block' : 'none';
+
   const pTitle = document.getElementById('history-panel-title');
   if(pTitle) {
     if (tab === 'real') pTitle.innerText = 'Trade History · Full Record';
-    else pTitle.innerText = '👻 Ghost Trades (Shadow Bets)';
+    else if (tab === 'ghost') pTitle.innerText = '👻 Ghost Trades (Shadow Bets)';
+    else pTitle.innerText = '🧬 Dynasty Bets (LLM Children)';
   }
   if (window.renderHistoryPanel) window.renderHistoryPanel();
 };
@@ -885,8 +991,10 @@ window.toggleHistoryTab = function(tab) {
 window.changeHistPage = function(dir) {
   if (currentHistTab === 'real') {
     realHistPage = Math.max(0, realHistPage + dir);
-  } else {
+  } else if (currentHistTab === 'ghost') {
     ghostHistPage = Math.max(0, ghostHistPage + dir);
+  } else {
+    dynastyHistPage = Math.max(0, dynastyHistPage + dir);
   }
   if (window.renderHistoryPanel) window.renderHistoryPanel();
 };
@@ -899,9 +1007,13 @@ window.renderHistoryPanel = function() {
   if (currentHistTab === 'real') {
     renderTabItems(closed, realHistPage, 'history-wrap', drawRealTrade);
     updatePaginationInfo(closed.length, realHistPage);
-  } else {
+  } else if (currentHistTab === 'ghost') {
     renderTabItems(shadows, ghostHistPage, 'ghost-history-wrap', drawGhostTrade);
     updatePaginationInfo(shadows.length, ghostHistPage);
+  } else {
+    const dynasty = (window._lastNFData.dynastyShadows||[]);
+    renderTabItems(dynasty, dynastyHistPage, 'dynasty-history-wrap', drawDynastyBet);
+    updatePaginationInfo(dynasty.length, dynastyHistPage);
   }
 };
 
@@ -911,10 +1023,11 @@ function updatePaginationInfo(total, page) {
   if (p > totPages) p = totPages;
   const pi = document.getElementById('hist-page-info');
   if(pi) pi.innerHTML = 'Page ' + p + ' / ' + totPages + ' <span style="color:var(--grey)">(' + total + ' total)</span>';
-  
+
   if (page >= totPages && total > 0) {
      if (currentHistTab === 'real') realHistPage = Math.max(0, totPages - 1);
      if (currentHistTab === 'ghost') ghostHistPage = Math.max(0, totPages - 1);
+     if (currentHistTab === 'dynasty') dynastyHistPage = Math.max(0, totPages - 1);
   }
 }
 
@@ -937,6 +1050,26 @@ function renderTabItems(items, page, containerId, rowFn) {
        } else {
          container.innerHTML = accArea + pageItems.map(rowFn).join('');
        }
+  } else if (containerId === 'dynasty-history-wrap') {
+       var ds = window._lastNFData.dynastyShadows || [];
+       var dTotal = ds.length;
+       var dResolved = ds.filter(function(x){ return x.resolved; }).length;
+       var dCorrect = ds.filter(function(x){ return x.correct; }).length;
+       var dPending = dTotal - dResolved;
+       var dAcc = dResolved > 0 ? Math.round(dCorrect / dResolved * 100) : 0;
+       var dAccCol = dAcc >= 55 ? 'var(--green)' : dAcc >= 40 ? 'var(--yellow)' : 'var(--red)';
+       var dynHeader = '<div style="display:flex; gap:12px; margin-bottom:12px; border-bottom:1px solid var(--border2); padding-bottom:10px; font-family:var(--mono)">' +
+         '<div><span style="font-size:10px;color:var(--grey)">TOTAL</span><div style="color:var(--text)">' + dTotal + '</div></div>' +
+         '<div><span style="font-size:10px;color:var(--grey)">PENDING</span><div style="color:var(--yellow)">' + dPending + '</div></div>' +
+         '<div><span style="font-size:10px;color:var(--grey)">RESOLVED</span><div style="color:var(--cyan)">' + dResolved + '</div></div>' +
+         '<div><span style="font-size:10px;color:var(--grey)">CORRECT</span><div style="color:var(--green)">' + dCorrect + '</div></div>' +
+         '<div><span style="font-size:10px;color:var(--grey)">ACCURACY</span><div style="color:' + dAccCol + '">' + dAcc + '%</div></div>' +
+       '</div>';
+       if (pageItems.length === 0) {
+         container.innerHTML = dynHeader + '<div style="color:var(--grey);font-size:12px;padding:12px 0">No dynasty bets yet.</div>';
+       } else {
+         container.innerHTML = dynHeader + pageItems.map(rowFn).join('');
+       }
   } else {
        if (pageItems.length === 0) {
          container.innerHTML = '<div style="color:var(--grey);font-size:12px;padding:12px 0">No records found.</div>';
@@ -948,10 +1081,12 @@ function renderTabItems(items, page, containerId, rowFn) {
 
 function drawRealTrade(c) {
   const w = c.result === 'WIN';
-  return '<div class="hist-row">' +
+  const isRecent = c.closedAt && (Date.now() - new Date(c.closedAt).getTime()) < 300000; // 5 min
+  const newBadge = isRecent ? ' <span style="background:var(--cyan);color:#000;font-size:8px;padding:1px 4px;border-radius:3px;margin-left:4px;animation:pulse 1s infinite">NEW</span>' : '';
+  return '<div class="hist-row"' + (isRecent ? ' style="border-left:2px solid var(--cyan)"' : '') + '>' +
     '<div class="hist-badge ' + (w ? 'hist-win' : 'hist-loss') + '">' + (w ? 'WIN' : 'LOSS') + '</div>' +
     '<div class="hist-info">' +
-    '<div class="hist-title">' + (c.marketTitle || 'Unknown Market') + '</div>' +
+    '<div class="hist-title">' + (c.marketTitle || 'Unknown Market') + newBadge + '</div>' +
     '<div class="hist-sub">' + (c.asset || '').toUpperCase() + ' · edge: ' + ((c.edge || 0) * 100).toFixed(1) + '% · ' + (c.entryTime?.slice(11, 16) || '') + '</div>' +
     '</div>' +
     '<div class="hist-pnl" style="color:' + (w ? 'var(--green)' : 'var(--red)') + '">' + (w ? '+' : '') + '$' + (c.pnl || 0).toFixed(2) + '</div>' +
@@ -971,6 +1106,34 @@ function drawGhostTrade(s) {
     '<div class="hist-sub"><span style="color:var(--purple);font-weight:600">' + (s.blockReason || 'BLOCKED') + '</span></div>' +
     '</div>' +
     '<div class="hist-pnl">' + resHtml + '<div style="font-size:8px;color:var(--grey);margin-top:4px">' + new Date(s.timestamp).toLocaleTimeString() + '</div></div>' +
+    '</div>';
+}
+
+function drawDynastyBet(s) {
+  var catIcon = s.category === 'politics' ? '🏛️' : s.category === 'sports' ? '⚽' : s.category === 'macro' ? '📊' : s.category === 'events' ? '🌐' : '🪙';
+  var dirCol = s.direction === 'UP' ? 'var(--green)' : 'var(--red)';
+  var dirArrow = s.direction === 'UP' ? '▲ UP' : '▼ DOWN';
+  var confCol = s.confidence >= 70 ? 'var(--green)' : s.confidence >= 50 ? 'var(--yellow)' : 'var(--grey)';
+  var resHtml = '<span style="color:var(--yellow);font-size:10px">⏳ PENDING</span>';
+  if (s.resolved) {
+    resHtml = s.correct
+      ? '<span style="color:var(--green);font-weight:700">✓ CORRECT</span>'
+      : '<span style="color:var(--red);font-weight:700">✗ WRONG</span>';
+  }
+  var reason = (s.reasons && s.reasons[0]) ? s.reasons[0].slice(0, 90) + (s.reasons[0].length > 90 ? '...' : '') : '';
+  var timeStr = s.ts ? new Date(s.ts).toLocaleString() : '';
+  return '<div class="hist-row" style="padding:8px 0;border-bottom:1px solid var(--border2)">' +
+    '<div class="hist-info" style="flex:1">' +
+    '<div class="hist-title">' + catIcon + ' <span style="color:' + dirCol + ';font-weight:700">' + dirArrow + '</span> ' +
+    '<span style="color:var(--purple);font-size:10px">' + (s.childId || '') + '</span></div>' +
+    '<div style="font-size:10px;color:var(--text2);margin:2px 0">' + (s.marketId || '') + '</div>' +
+    '<div style="font-size:9px;color:var(--grey);font-style:italic">' + reason + '</div>' +
+    '</div>' +
+    '<div style="text-align:right;min-width:100px">' +
+    '<div>' + resHtml + '</div>' +
+    '<div style="font-size:10px;color:' + confCol + ';margin-top:2px">Conf: ' + (s.confidence || '?') + '%</div>' +
+    '<div style="font-size:8px;color:var(--grey);margin-top:2px">' + timeStr + '</div>' +
+    '</div>' +
     '</div>';
 }
 // --- END OF UI FUNCTIONS ---
@@ -1764,13 +1927,76 @@ async function refresh() {
         </div>\`;
       }
     }
+    // ── v4.0: Evolution + Category Dynasty ──
+    const evo = d.evolution || {};
+    if (evo.children) {
+      const evoEntries = Object.entries(evo.children);
+      const quantKids = evoEntries.filter(function(e){ return e[1].track === 'quant'; });
+      const llmKids = evoEntries.filter(function(e){ return e[1].track === 'llm'; });
+      const maxGen = evoEntries.reduce(function(mx,e){ return Math.max(mx, e[1].generation || 1); }, 1);
+      const nextEvoCol = (evo.nextEvolutionIn||10) <= 3 ? 'var(--green)' : 'var(--grey)';
+
+      var evoHtml = '<div style="margin-top:12px;padding:10px;border:2px solid var(--border);background:rgba(150,100,255,0.08)">';
+      evoHtml += '<div style="font-family:var(--pixel);font-size:8px;color:var(--purple);margin-bottom:8px;border-bottom:1px solid var(--border2);padding-bottom:4px">🧬 EVOLUTION ENGINE</div>';
+      evoHtml += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;font-size:11px;font-family:var(--mono)">';
+      evoHtml += '<div><span style="color:var(--grey);font-size:9px">GEN</span><div style="color:var(--yellow);font-weight:700">' + maxGen + '</div></div>';
+      evoHtml += '<div><span style="color:var(--grey);font-size:9px">RESOLVED</span><div style="color:var(--text)">' + (evo.globalResolved || 0) + '</div></div>';
+      evoHtml += '<div><span style="color:var(--grey);font-size:9px">SHADOWS</span><div style="color:var(--cyan)">' + (evo.pendingShadows || 0) + '</div></div>';
+      evoHtml += '<div><span style="color:var(--grey);font-size:9px">NEXT EVO</span><div style="color:' + nextEvoCol + '">' + (evo.nextEvolutionIn || '?') + ' preds</div></div>';
+      evoHtml += '</div>';
+
+      evoHtml += '<div style="margin-top:8px;font-size:10px">';
+      evoHtml += '<div style="font-family:var(--pixel);font-size:7px;color:var(--cyan);margin-bottom:4px">QUANT POOL (crypto)</div>';
+      quantKids.forEach(function(e) {
+        var id = e[0], v = e[1];
+        var accColor = v.accuracy === null ? 'var(--grey)' : v.accuracy >= 55 ? 'var(--green)' : v.accuracy >= 40 ? 'var(--yellow)' : 'var(--red)';
+        evoHtml += '<div style="display:flex;gap:8px;align-items:center;padding:2px 0;border-bottom:1px solid rgba(100,100,100,0.2)">';
+        evoHtml += '<span style="color:var(--text);width:90px">' + id + '</span>';
+        evoHtml += '<span style="color:var(--yellow);font-size:9px">G' + v.generation + '</span>';
+        evoHtml += '<span style="color:' + accColor + ';font-weight:700">' + (v.accuracy !== null ? v.accuracy + '%' : '--') + '</span>';
+        evoHtml += '<span style="color:var(--grey);font-size:9px">(' + v.totalResolved + ' resolved)</span>';
+        evoHtml += '</div>';
+      });
+      evoHtml += '</div>';
+
+      if (llmKids.length > 0) {
+        evoHtml += '<div style="margin-top:8px;font-size:10px">';
+        evoHtml += '<div style="font-family:var(--pixel);font-size:7px;color:var(--purple);margin-bottom:4px">LLM POOL (multi-market)</div>';
+        llmKids.forEach(function(e) {
+          var id = e[0], v = e[1];
+          var icon = id.indexOf('politic') >= 0 ? '🏛️' : id.indexOf('sport') >= 0 ? '⚽' : id.indexOf('macro') >= 0 ? '📊' : '🌐';
+          var accColor = v.accuracy === null ? 'var(--grey)' : v.accuracy >= 55 ? 'var(--green)' : v.accuracy >= 40 ? 'var(--yellow)' : 'var(--red)';
+          evoHtml += '<div style="display:flex;gap:8px;align-items:center;padding:2px 0;border-bottom:1px solid rgba(100,100,100,0.2)">';
+          evoHtml += '<span>' + icon + '</span>';
+          evoHtml += '<span style="color:var(--text);width:90px">' + id + '</span>';
+          evoHtml += '<span style="color:var(--yellow);font-size:9px">G' + v.generation + '</span>';
+          evoHtml += '<span style="color:' + accColor + ';font-weight:700">' + (v.accuracy !== null ? v.accuracy + '%' : '--') + '</span>';
+          evoHtml += '<span style="color:var(--grey);font-size:9px">(' + v.totalResolved + ' resolved)</span>';
+          evoHtml += '</div>';
+        });
+        evoHtml += '</div>';
+      }
+      evoHtml += '</div>';
+      treeHtml += evoHtml;
+    }
+
     const tw=document.getElementById('tree-wrap'); if(tw) tw.innerHTML=treeHtml;
 
     // Open positions
     const openPos=d.positions?.open||[];
     document.getElementById('open-count').textContent='('+openPos.length+')';
     if(openPos.length===0){
-      document.getElementById('positions-wrap').innerHTML='<div style="color:var(--grey);font-size:12px;padding:12px 0">No open bets — scanning...</div>';
+      // Show last closed trade info so user knows ADAN is active
+      const lastClosed = (d.positions?.closed||[]).slice(-1)[0];
+      let lastTradeInfo = '';
+      if (lastClosed) {
+        const ago = lastClosed.closedAt ? Math.round((Date.now() - new Date(lastClosed.closedAt).getTime()) / 60000) : null;
+        const agoTxt = ago !== null ? (ago < 1 ? 'just now' : ago + 'min ago') : '';
+        const icon = lastClosed.result === 'WIN' ? '✅' : '❌';
+        lastTradeInfo = '<div style="color:var(--cyan);font-size:11px;margin-top:6px;border-top:1px solid var(--border2);padding-top:6px">' +
+          icon + ' Last trade: <b>' + (lastClosed.marketTitle||'').slice(0,35) + '</b> · $' + (lastClosed.pnl||0).toFixed(0) + ' · ' + agoTxt + '</div>';
+      }
+      document.getElementById('positions-wrap').innerHTML='<div style="color:var(--grey);font-size:12px;padding:12px 0">No open bets — 5min markets resolve fast' + lastTradeInfo + '</div>';
     } else {
       document.getElementById('positions-wrap').innerHTML=openPos.map(p=>{
         const side=p.side==='YES'?'<span style="color:var(--green)">YES ▲</span>':'<span style="color:var(--red)">NO ▼</span>';
@@ -1817,7 +2043,7 @@ async function refresh() {
     // Avatar
     updateAvatar(d, brainData);
 
-    // ADAN World Conway
+    // ADAN World Conway — pass all children including LLM category
     updateAdanWorld(d.children || [], d.config || {});
 
     // Neural flow + dynasty panel
@@ -2224,15 +2450,52 @@ let dynNodes = [];
 let dynLinks = [];
 let d3Zoom = null;
 
+function forgeZoomIn() {
+  if (!d3Svg || !d3Zoom) return;
+  d3Svg.transition().duration(300).call(d3Zoom.scaleBy, 1.4);
+}
+function forgeZoomOut() {
+  if (!d3Svg || !d3Zoom) return;
+  d3Svg.transition().duration(300).call(d3Zoom.scaleBy, 0.7);
+}
+function forgeFitView() {
+  if (!d3Svg || !d3Zoom || dynNodes.length === 0) return;
+  const el = document.getElementById('dynasty-panel');
+  if (!el) return;
+  const w = el.clientWidth, h = el.clientHeight;
+  // Compute bounding box of all nodes
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  dynNodes.forEach(n => {
+    if (n.x === undefined) return;
+    if (n.x < minX) minX = n.x;
+    if (n.y < minY) minY = n.y;
+    if (n.x > maxX) maxX = n.x;
+    if (n.y > maxY) maxY = n.y;
+  });
+  if (!isFinite(minX)) return;
+  const pad = 80;
+  const bw = (maxX - minX) + pad * 2;
+  const bh = (maxY - minY) + pad * 2;
+  const scale = Math.min(w / bw, h / bh, 2.5) * 0.9;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  d3Svg.transition().duration(500).call(
+    d3Zoom.transform,
+    d3.zoomIdentity.translate(w / 2, h / 2).scale(scale).translate(-cx, -cy)
+  );
+}
+
 function toggleDagFullscreen() {
   const wrap = document.getElementById('dynasty-wrap');
   const btn = document.getElementById('btn-fs');
   if (wrap.classList.contains('fullscreen')) {
     wrap.classList.remove('fullscreen');
-    btn.textContent = '⛶ FULLSCREEN';
+    btn.textContent = '\u26F6 EXPAND';
+    setTimeout(forgeFitView, 300);
   } else {
     wrap.classList.add('fullscreen');
-    btn.textContent = '✖ MINIMIZE';
+    btn.textContent = '\u2716 MINIMIZE';
+    setTimeout(forgeFitView, 300);
   }
 }
 
@@ -2263,8 +2526,8 @@ function updateDynastyPanel(d) {
   const newLinks = [];
   
   // 1. Core Node
-  newNodes.push({ id: 'ADAN', group: 0, label: '👑 ADAN', sub: 'Root Gen1', color: 'var(--purple)', edgeVolume: 5, fx: 0, fy: 0, 
-    pulseColor: (d.state?.mode && d.state.mode !== 'idle') ? 'var(--cyan)' : null 
+  newNodes.push({ id: 'ADAN', group: 0, label: '\uD83D\uDD25 ADAN', sub: 'Core · Gen1', color: 'var(--purple)', edgeVolume: 5, fx: 0, fy: 0,
+    pulseColor: (d.state?.mode && d.state.mode !== 'idle') ? 'var(--cyan)' : null
   });
 
   // 2. Pillars
@@ -2325,6 +2588,37 @@ function updateDynastyPanel(d) {
     newLinks.push({ source: cid, target: parentId, value: 1, isGreen: isGreen, edgeVolume: Math.min(5, 1 + (xp / 25)) });
   });
 
+  // 4. LLM Category Children (group 3)
+  const catIcons = { politics: '🏛️', sports: '⚽', macro: '📊', events: '🌐' };
+  children.filter(c => c.isCategory || c.track === 'llm').forEach((c, i) => {
+    const cid = 'llm-' + (c.spec || c.name || i);
+    const acc = c.accuracy ?? null;
+    const hasSignal = c.signal && (c.signal.conf || c.signal.confidence || 0) >= 65;
+    const accStr = acc !== null ? ('acc:' + acc + '%') : 'no data';
+    const edgeStr = c.signal?.edge ? (' | edge:' + c.signal.edge + '%') : '';
+    const cat = c.category || c.spec?.split('-')[0] || 'events';
+    const icon = catIcons[cat] || '🌐';
+
+    newNodes.push({
+      id: cid,
+      group: 3,
+      rawChild: c,
+      label: icon + ' ' + (c.name || c.spec || '').toUpperCase().slice(0, 10),
+      sub: accStr + edgeStr,
+      color: 'var(--pink)',
+      isCategory: true,
+      category: cat,
+      hasSignal: hasSignal,
+      accuracy: acc,
+      edgeVolume: 2
+    });
+    newLinks.push({
+      source: cid, target: 'ADAN', value: 2,
+      isGreen: false, isMagenta: true, edgeVolume: 2,
+      isActive: hasSignal
+    });
+  });
+
   // Preserve existing D3 node positions where possible so it doesn't jump
   dynNodes.forEach(oldN => {
     const newN = newNodes.find(n => n.id === oldN.id);
@@ -2343,65 +2637,48 @@ function updateDynastyPanel(d) {
     el.innerHTML = '';
     d3Svg = d3.select('#dynasty-panel').append('svg')
       .attr('width', '100%')
-      .attr('height', '100%');
-      
+      .attr('height', '100%')
+      .style('background', 'var(--bg4)');
+
     d3G = d3Svg.append('g').attr('class', 'dag-container');
 
     d3Zoom = d3.zoom()
-      .scaleExtent([0.1, 4])
+      .scaleExtent([0.2, 5])
+      .filter((event) => {
+        // Allow wheel zoom always, allow drag-pan with left button
+        if (event.type === 'wheel') return true;
+        if (event.type === 'mousedown' || event.type === 'touchstart') return true;
+        return true;
+      })
       .on('zoom', (event) => {
         d3G.attr('transform', event.transform);
       });
 
     d3Svg.call(d3Zoom);
-    d3Svg.on('dblclick.zoom', null); // disable default double-click zoom
 
-    // Lasso Brush
-    const brush = d3.brush()
-      .extent([[-1000, -1000], [1000, 1000]])
-      .on('start brush', (event) => {
-        if (!event.selection) return;
-        const [[x0, y0], [x1, y1]] = event.selection;
-        d3G.selectAll('.d3-node rect').style('stroke', d => {
-          const isSelected = d.x >= x0 && d.x <= x1 && d.y >= y0 && d.y <= y1;
-          return isSelected ? '#fff' : d.color;
-        });
-      })
-      .on('end', (event) => {
-         const tooltip = document.getElementById('lasso-tooltip');
-         if (!event.selection) {
-           d3G.selectAll('.d3-node rect').style('stroke', d => d.color);
-           tooltip.classList.remove('visible');
-           return;
-         }
-         
-         const [[x0, y0], [x1, y1]] = event.selection;
-         const selectedPaths = dynNodes.filter(d => d.group === 2 && d.x >= x0 && d.x <= x1 && d.y >= y0 && d.y <= y1);
-         
-         if (selectedPaths.length > 0) {
-           const avgWR = selectedPaths.reduce((sum, d) => sum + (d.wr || 0), 0) / selectedPaths.length;
-           const alive = selectedPaths.filter(d => !d.isDead).length;
-           let tStr = '🧬 SELECTED FORGE COMBINE: ' + selectedPaths.length + ' NODES\\n';
-           tStr += '⭐ AVG WIN RATE: ' + avgWR.toFixed(1) + '% | 🩸 ALIVE: ' + alive;
-           tooltip.innerHTML = tStr;
-           tooltip.classList.add('visible');
-         } else {
-           tooltip.classList.remove('visible');
-         }
-      });
-      
-    d3G.append("g")
-      .attr("class", "brush")
-      .call(brush);
+    // Double-click → fit view instead of zoom
+    d3Svg.on('dblclick.zoom', null);
+    d3Svg.on('dblclick', () => forgeFitView());
 
-    // Start centered
-    d3Svg.call(d3Zoom.transform, d3.zoomIdentity.translate(el.clientWidth / 2, el.clientHeight / 2));
-      
+    // Start centered with comfortable scale
+    const initScale = 0.9;
+    d3Svg.call(d3Zoom.transform, d3.zoomIdentity
+      .translate(el.clientWidth / 2, el.clientHeight / 2)
+      .scale(initScale));
+
     d3Sim = d3.forceSimulation()
-      .force('link', d3.forceLink().id(d => d.id).distance(d => d.target.id === 'ADAN' ? 120 : 80))
-      .force('charge', d3.forceManyBody().strength(-300))
+      .force('link', d3.forceLink().id(d => d.id).distance(d => {
+        if (d.target.id === 'ADAN' && d.source.group === 1) return 140; // parents farther
+        if (d.target.id === 'ADAN' && d.source.group === 3) return 180; // LLM even farther
+        return 100;
+      }))
+      .force('charge', d3.forceManyBody().strength(-350))
       .force('center', d3.forceCenter(0, 0))
-      .force('collide', d3.forceCollide().radius(40));
+      .force('collide', d3.forceCollide().radius(55))
+      .force('radial-llm', d3.forceRadial(200, 0, 0).strength(d => d.group === 3 ? 0.08 : 0));
+
+    // Auto fit after simulation settles
+    d3Sim.on('end', () => { setTimeout(forgeFitView, 100); });
   }
 
   // Update Links
@@ -2416,8 +2693,9 @@ function updateDynastyPanel(d) {
   const linkMerge = linkEnter.merge(link);
   
   linkMerge
-    .style('stroke', d => d.isGreen ? 'var(--green)' : 'var(--dim)')
-    .style('stroke-width', d => d.edgeVolume);
+    .style('stroke', d => d.isMagenta ? 'var(--pink)' : d.isGreen ? 'var(--green)' : 'var(--dim)')
+    .style('stroke-width', d => d.edgeVolume)
+    .classed('link-active', d => !!d.isActive);
 
   // Update Nodes
   const node = d3G.selectAll('.d3-node')
@@ -2450,6 +2728,7 @@ function updateDynastyPanel(d) {
         if (d.group === 0) showAdanDetail();
         else if (d.group === 1) showParentDetail(d.id);
         else if (d.group === 2) showChildDetail(d.childIdx);
+        // group 3 (LLM) — no detail modal yet
     })
     .on('dblclick', (event, d) => {
         event.stopPropagation();
@@ -2459,12 +2738,16 @@ function updateDynastyPanel(d) {
         );
     });
 
-  // Box (Neo-brutalist style)
+  // Box
   nodeEnter.append('rect')
-    .attr('width', 100).attr('height', 36)
-    .attr('x', -50).attr('y', -18)
+    .attr('width', d => d.group === 0 ? 120 : 110)
+    .attr('height', d => d.group === 0 ? 42 : 38)
+    .attr('x', d => d.group === 0 ? -60 : -55)
+    .attr('y', d => d.group === 0 ? -21 : -19)
+    .attr('rx', 3)
     .attr('fill', 'var(--bg2)')
-    .style('stroke', d => d.color);
+    .style('stroke', d => d.color)
+    .style('stroke-width', d => d.group === 0 ? '3px' : '2px');
 
   // Labels
   nodeEnter.append('text')
@@ -2484,11 +2767,25 @@ function updateDynastyPanel(d) {
     .style('font-family', 'var(--mono)')
     .text(d => d.sub);
 
+  // Mini accuracy bar for children (quant + LLM)
+  nodeEnter.filter(d => d.group === 2 || d.group === 3).append('rect')
+    .attr('class', 'acc-bar-bg')
+    .attr('x', -45).attr('y', 22)
+    .attr('width', 90).attr('height', 4)
+    .attr('rx', 1);
+  nodeEnter.filter(d => d.group === 2 || d.group === 3).append('rect')
+    .attr('class', d => (d.accuracy || d.wr || 0) >= 50 ? 'acc-bar-fill-good' : 'acc-bar-fill-bad')
+    .attr('x', -45).attr('y', 22)
+    .attr('width', d => Math.min(90, Math.max(0, (d.accuracy || d.wr || 0) / 100 * 90)))
+    .attr('height', 4)
+    .attr('rx', 1);
+
   const nodeMerge = nodeEnter.merge(node);
-  
+
   // Re-apply classes, pulse colors and state
   nodeMerge.classed('pulsing', d => !!d.pulseColor);
   nodeMerge.classed('ready-fuse', d => d.isReadyFuse);
+  nodeMerge.classed('llm-active', d => d.group === 3 && d.hasSignal);
   nodeMerge.style('--pulse-color', d => d.pulseColor || 'transparent');
   if (isGoldenPath) {
     nodeMerge.classed('dimmed', d => d.isDead || (d.group === 2 && d.wr < 50));
@@ -2552,71 +2849,27 @@ setInterval(() => {
 
 // ── ADAN World Conway Grid ──────────────────────────────────────────────────
 let cw_grid = [];
-let cw_cols = 80;
-let cw_rows = 25;
+let cw_cols = 100;
+let cw_rows = 35;
 let cw_agents = []; // Array of {id, x, y, state}
+let cw_tradeEvents = []; // [{type:'win'|'loss', childId, ts}]
+let cw_particles = []; // orbiting particles around ADAN
 
-function drawCell(ctx, x, y, state, glowRadius) {
-  const cellSize = 8;
-  const px = x * cellSize, py = y * cellSize;
-  // State: 0=dead, 1=alive(profitable child), 2=parent-adan, 3=parent-apple, 4=parent-snake, 5=parent-eva, 6=dead-child
-  const colors = {
-    0: '#ddd9cc',   // dead — bg2
-    1: '#1a5a1a',   // alive child — green
-    2: '#8b5cf6',   // ADAN — bright purple
-    3: '#eab308',   // APPLE — yellow
-    4: '#22c55e',   // SNAKE — green
-    5: '#ef4444',   // EVA — red
-    6: '#4a4a3a'    // dead child — dark grey
-  };
-  ctx.fillStyle = colors[state] || colors[0];
-  ctx.fillRect(px, py, cellSize - 1, cellSize - 1);
+// Neon color palette
+const CW_COLORS = {
+  0: null,            // dead — transparent
+  1: '#00ff88',       // alive child — neon green
+  2: '#a855f7',       // ADAN — bright purple
+  3: '#facc15',       // APPLE — bright yellow
+  4: '#22d3ee',       // SNAKE — cyan
+  5: '#f43f5e',       // EVA — bright red
+  6: '#374151',       // dead child — dark gray
+  7: '#ec4899',       // LLM child — pink
+  8: '#00ff88',       // trade win — neon green pulse
+  9: '#f43f5e',       // trade loss — red pulse
+};
 
-  // Glow effect for parent cells
-  if (state >= 2 && state <= 5 && glowRadius) {
-    ctx.save();
-    ctx.globalAlpha = 0.15;
-    ctx.fillStyle = colors[state];
-    const gr = glowRadius * cellSize;
-    ctx.beginPath();
-    ctx.arc(px + cellSize / 2, py + cellSize / 2, gr, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-  // ADAN is 2x size
-  if (state === 2) {
-    ctx.fillStyle = colors[2];
-    ctx.fillRect(px - cellSize / 2, py - cellSize / 2, cellSize * 2 - 1, cellSize * 2 - 1);
-  }
-}
-
-function placeAgentOnGrid(agentId) {
-  if (cw_agents.has(agentId)) {
-    return cw_agents.get(agentId);
-  }
-
-  // Find a random empty spot
-  for (let i = 0; i < 100; i++) { // Try 100 times to find an empty spot
-    const x = Math.floor(Math.random() * cw_cols);
-    const y = Math.floor(Math.random() * cw_rows);
-    let isOccupied = false;
-    for (const agent of cw_agents.values()) {
-      if (agent.x === x && agent.y === y) {
-        isOccupied = true;
-        break;
-      }
-    }
-    if (!isOccupied) {
-      const newPos = { x, y, state: 1 };
-      cw_agents.set(agentId, newPos);
-      return newPos;
-    }
-  }
-  // If no spot found, place it at a default random location
-  const finalPos = { x: Math.floor(Math.random() * cw_cols), y: Math.floor(Math.random() * cw_rows), state: 1 };
-  cw_agents.set(agentId, finalPos);
-  return finalPos;
-}
+// placeAgentOnGrid removed — agents placed directly in updateAdanWorld
 
 // First definition placeholder removed — see unified updateAdanWorld below
 
@@ -2631,94 +2884,177 @@ function initAdanWorld() {
   }
 }
 
-// Unified ADAN World — colorful Conway grid with parent/child distinction
+// Unified ADAN World — neon Conway grid with data-driven life
 function updateAdanWorld(children, config) {
   if (!cw_grid || !cw_grid.length) initAdanWorld();
 
   const parents = config?.mesaRedonda?.parents || [];
   const parentIds = { adan: 2, apple: 3, snake: 4, eva: 5 };
-
-  // Map agents to fixed coordinates
   const allAgents = [];
+  const cx = Math.floor(cw_cols / 2), cy = Math.floor(cw_rows / 2);
 
   // ADAN at center
-  allAgents.push({ id: 'adan', x: Math.floor(cw_cols / 2), y: Math.floor(cw_rows / 2), state: 2 });
+  allAgents.push({ id: 'adan', x: cx, y: cy, state: 2, accuracy: 100 });
 
   // Parents at strategic positions
   const parentPositions = [
-    { id: 'apple', x: Math.floor(cw_cols / 2), y: 3 },           // top center
-    { id: 'snake', x: Math.floor(cw_cols * 0.75), y: Math.floor(cw_rows * 0.75) }, // bottom right
-    { id: 'eva', x: Math.floor(cw_cols * 0.25), y: Math.floor(cw_rows * 0.75) }    // bottom left
+    { id: 'apple', x: cx, y: 4 },
+    { id: 'snake', x: Math.floor(cw_cols * 0.8), y: Math.floor(cw_rows * 0.75) },
+    { id: 'eva',   x: Math.floor(cw_cols * 0.2), y: Math.floor(cw_rows * 0.75) }
   ];
-  parentPositions.forEach(p => {
-    allAgents.push({ ...p, state: parentIds[p.id] || 2 });
+  parentPositions.forEach(p => allAgents.push({ ...p, state: parentIds[p.id] || 2 }));
+
+  // Quant children — placed between center and parents
+  const quantChildren = children.filter(c => !c.isCategory && !c.isParent && !parents.some(p => p.id === c.spec));
+  quantChildren.forEach((ch, i) => {
+    const angle = (i / Math.max(1, quantChildren.length)) * Math.PI * 2;
+    const radius = Math.min(cx, cy) * 0.45;
+    const x = Math.round(cx + Math.cos(angle) * radius);
+    const y = Math.round(cy + Math.sin(angle) * radius);
+    const wr = ch.childPnl ? Math.round((ch.childPnl.wins || 0) / Math.max(1, ch.childPnl.trades || 1) * 100) : 0;
+    const isAlive = ch.status !== 'dead' && (ch.childPnl?.net || 0) >= 0;
+    allAgents.push({ id: ch.spec, x: Math.max(1, Math.min(cw_cols - 2, x)), y: Math.max(1, Math.min(cw_rows - 2, y)), state: isAlive ? 1 : 6, accuracy: wr, name: ch.spec });
   });
 
-  // Children
-  const spawnedChildren = children.filter(c => !parents.some(p => p.id === c.spec));
-  spawnedChildren.forEach((ch, i) => {
-    const space = Math.max(2, Math.floor((cw_cols - 10) / (spawnedChildren.length || 1)));
-    const x = 5 + space * i;
-    const y = Math.floor(cw_rows / 2) + ((i % 3) - 1) * 2;
-    const isAlive = (ch.childPnl?.net || 0) > 0;
-    allAgents.push({ id: ch.spec, x, y, state: isAlive ? 1 : 6, name: ch.spec });
+  // LLM category children — orbit in outer ring
+  const llmChildren = children.filter(c => c.isCategory || c.track === 'llm');
+  llmChildren.forEach((ch, i) => {
+    const angle = (i / Math.max(1, llmChildren.length)) * Math.PI * 2 - Math.PI / 2;
+    const radius = Math.min(cx, cy) * 0.8;
+    const x = Math.round(cx + Math.cos(angle) * radius);
+    const y = Math.round(cy + Math.sin(angle) * radius);
+    allAgents.push({ id: ch.spec, x: Math.max(1, Math.min(cw_cols - 2, x)), y: Math.max(1, Math.min(cw_rows - 2, y)), state: 7, accuracy: ch.accuracy || 0, name: ch.spec, isLLM: true });
+  });
+
+  // Density: accuracy drives cell spawn around children
+  allAgents.forEach(a => {
+    if (a.state === 1 || a.state === 7) {
+      const acc = a.accuracy || 0;
+      const density = Math.floor(acc / 15); // higher acc = more cells
+      for (let d = 0; d < density; d++) {
+        const dx = a.x + Math.floor(Math.random() * 5) - 2;
+        const dy = a.y + Math.floor(Math.random() * 5) - 2;
+        if (dy >= 0 && dy < cw_rows && dx >= 0 && dx < cw_cols) {
+          cw_grid[dy][dx] = a.state;
+        }
+      }
+    }
+  });
+
+  // Process trade events — spawn/kill clusters
+  const now = Date.now();
+  cw_tradeEvents = (cw_tradeEvents || []).filter(e => now - e.ts < 8000);
+  cw_tradeEvents.forEach(ev => {
+    const agent = allAgents.find(a => a.id === ev.childId) || allAgents[0];
+    const count = 6;
+    for (let i = 0; i < count; i++) {
+      const dx = agent.x + Math.floor(Math.random() * 7) - 3;
+      const dy = agent.y + Math.floor(Math.random() * 7) - 3;
+      if (dy >= 0 && dy < cw_rows && dx >= 0 && dx < cw_cols) {
+        cw_grid[dy][dx] = ev.type === 'win' ? 8 : 9;
+      }
+    }
   });
 
   cw_agents = allAgents;
 }
 
+let cw_tick = 0;
 function stepAdanWorld() {
   if (!cw_grid || !cw_grid.length) return;
+  cw_tick++;
   const next = new Array(cw_rows).fill(0).map(() => new Array(cw_cols).fill(0));
+  const cx = Math.floor(cw_cols / 2), cy = Math.floor(cw_rows / 2);
 
-  // Build parent proximity map — cells near parents survive easier
+  // Build parent proximity map
   const parentCells = new Set();
   (cw_agents || []).forEach(a => {
     if (a.state >= 2 && a.state <= 5) {
-      for (let dy = -2; dy <= 2; dy++) {
-        for (let dx = -2; dx <= 2; dx++) {
-          let ny = a.y + dy, nx = a.x + dx;
-          if (ny < 0) ny += cw_rows; if (ny >= cw_rows) ny -= cw_rows;
-          if (nx < 0) nx += cw_cols; if (nx >= cw_cols) nx -= cw_cols;
+      for (let dy = -3; dy <= 3; dy++) {
+        for (let dx = -3; dx <= 3; dx++) {
+          let ny = (a.y + dy + cw_rows) % cw_rows, nx = (a.x + dx + cw_cols) % cw_cols;
           parentCells.add(ny * cw_cols + nx);
         }
       }
     }
   });
 
+  // Conway step
   for (let y = 0; y < cw_rows; y++) {
     for (let x = 0; x < cw_cols; x++) {
       let neighbors = 0;
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           if (dx === 0 && dy === 0) continue;
-          let ny = y + dy, nx = x + dx;
-          if (ny < 0) ny = cw_rows - 1; else if (ny >= cw_rows) ny = 0;
-          if (nx < 0) nx = cw_cols - 1; else if (nx >= cw_cols) nx = 0;
+          const ny = (y + dy + cw_rows) % cw_rows, nx = (x + dx + cw_cols) % cw_cols;
           if (cw_grid[ny][nx] > 0) neighbors++;
         }
       }
       const alive = cw_grid[y][x] > 0;
       const nearParent = parentCells.has(y * cw_cols + x);
-
-      // Modified Conway rules — parent proximity gives survival bonus
-      if (alive && (neighbors === 2 || neighbors === 3)) next[y][x] = 1;
+      if (alive && (neighbors === 2 || neighbors === 3)) next[y][x] = cw_grid[y][x];
       else if (!alive && neighbors === 3) next[y][x] = 1;
-      else if (nearParent && alive && neighbors >= 1) next[y][x] = 1; // parent aura keeps cells alive
-      else if (nearParent && !alive && neighbors >= 2) next[y][x] = 1; // easier birth near parents
-      else next[y][x] = 0;
+      else if (nearParent && alive && neighbors >= 1) next[y][x] = cw_grid[y][x];
+      else if (nearParent && !alive && neighbors >= 2) next[y][x] = 1;
+      // Fade trade events (8,9) after 1 tick
+      if (cw_grid[y][x] === 8 || cw_grid[y][x] === 9) next[y][x] = 0;
     }
   }
 
-  // Enforce agent cells with their proper states
+  // Agent movement — gravity/repulsion + LLM orbit
   (cw_agents || []).forEach(a => {
+    if (a.state >= 2 && a.state <= 5) return; // parents don't move
+
+    if (a.isLLM) {
+      // LLM children orbit in outer ring
+      const angle = Math.atan2(a.y - cy, a.x - cx) + 0.03;
+      const radius = Math.min(cx, cy) * 0.8;
+      a.x = Math.round(cx + Math.cos(angle) * radius);
+      a.y = Math.round(cy + Math.sin(angle) * radius);
+      // Trail: leave pink cells behind
+      if (cw_tick % 3 === 0 && a.signal) {
+        const tx = (a.x - 1 + cw_cols) % cw_cols;
+        next[a.y][tx] = 7;
+      }
+    } else if (a.state === 1 || a.state === 6) {
+      // Quant children: acc > 60% → gravitate toward ADAN; < 40% → repel
+      const acc = a.accuracy || 0;
+      if (acc > 60 && cw_tick % 4 === 0) {
+        if (a.x < cx) a.x++; else if (a.x > cx) a.x--;
+        if (a.y < cy) a.y++; else if (a.y > cy) a.y--;
+      } else if (acc < 40 && cw_tick % 4 === 0) {
+        if (a.x < cx) a.x--; else if (a.x > cx) a.x++;
+        if (a.y < cy) a.y--; else if (a.y > cy) a.y++;
+      }
+      a.x = Math.max(1, Math.min(cw_cols - 2, a.x));
+      a.y = Math.max(1, Math.min(cw_rows - 2, a.y));
+    }
+
+    // Enforce agent cell
     if (a.y >= 0 && a.y < cw_rows && a.x >= 0 && a.x < cw_cols) {
-      next[a.y][a.x] = a.state || (a.alive ? 1 : 0);
+      next[a.y][a.x] = a.state;
+    }
+  });
+
+  // Enforce parent cells
+  (cw_agents || []).forEach(a => {
+    if (a.state >= 2 && a.state <= 5 && a.y >= 0 && a.y < cw_rows && a.x >= 0 && a.x < cw_cols) {
+      next[a.y][a.x] = a.state;
     }
   });
 
   cw_grid = next;
   drawAdanWorld();
+}
+
+// Persistent starfield — generated once
+let cw_stars = null;
+function ensureStarfield(w, h) {
+  if (cw_stars && cw_stars.length > 0) return;
+  cw_stars = [];
+  for (let i = 0; i < 60; i++) {
+    cw_stars.push({ x: Math.random() * w, y: Math.random() * h, r: 0.3 + Math.random() * 0.8, bright: 0.15 + Math.random() * 0.25 });
+  }
 }
 
 function drawAdanWorld() {
@@ -2727,69 +3063,197 @@ function drawAdanWorld() {
   const ctx = cvs.getContext('2d');
   const w = cvs.width, h = cvs.height;
   const cellW = w / cw_cols, cellH = h / cw_rows;
+  const now = Date.now();
 
-  ctx.clearRect(0, 0, w, h);
+  // ── Background: deep space gradient ──
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, '#05050a');
+  grad.addColorStop(0.5, '#0a0a14');
+  grad.addColorStop(1, '#050510');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
 
-  // State colors
-  const stateColors = {
-    0: null,          // dead — transparent
-    1: '#1a5a1a',     // alive child — green
-    2: '#8b5cf6',     // ADAN — bright purple
-    3: '#eab308',     // APPLE — yellow
-    4: '#22c55e',     // SNAKE — green bright
-    5: '#ef4444',     // EVA — red
-    6: '#4a4a3a'      // dead child — dark grey
-  };
+  // ── Starfield ──
+  ensureStarfield(w, h);
+  cw_stars.forEach(s => {
+    ctx.save();
+    ctx.globalAlpha = s.bright * (0.6 + 0.4 * Math.sin(now / 2000 + s.x));
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
 
-  // Draw grid cells
+  // ── Subtle grid lines ──
+  ctx.save();
+  ctx.globalAlpha = 0.04;
+  ctx.strokeStyle = '#a855f7';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < cw_cols; x += 10) {
+    ctx.beginPath(); ctx.moveTo(x * cellW, 0); ctx.lineTo(x * cellW, h); ctx.stroke();
+  }
+  for (let y = 0; y < cw_rows; y += 5) {
+    ctx.beginPath(); ctx.moveTo(0, y * cellH); ctx.lineTo(w, y * cellH); ctx.stroke();
+  }
+  ctx.restore();
+
+  // ── Draw grid cells ──
+  let aliveCount = 0;
   for (let y = 0; y < cw_rows; y++) {
     for (let x = 0; x < cw_cols; x++) {
       const state = cw_grid[y]?.[x] || 0;
       if (state === 0) continue;
-      ctx.fillStyle = stateColors[state] || '#1a4a8a';
+      aliveCount++;
+      const color = CW_COLORS[state] || '#1a4a8a';
       const px = Math.floor(x * cellW), py = Math.floor(y * cellH);
-      ctx.fillRect(px, py, Math.ceil(cellW) - 1, Math.ceil(cellH) - 1);
+
+      if (state === 8 || state === 9) {
+        // Pulse for trade events
+        ctx.save();
+        ctx.globalAlpha = 0.3 + 0.5 * Math.sin(now / 80);
+        ctx.fillStyle = color;
+        ctx.fillRect(px - 1, py - 1, Math.ceil(cellW) + 2, Math.ceil(cellH) + 2);
+        // Bloom
+        ctx.globalAlpha = 0.15;
+        ctx.beginPath();
+        ctx.arc(px + cellW / 2, py + cellH / 2, cellW * 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.fillStyle = color;
+        ctx.fillRect(px, py, Math.ceil(cellW) - 1, Math.ceil(cellH) - 1);
+      }
     }
   }
 
-  // Draw agents with glow/highlights
+  // ── Connection beams: ADAN → each parent/child agent ──
+  const adanAgent = (cw_agents || []).find(a => a.state === 2);
+  if (adanAgent) {
+    const ax = adanAgent.x * cellW + cellW / 2, ay = adanAgent.y * cellH + cellH / 2;
+    (cw_agents || []).forEach(a => {
+      if (a.state === 2) return; // skip self
+      const color = CW_COLORS[a.state] || '#1a4a8a';
+      const bx = a.x * cellW + cellW / 2, by = a.y * cellH + cellH / 2;
+      const isParent = a.state >= 2 && a.state <= 5;
+      ctx.save();
+      ctx.globalAlpha = isParent ? 0.08 : a.isLLM ? 0.06 : 0.03;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = isParent ? 1.5 : 0.5;
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    });
+  }
+
+  // ── Draw agents ──
   ctx.font = "7px 'Press Start 2P', monospace";
   ctx.textAlign = 'center';
-  const labels = { adan: 'A', apple: '🍎', snake: '🐍', eva: '👑' };
+  const labels = { adan: '\u25C8', apple: 'A', snake: 'S', eva: 'E' };
+  const catLabels = { 'politics-daily': 'P', 'sports-daily': 'S', 'macro-weekly': 'M', 'events-daily': 'E' };
 
   (cw_agents || []).forEach(a => {
-    const color = stateColors[a.state] || '#1a4a8a';
+    const color = CW_COLORS[a.state] || '#1a4a8a';
     const px = Math.floor(a.x * cellW), py = Math.floor(a.y * cellH);
     const isParent = a.state >= 2 && a.state <= 5;
-    const size = isParent ? 2 : 1;
+    const size = isParent ? 2.5 : a.isLLM ? 1.5 : 1;
 
-    // Glow for parents
-    if (isParent) {
+    // Glow halos
+    if (isParent || a.isLLM) {
+      const glowR = a.state === 2 ? cellW * 6 : a.isLLM ? cellW * 2.5 : cellW * 3.5;
+      const glowA = a.state === 2 ? 0.18 : 0.08;
       ctx.save();
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(px + cellW / 2, py + cellH / 2, cellW * 3, 0, Math.PI * 2);
-      ctx.fill();
+      const grd = ctx.createRadialGradient(px + cellW / 2, py + cellH / 2, 0, px + cellW / 2, py + cellH / 2, glowR);
+      grd.addColorStop(0, color);
+      grd.addColorStop(1, 'transparent');
+      ctx.globalAlpha = glowA;
+      ctx.fillStyle = grd;
+      ctx.fillRect(px - glowR, py - glowR, glowR * 2, glowR * 2);
       ctx.restore();
     }
 
-    // Cell (parents are larger)
+    // ADAN pulsing rings
+    if (a.state === 2) {
+      for (let ring = 0; ring < 3; ring++) {
+        const phase = (now / 1500 + ring * 0.33) % 1;
+        ctx.save();
+        ctx.globalAlpha = 0.15 * (1 - phase);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(px + cellW / 2, py + cellH / 2, cellW * (3 + phase * 8), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // Cell body
+    const bx = px - (size - 1) * Math.ceil(cellW) / 2;
+    const by = py - (size - 1) * Math.ceil(cellH) / 2;
+    const bw = Math.ceil(cellW) * size - 1;
+    const bh = Math.ceil(cellH) * size - 1;
     ctx.fillStyle = color;
-    ctx.fillRect(px - (size - 1) * Math.ceil(cellW) / 2, py - (size - 1) * Math.ceil(cellH) / 2,
-      Math.ceil(cellW) * size - 1, Math.ceil(cellH) * size - 1);
+    ctx.fillRect(bx, by, bw, bh);
 
-    // Border highlight
+    // Bright border
     ctx.strokeStyle = color;
-    ctx.lineWidth = isParent ? 1.5 : 0.5;
-    ctx.strokeRect(px - 2, py - 2, Math.ceil(cellW) * size + 3, Math.ceil(cellH) * size + 3);
+    ctx.lineWidth = isParent ? 2 : a.isLLM ? 1 : 0.5;
+    ctx.strokeRect(bx - 1, by - 1, bw + 2, bh + 2);
 
-    // Label above parents
-    if (isParent && a.id) {
-      ctx.fillStyle = color;
-      ctx.fillText((labels[a.id] || a.id[0].toUpperCase()), px + cellW / 2, py - 4);
+    // Agent label
+    if (isParent || a.isLLM) {
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = 0.9;
+      ctx.font = isParent ? "bold 8px 'Press Start 2P', monospace" : "6px 'Press Start 2P', monospace";
+      const lbl = labels[a.id] || catLabels[a.id] || (a.name || a.id || '?')[0].toUpperCase();
+      ctx.fillText(lbl, px + cellW / 2, py - 4);
+      ctx.restore();
     }
   });
+
+  // ── Orbiting particles around ADAN ──
+  if (adanAgent) {
+    const apx = adanAgent.x * cellW + cellW / 2;
+    const apy = adanAgent.y * cellH + cellH / 2;
+    for (let i = 0; i < 6; i++) {
+      const angle = now / 800 + (i * Math.PI * 2 / 6);
+      const r = cellW * (3.5 + Math.sin(now / 2000 + i) * 1.5);
+      const ppx = apx + Math.cos(angle) * r;
+      const ppy = apy + Math.sin(angle) * r;
+      ctx.save();
+      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(now / 300 + i);
+      ctx.fillStyle = i % 2 === 0 ? '#a855f7' : '#22d3ee';
+      ctx.beginPath();
+      ctx.arc(ppx, ppy, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // ── Scanline overlay ──
+  ctx.save();
+  ctx.globalAlpha = 0.03;
+  for (let sy = 0; sy < h; sy += 3) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, sy, w, 1);
+  }
+  ctx.restore();
+
+  // ── Dynamic title ──
+  const titleEl = document.getElementById('adan-world-title');
+  if (titleEl) {
+    const wr = window._lastNFData?.pnl?.trades > 0
+      ? Math.round((window._lastNFData.pnl.wins / window._lastNFData.pnl.trades) * 100)
+      : 0;
+    const gen = window._lastNFData?.pnl?.generation || 1;
+    const agents = (cw_agents || []).length;
+    titleEl.textContent = 'COLONY \u00B7 ' + aliveCount + ' cells \u00B7 ' + agents + ' agents \u00B7 WR ' + wr + '% \u00B7 Gen ' + gen;
+  }
 }
 
 setInterval(stepAdanWorld, 200);
@@ -2881,7 +3345,7 @@ setInterval(stepAdanWorld, 200);
     }
 
     if (req.url === '/api/state') {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' });
       const pnl = loadPnL();
       const pos = loadPositions();
       const calib = loadCalibration();
@@ -2938,6 +3402,45 @@ setInterval(stepAdanWorld, 200);
         return { ...child, intel, grandChildren, childExp, childSignals, dna, childPnl };
       });
 
+      // ── v4.1: Category Children (LLM track) ──
+      const CATEGORY_SPECS = [
+        { id: 'politics-daily', category: 'politics' },
+        { id: 'sports-daily',   category: 'sports'   },
+        { id: 'macro-weekly',   category: 'macro'    },
+        { id: 'events-daily',   category: 'events'   },
+      ];
+      const categoryChildEntries = [];
+      for (const spec of CATEGORY_SPECS) {
+        let signal = null, market = null;
+        try {
+          const files = fs.readdirSync(INTEL_DIR).filter(f => f.startsWith(spec.id));
+          if (files.length > 0) {
+            const latest = files.map(f => {
+              try { return JSON.parse(fs.readFileSync(path.join(INTEL_DIR, f), 'utf8')); } catch { return null; }
+            }).filter(Boolean).sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
+            if (latest && (Date.now() - new Date(latest.ts).getTime()) / 60000 <= 30) {
+              signal = latest.signal || null;
+              market = latest.market || null;
+            }
+          }
+        } catch {}
+        const stats = childLearning.getChildStats ? childLearning.getChildStats(spec.id) : null;
+        const learn = (childLearning.learning || {})[spec.id];
+        categoryChildEntries.push({
+          spec: spec.id,
+          name: spec.id,
+          isCategory: true,
+          track: 'llm',
+          category: spec.category,
+          signal,
+          market,
+          accuracy: stats?.accuracy ?? (learn?.totalResolved > 0 ? Math.round((learn.correct || 0) / learn.totalResolved * 100) : null),
+          generation: learn?.dna?.generation || 1,
+          totalResolved: learn?.totalResolved || 0,
+          correct: learn?.correct || 0,
+        });
+      }
+
       // Auto-reset result → idle after RESULT_SHOW_MS so the flow goes back to monitoring
       if (_dashboardState?.mode === 'result' && _resultAt && (Date.now() - _resultAt) > RESULT_SHOW_MS) {
         _dashboardState = { ..._dashboardState, mode: null };
@@ -2979,11 +3482,37 @@ setInterval(stepAdanWorld, 200);
         soulRulesLite = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));
       } catch { }
 
+      // Child learning evolution data
+      const learningEntries = Object.entries(childLearning.learning || {});
+      const evolutionData = {
+        globalResolved: childLearning.globalResolved || 0,
+        lastEvolution: childLearning.lastEvolution || 0,
+        nextEvolutionIn: 10 - ((childLearning.globalResolved || 0) - (childLearning.lastEvolution || 0)),
+        pendingShadows: (childLearning.shadows || []).filter(s => !s.resolved).length,
+        children: Object.fromEntries(learningEntries.filter(([,v]) => typeof v === 'object').map(([id, v]) => [id, {
+          track: v.track || 'quant',
+          generation: v.dna?.generation || 1,
+          totalResolved: v.totalResolved || 0,
+          correct: v.correct || 0,
+          accuracy: v.totalResolved > 0 ? Math.round((v.correct || 0) / v.totalResolved * 100) : null,
+        }])),
+      };
+
+      // ── Child Learning Shadows (Dynasty Bets) ──
+      let dynastyShadows = [];
+      try {
+        const csPath = path.join(process.env.HOME, '.adan-pred', 'child_shadows.jsonl');
+        if (fs.existsSync(csPath)) {
+          const lines = fs.readFileSync(csPath, 'utf8').split('\n').filter(Boolean);
+          dynastyShadows = lines.slice(-80).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).reverse();
+        }
+      } catch {}
+
       res.end(JSON.stringify({
         ts: new Date().toISOString(),
         pnl, calib, positions: pos,
         xp: { ...xp, title: levelTitle(xp.level) },
-        children: [...parentIntelEntries, ...childrenWithIntel],
+        children: [...parentIntelEntries, ...childrenWithIntel, ...categoryChildEntries],
         state: {
           ...enrichedState,
           currentBrain: brainManager.currentBrain,
@@ -2991,6 +3520,8 @@ setInterval(stepAdanWorld, 200);
         },
         quota: quota.status(),
         shadowStats: polymerase.getStats(),
+        evolution: evolutionData,
+        dynastyShadows,
         soulRules: soulRulesLite,
         config
       }));
@@ -3186,15 +3717,36 @@ function render(s) {
   const prices = s.prices || {};
 
   // ── HEADER ──
-  console.log('\n' + M + BOLD + '  ╔══════════════════════════════════════════════════════════════════╗');
-  console.log(M + BOLD + '  ║  ▄▄  ██▄  ▄▄  ██▄    ██▄  ██▄  ██▄  ██▄                       ║');
-  console.log(M + BOLD + '  ║  ███ ███ ███  ███▀▄  ███  ███  ███  ███                        ║');
-  console.log(M + BOLD + '  ║  ███▀███ ███  ██▀▀█  ███  ███  ███  ███                        ║');
-  console.log(M + BOLD + '  ║  A D A N - P R E D  v2   ·   Web4 Autonomaton   ·   2026       ║');
-  const bannerEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B (local)' : 'Gemini-2.5-Flash';
-  console.log(M + BOLD + '  ║  Polymarket  ·  Binance  ·  ' + bannerEngine.padEnd(22) + '·  by Lord      ║');
-  console.log(M + BOLD + '  ║  ' + C + BOLD + 'Dashboard: http://localhost:3141' + M + BOLD + '  ·  auto-refresh 5s            ║');
-  console.log(M + BOLD + '  ╚══════════════════════════════════════════════════════════════════╝' + X + '\n');
+  const bannerEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B' : 'Gemini-2.5-Flash';
+  const childCount = (pnl.children || []).length;
+  const qStat = quota.status();
+  const catStat = qStat.categories || {};
+  const totalPreds = Object.values(childLearning.learning || {}).reduce((s, l) => s + (l.totalResolved || 0), 0);
+  const maxGen = Object.values(childLearning.learning || {}).reduce((mx, l) => Math.max(mx, l.dna?.generation || 1), 1);
+
+  console.log('\n' + M + BOLD +
+    '  ╔══════════════════════════════════════════════════════════════════════════╗\n' +
+    '  ║' + X + C + BOLD +
+    '     █████╗ ██████╗  █████╗ ███╗   ██╗      ██╗   ██╗██╗  ██╗    ██████╗  ' + M + BOLD + '║\n' +
+    '  ║' + X + C + BOLD +
+    '    ██╔══██╗██╔══██╗██╔══██╗████╗  ██║      ██║   ██║██║  ██║   ██╔═████╗ ' + M + BOLD + '║\n' +
+    '  ║' + X + C + BOLD +
+    '    ███████║██║  ██║███████║██╔██╗ ██║█████╗██║   ██║███████║   ██║██╔██║ ' + M + BOLD + '║\n' +
+    '  ║' + X + C + BOLD +
+    '    ██╔══██║██║  ██║██╔══██║██║╚██╗██║╚════╝╚██╗ ██╔╝╚════██║   ████╔╝██║ ' + M + BOLD + '║\n' +
+    '  ║' + X + C + BOLD +
+    '    ██║  ██║██████╔╝██║  ██║██║ ╚████║       ╚████╔╝      ██║██╗╚██████╔╝ ' + M + BOLD + '║\n' +
+    '  ║' + X + C + BOLD +
+    '    ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝        ╚═══╝       ╚═╝╚═╝ ╚═════╝  ' + M + BOLD + '║\n' +
+    '  ╠══════════════════════════════════════════════════════════════════════════╣\n' +
+    '  ║' + X + D + '  Dynasty Multi-Market Autonomaton' + X +
+    D + '  ·  ' + X + W + bannerEngine + X +
+    D + '  ·  ' + X + M + 'by Lord' + X + '       ' + M + BOLD + '║\n' +
+    '  ║' + X + D + '  Polymarket · Binance · ' + X +
+    C + BOLD + 'http://localhost:3141' + X +
+    D + '  ·  Gen ' + X + Y + BOLD + maxGen + X +
+    D + '  ·  ' + X + G + childCount + ' children' + X + '   ' + M + BOLD + '║\n' +
+    '  ╚══════════════════════════════════════════════════════════════════════════╝' + X + '\n');
 
   const timeStr = new Date().toLocaleTimeString();
   const scanStatus = s.mode === 'thinking' ? Y + BOLD + '⬤ THINKING' + X
@@ -3203,6 +3755,56 @@ function render(s) {
 
   console.log(TOP(M));
   console.log(row('  ' + BOLD + M + 'ADAN' + X + '  ' + D + timeStr + X + '  ' + scanStatus + nextStr));
+  console.log(sep(M));
+
+  // ── BRAIN ENGINE ──
+  const quotaUsed = qStat.used || 0;
+  const quotaMax = qStat.dailyLimit || 15000;
+  const quotaPct = Math.round(quotaUsed / quotaMax * 100);
+  const qCol = quotaPct < 50 ? G : quotaPct < 80 ? Y : R;
+  const qBar = qCol + '█'.repeat(Math.round(quotaPct / 10)) + D + '░'.repeat(10 - Math.round(quotaPct / 10)) + X;
+
+  console.log(row(
+    '  ' + W + BOLD + 'ENGINE' + X + ' ' + C + bannerEngine + X +
+    '  ' + D + '│' + X + '  ' + W + 'QUOTA' + X + ' ' + qBar + ' ' + qCol + quotaPct + '%' + X +
+    D + ' (' + quotaUsed + '/' + quotaMax + ')' + X
+  ));
+
+  // Category quota mini-bars
+  const catNames = ['crypto', 'politics', 'sports', 'macro', 'events'];
+  const catIcons = { crypto: '🪙', politics: '🏛️', sports: '⚽', macro: '📊', events: '🌐' };
+  let catLine = '  ';
+  for (const cn of catNames) {
+    const cs = catStat[cn];
+    if (!cs) continue;
+    const cPct = cs.limit > 0 ? Math.round(cs.used / cs.limit * 100) : 0;
+    const cCol = cPct < 50 ? G : cPct < 80 ? Y : R;
+    catLine += catIcons[cn] + cCol + (cn.slice(0, 4).toUpperCase()) + X + D + ':' + cs.used + '/' + cs.limit + ' ' + X;
+  }
+  if (Object.keys(catStat).length > 0) {
+    console.log(row(catLine));
+  }
+
+  // Evolution stats
+  const learnEntries = Object.entries(childLearning.learning || {});
+  const aliveCount = learnEntries.filter(([, l]) => l.status !== 'dead').length;
+  const deadCount = learnEntries.filter(([, l]) => l.status === 'dead').length;
+  const bestChild = learnEntries.reduce((best, [id, l]) => {
+    const acc = l.totalResolved > 0 ? l.correct / l.totalResolved : 0;
+    return acc > (best.acc || 0) ? { id, acc, resolved: l.totalResolved } : best;
+  }, { id: '--', acc: 0, resolved: 0 });
+  const bestAcc = bestChild.resolved >= 5 ? (bestChild.acc * 100).toFixed(0) + '%' : '--';
+  const bestCol = bestChild.acc >= 0.55 ? G : bestChild.acc >= 0.40 ? Y : R;
+
+  console.log(row(
+    '  ' + W + BOLD + 'EVOLUTION' + X +
+    D + '  gen:' + X + Y + BOLD + maxGen + X +
+    D + '  preds:' + X + W + totalPreds + X +
+    D + '  alive:' + X + G + aliveCount + X +
+    D + '  dead:' + X + R + deadCount + X +
+    D + '  best:' + X + bestCol + BOLD + (bestChild.id || '--').slice(0, 10) + ' ' + bestAcc + X +
+    D + '(' + bestChild.resolved + ')' + X
+  ));
   console.log(sep(M));
 
   // ── MARKET SENTIMENT ──
@@ -3272,7 +3874,6 @@ function render(s) {
   const nextSkill = skills.find(s => !s.unlocked);
   const roiCol = fund >= 100 ? G : fund >= 80 ? Y : R;
   const sc = TREE_RULES.spawnConditions;
-  const childCount = (pnl.children || []).length;
   const maxChildren = xp.level >= 4 ? TREE_RULES.maxChildrenGen1 : 1;
   const canSpawn = xp.level >= sc.minLvl
     && pnl.trades >= sc.minTrades

@@ -12,6 +12,26 @@ async function polyFetch(endpoint) {
 // Keywords that identify crypto price markets
 const CRYPTO_RE = /bitcoin|ethereum|solana|btc|eth|sol|crypto|above|below|matic|avax|doge|shib|binance|bnb|ada|dot|link|uni|atom|near/i;
 
+// ── Multi-Category Classification (ADAN v4.0) ──────────────────────────────
+const CATEGORY_PATTERNS = {
+  crypto:   /bitcoin|ethereum|solana|\bbtc\b|\beth\b|\bsol\b|\bbnb\b|crypto|doge|shib|\babove\b|\bbelow\b/i,
+  politics: /president|election|trump|biden|congress|senate|governor|democrat|republican|vote|poll|tariff|impeach|supreme court/i,
+  sports:   /\bnfl\b|\bnba\b|\bmlb\b|\bnhl\b|soccer|football|tennis|\bmma\b|\bufc\b|boxing|championship|playoffs|super bowl|world cup/i,
+  macro:    /fed|interest rate|cpi|inflation|gdp|unemployment|fomc|powell|recession|jobs report/i,
+  events:   /launch|spacex|oscar|grammy|iphone|weather|hurricane|earthquake|netflix|earnings|ipo/i,
+};
+
+function classifyMarket(title) {
+  const text = (title || '').toLowerCase();
+  // Check non-crypto categories FIRST (they're more specific)
+  // Then crypto as fallback (since crypto patterns are very broad)
+  const priorityOrder = ['politics', 'sports', 'macro', 'events', 'crypto'];
+  for (const cat of priorityOrder) {
+    if (CATEGORY_PATTERNS[cat].test(text)) return cat;
+  }
+  return 'events'; // default bucket for unclassified
+}
+
 async function fetchPolymarkets(strat) {
   const hoursMax = strat.maxHoursToClose || 168;
   const nowMs = Date.now();
@@ -51,6 +71,24 @@ async function fetchPolymarkets(strat) {
       seen.add(m.id);
       const endMs = m.endDate ? new Date(m.endDate).getTime() : 0;
       if (endMs <= nowMs || endMs > maxMs) continue;
+      all.push(m);
+    }
+  }));
+
+  // ── Priority 3 (v4.0): ALL categories — politics, sports, macro, events ──
+  // Fetch high-volume markets WITHOUT crypto filter, classify each
+  await Promise.all([0, 100].map(async offset => {
+    const data = await polyFetch(`/markets?limit=100&active=true&closed=false&order=volumeNum&ascending=false&offset=${offset}`);
+    const list = Array.isArray(data) ? data : (data?.markets || []);
+    for (const m of list) {
+      if (seen.has(m.id)) continue;
+      const title = (m.question || m.title || '');
+      const cat = classifyMarket(title);
+      if (cat === 'crypto') continue; // Already covered by Priority 1+2
+      seen.add(m.id);
+      m._category = cat;
+      const endMs = m.endDate ? new Date(m.endDate).getTime() : 0;
+      if (endMs <= nowMs) continue; // no maxMs filter — these can be long-horizon
       all.push(m);
     }
   }));
@@ -229,10 +267,25 @@ function normalizePolymarket(raw, prices = {}) {
     roughEdge = yesPrice > 0.5 ? yesPrice - 0.5 : 0.5 - yesPrice;
   }
 
-  return { id, title, yesPrice, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false };
+  const _category = raw._category || classifyMarket(title);
+  return { id, title, yesPrice, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false, _category };
+}
+
+// ── Check market resolution via Polymarket API (for long-horizon non-crypto) ──
+async function checkMarketResolution(marketId) {
+  try {
+    const data = await polyFetch(`/markets/${marketId}`);
+    if (!data) return null;
+    return {
+      resolved: !!data.resolved,
+      resolution: data.resolution || null,      // 'YES' | 'NO' | null
+      resolvedAt: data.resolvedAt || null,
+      closed: !!data.closed,
+    };
+  } catch { return null; }
 }
 
 export {
   polyFetch, fetchPolymarkets, applyParticleFilter, normalizePolymarket,
-  expit, logit
+  expit, logit, classifyMarket, checkMarketResolution, CATEGORY_PATTERNS
 };

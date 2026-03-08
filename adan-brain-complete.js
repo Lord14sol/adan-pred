@@ -1191,6 +1191,122 @@ function computeKelly({ winRate, edge, fund }) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// SECTION 12b — CATEGORY BRAIN CYCLE (v4.0)
+// For non-crypto markets (politics, sports, macro, events)
+// Simplified pipeline: CONTEXT_GATHERER → LLM_ANALYST → EVA
+// ─────────────────────────────────────────────────────────────
+
+function buildCategoryPrompt({ brainName, market, category, contextData, soulRules }) {
+    const categoryDescriptions = {
+        politics: 'Political events, elections, policy decisions. Consider polling data, political sentiment, historical precedents.',
+        sports: 'Sports outcomes, championships, game results. Consider team stats, injuries, historical performance, betting odds.',
+        macro: 'Macroeconomic indicators, central bank decisions. Consider economic data trends, expert forecasts, market expectations.',
+        events: 'Tech launches, entertainment, weather events. Consider company track records, expert predictions, historical patterns.',
+    };
+
+    const systemPrompt = `You are ADAN's ${category.toUpperCase()} analyst brain.
+You analyze prediction markets for ${category} events using external data and context.
+
+${categoryDescriptions[category] || 'General event analysis.'}
+
+━━━ RULES ━━━
+- Estimate probability based on evidence, not gut feeling
+- Compare your estimate vs market price to find edge
+- Be conservative — only recommend when you see clear mispricing
+- Output: BET YES / BET NO / SKIP
+
+${soulRules ? `━━━ SOUL RULES ━━━\n${soulRules}` : ''}`;
+
+    const userPrompt = `MARKET: "${market.title}"
+Category: ${category.toUpperCase()}
+Current YES price: ${(market.yesPrice * 100).toFixed(1)}%
+Liquidity: $${market.liquidity?.toFixed(0) || '?'}
+Closes: ${market.closesAt || 'unknown'}
+
+━━━ EXTERNAL CONTEXT ━━━
+${contextData}
+
+Analyze this market. Apply evidence-based reasoning.
+Output: BET YES / BET NO / SKIP
+Required: probability_estimate, market_price, edge_pct, confidence_pct, primary_reason`;
+
+    return { systemPrompt, userPrompt };
+}
+
+async function runCategoryBrainCycle({
+    market,
+    category,
+    contextData,
+    currentFund,
+    currentWinRate,
+    totalTrades,
+    brainManager,
+    brainStats,
+    onStatus,
+}) {
+    const brainName = 'APEX'; // Use APEX (meta-adapter) for category markets
+
+    if (onStatus) onStatus(`🧠 [${category.toUpperCase()}] Analyzing "${market.title.slice(0, 40)}..."`);
+
+    const soulRules = soulManager.getRelevantRules({ asset: category, timeframe: 'daily' });
+    const { systemPrompt, userPrompt } = buildCategoryPrompt({
+        brainName,
+        market,
+        category,
+        contextData,
+        soulRules,
+    });
+
+    // ── LLM Decision ──
+    let thought;
+    try {
+        thought = await routeLLM({
+            weight: 'Light',
+            systemPrompt,
+            userPrompt,
+            reason: `category-brain-${category}`
+        });
+    } catch (e) {
+        console.error(`[CATEGORY BRAIN] LLM error: ${e.message}`);
+        return { action: 'SKIP', reason: 'LLM error' };
+    }
+
+    // Parse decision
+    const decision = parseAIResponse(thought);
+    if (!decision || decision.action === 'SKIP' || decision.action === 'WAITING') {
+        return { action: 'SKIP', reason: decision?.reason || 'LLM said SKIP', thought };
+    }
+
+    // EVA validation (simplified for category)
+    const evaResult = EVA.validate({
+        brainName,
+        proposedStake: Math.round(currentFund * 0.02), // Conservative 2% for category
+        fund: currentFund,
+        winRate: currentWinRate,
+        trades: totalTrades,
+        brainStats: brainStats || {},
+        volatility: 0.01,
+    });
+
+    if (!evaResult.approved) {
+        return { action: 'SKIP', reason: `EVA denied: ${evaResult.reasons.join(', ')}`, thought };
+    }
+
+    return {
+        action: decision.action,
+        side: decision.action === 'BET YES' ? 'YES' : 'NO',
+        stake: evaResult.reducedStake,
+        confidence: decision.confidence || 60,
+        edge: decision.edge || 0,
+        probability: decision.probability || 50,
+        brain: brainName,
+        category,
+        market: market.title,
+        thought,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────
 // SECTION 13 — EXPORTS
 // ─────────────────────────────────────────────────────────────
 
@@ -1204,7 +1320,9 @@ export {
     EVA,
     // Orchestration
     runBrainCycle,
+    runCategoryBrainCycle,
     buildPrompt,
+    buildCategoryPrompt,
     computeFinalStake,
     selectBrain,
     normalizeSnapshot,

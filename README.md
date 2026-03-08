@@ -1,70 +1,125 @@
-# ADAN-PRED: Autonomous Decision Agent Node (v3.0.0)
+# ADAN-PRED v5.2: Autonomous Quantitative Agentic Firm
 ---
 
 ## Executive Summary
-ADAN-PRED is a non-deterministic, Darwinian autonomous hedge fund architecture designed for real-time operation on prediction markets, specifically the Polymarket ecosystem. It utilizes a multi-layered intelligence pipeline to scan global narratives, order book micro-structures, and institutional positioning to identify and execute trades with a positive expected value (EV).
+ADAN-PRED is a non-deterministic, Darwinian autonomous hedge fund architecture designed for real-time operation on prediction markets (Polymarket). It utilizes a multi-layered intelligence pipeline combining Binance technical analysis, genetic child swarm evolution, and LLM reasoning to identify and execute trades with positive expected value.
 
-The system is engineered to systematically extract yield by targeting a statistical win rate exceeding the 52% threshold, utilizing calibrated Bayesian inference and a dynamic Eight-Brain Transition System.
+**Current Stats (paper trading):** 647 trades | 50.5% WR | +$1,276 net P&L | 12 children across 4 assets
 
-## Architectural Framework: The Mother Code v2.0
-ADAN-PRED evaluates market conditions through an integrated data pipeline, processed by specialized neural personas. The transition between these personas is managed by the `BrainTransitionManager`, which swaps the active persona every five-minute cycle based on specific market regime detections.
+## v5 Architecture: Children-First Trading
 
-### Core Intelligence Layers
-*   **APPLE (Contextual Synthesis):** Aggregates decentralized news feeds and market sentiment metadata. It provides the system with a macroeconomic and narrative-driven "priors" before any technical execution occurs.
-*   **SNAKE (Micro-Structure Execution):** Processes high-frequency price data to extract order book imbalances, volume acceleration, and VWAP deviations.
-*   **ATLAS (Liquidity Oracle):** Monitors real-time liquidation levels and institutional limit order placement across decentralized perpetual protocols to identify potential manipulation zones.
-*   **EVA (Risk Mitigation Gate):** Serves as the final safety protocol. It has the unilateral authority to veto any execution if capital preservation thresholds are breached or if historical Brier Scores indicate performance degradation.
+### The Core Insight
+Children predict with 65-82% accuracy but the LLM brain (Gemini) was blocking trades saying SKIP. v5 inverts the hierarchy: **children drive trades directly, brain becomes fallback.**
 
-### The Specialized Persona Matrix
-The system dynamically routes decision-making through specialized brains, each optimized for specific market environments:
-*   **VIRUS (Systemic Panic):** Optimized for high-volatility, low-sentiment environments. Biased towards "NO" outcomes to exploit irrational market fear.
-*   **SENTINEL (Market Integrity):** Focuses on detecting micro-structure traps and order book manipulation via SNAKE execution metrics.
-*   **GHOST (Capital Preservation):** Active during low-volatility/low-volume regimes. Deploys extremely high confidence thresholds, defaulting to "SKIP" to prevent capital erosion during "chop."
-*   **MECHA (Momentum Capture):** Activated during high-volume trend events. Designed to ride established momentum and squeeze trades.
-*   **PLASMA (Compression Breakout):** Deployed during Bollinger Band compression phases to anticipate breakouts using ATLAS liquidity data.
-*   **KNIGHT (Institutional Session):** Specifically active during London and New York market hours, focusing on VWAP-centric institutional flow.
-*   **CYBER (Expansionary Greed):** Optimized for euphoric bull market environments, maximizing exposure during high-sentiment momentum.
-*   **DEFAULT (Steady State):** Balanced logical analyst for standard market conditions.
+### Child-Direct-Trade Pipeline
+```
+Binance Data → 12 Children (evolved DNA) → Signal + Accuracy Check
+  ├── acc ≥ 60% AND mispricing > 3% → TRADE DIRECTLY (bypass brain)
+  ├── acc < 25% AND 100+ preds → CONTRARIAN FLIP (invert signal)
+  └── no qualifying child → Gemini brain fallback
+```
 
-## The Dynasty Effect: Genetic Swarm Intelligence
-ADAN-PRED operates as the root of an evolutionary lineage, spawning specialized sub-agents to enhance the main node's decision matrix.
+### Accuracy-Based Stake Sizing
+- 60% accuracy → $100 (base)
+- 70% accuracy → $150
+- 80% accuracy → $200
+- Formula: `stake = Math.min(300, 100 + Math.round((acc - 60) * 5 / 25) * 25)`
 
-### The Forge (Child Evolution)
-Sub-agents such as HERMES (BTC emphasis) and ATHENA (ETH emphasis) serve as specialized scouts. These agents track their own individual performance and genetic markers including patience, aggressiveness, and cognitive bias multipliers.
+### Contrarian Flip (v5.1)
+Children with 100+ predictions and <25% accuracy consistently predict the WRONG direction. Instead of killing them, ADAN **inverts their signal** — a 0% accuracy child flipped becomes ~100% accuracy. Pure information theory.
 
-### Tournament of Death and Crossover
-The system employs a rigorous pruning process. Every 20 trades, child agents in the bottom percentile of Brier Score calibration are terminated. Surviving high-performance agents are permitted to undergo genetic crossover, creating Gen-3 elite offspring that inherit trauma-based heuristic rules from their parents' SOUL.md logs.
+### DNA Crossover (v5.0)
+When a child dies, it's reborn with DNA crossed over from the **top 2 living children** by accuracy. For each DNA parameter: 50% chance from parent 1, 50% from parent 2, then 15% mutation applied.
 
-### Recursive Shadow Learning (Polymerase Gates)
-The Polymerase system simulates executions for trades that were blocked by risk gates. By tracking these "Ghost Trades," the system learns which gates were too restrictive (blocking winning trades) and which were effective (preventing losses), allowing for real-time adaptive threshold adjustment.
+## The Dynasty: Genetic Swarm Intelligence
+
+### 12 Quant Children (Rule-Based)
+Each child specializes in one asset + timeframe using evolved DNA thresholds:
+- **BTC**: 5min, 15min, 1hr
+- **ETH**: 5min, 15min, 1hr
+- **SOL**: 5min, 15min, 1hr
+- **BNB**: 5min, 15min, 1hr
+
+DNA parameters evolve via natural selection: `rsiOversold`, `rsiOverbought`, `macdWeight`, `trendMinPct`, `volSpikeThreshold`, `minConfidence`, `patience`.
+
+### 4 LLM Category Children
+- **politics-daily**: Political prediction markets
+- **sports-daily**: Sports outcomes
+- **macro-weekly**: Macroeconomic events
+- **events-daily**: Global events
+
+### Evolution Cycle
+1. Children predict → outcomes tracked by `child_learning.js`
+2. Every N predictions → worst child replaced via crossover of top 2
+3. DNA mutates 15% on rebirth → escapes local minima
+4. Tournament of Death at trade 20 → bottom 50% culled
+
+## Intelligence Layers
+
+### Technical Analysis (Binance)
+7 features fed to children (fixed in v5.2 — previously only RSI was active):
+- **RSI** (1m, 5m, 1h)
+- **MACD** histogram
+- **Bollinger Bands** %B position
+- **VWAP** deviation
+- **Volume** ratio + acceleration
+- **Trend** strength (1m, 5m, 15m, 1h)
+- **Order Book** imbalance + wall detection
+
+### Brain Personas (Gemini/Gemma-3-27B)
+8 specialized personas activated by market regime:
+- **VIRUS**: Systemic panic / extreme fear
+- **SENTINEL**: Micro-structure trap detection
+- **GHOST**: Capital preservation (low-vol chop)
+- **MECHA**: Momentum capture
+- **PLASMA**: Bollinger compression breakout
+- **KNIGHT**: Institutional session (London/NY hours)
+- **CYBER**: Euphoric bull markets
+- **DEFAULT**: Standard conditions
+
+### Risk Gates
+- **Kelly Criterion** stake sizing (brain trades)
+- **Polymerase Gates**: RECOVERY_POTENTIAL active (57% accuracy, +$2,558 saved). CLOSE_WINDOW and EXIT_PATH disabled for training (were net negative).
+- **Capital Lockup**: Max 90% treasury utilization
+- **EV Gate**: Minimum -10% EV threshold (training mode)
+- **LMSR**: Fair value estimation with logit components
 
 ## Quantitative Infrastructure
-Version 3.0 introduces a math-first logic layer to enforce strict risk parameters and penalize large-language model (LLM) hallucinations.
-*   **Bayesian Uncertainty Penalty:** LLM confidence is weighted against historical regime accuracy. Low-confidence outputs trigger a capital allocation reduction to 1/8th of the standard Kelly stake.
-*   **Shannon Entropy Regulation:** Measures the genetic diversity of the sub-agent swarm to prevent algorithmic groupthink or "monoculture" bias.
-*   **Brier Score Calibration:** All internal probability estimations are strictly measured against actual market outcomes, ensuring institutional-grade forecasting accuracy.
+- **Brier Score Calibration**: 0.316 (tracks prediction accuracy)
+- **Feature Importance**: Point-Biserial ranking of which indicators predict wins
+- **Metacalibration**: Per-confidence-bucket accuracy tracking
+- **Particle Filter**: Smooths market prices, tracks true underlying probability
+- **Copula Risk**: Portfolio-level correlation analysis
+- **Greeks Timing**: Delta/theta-inspired exit urgency
+
+## Dashboard
+Real-time telemetry at `http://localhost:3141`:
+- Live prices with sparklines (BTC, ETH, SOL, BNB)
+- Dynasty Tree with DNA, signals, accuracy per child
+- Conway Colony: Game of Life visualization of ecosystem
+- Open positions with edge, countdown, P&L
+- Hour heatmap (best/worst trading hours UTC)
+- Trade history with shadow/ghost bets
+- Training metrics: Brier trend, LMSR stats, certification score
+
+## Setup
+```bash
+# Requirements: Node.js v18+, Gemini API key
+npm install
+echo "GEMINI_API_KEY=your_key" > .env
+node adan-pred.js
+```
+
+## Key Files
+| File | Purpose |
+|------|---------|
+| `adan-pred.js` | Main engine: scanning, trading, child management |
+| `src/core/genetics.js` | DNA crossover, mutation, Tournament of Death |
+| `src/core/child_learning.js` | Accuracy tracking, evolution engine |
+| `src/core/polymerase.js` | Risk gates (shadow trade learning) |
+| `src/core/config.js` | Paths, PnL, positions management |
+| `src/api/polymarket.js` | Polymarket API integration |
+| `src/ui/dashboard.js` | HTTP dashboard + Conway Colony |
 
 ---
-
-## Deployment and Dashboard
-The system operates as a Node.js process with a real-time HTTP telemetry interface.
-
-**Access Internal Telemetry:** `http://localhost:3141`
-
-*   **Interactive Force-Directed Graph:** Visualization of the active agents, brains, and their physical communication nodes.
-*   **Dynamic Avatar Morphing:** The dashboard CSS evolves in real-time based on the active brain persona.
-*   **Brain Log:** A real-time audit stream of the system's internal probabilistic justifications and gate-blocks.
-
-### Technical Requirements
-*   Node.js v18.0.0 or higher
-*   Google AI Studio API Key (Gemini/Gemma integration)
-*   Standard Unix-based environment (OSX/Linux)
-
-### Installation Sequence
-1. Clone the core repository.
-2. Initialize dependencies using `npm install`.
-3. Configure the `.env` file with your `GEMINI_API_KEY` and set `ADAN_MODE` to `TRAINING` for initial calibration.
-4. Execute the system using `node adan-pred.js`.
-
----
-*This repository and its contents are intended for autonomous intelligence research and quantitative experimentation. Perform due diligence before live market deployment.*
+*Autonomous intelligence research. Paper trading mode. Not financial advice.*

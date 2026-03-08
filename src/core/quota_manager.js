@@ -13,7 +13,15 @@ const DEFAULTS = {
     gemini: { used: 0, limit: 18 },   // 20 RPD - reservamos 2 para emergencias
     embed: { used: 0, limit: 950 },  // 1000 RPD - margen de 50
     rpm: { gemma: 0, lastMinute: 0 }, // control por minuto (30 RPM de Gemma)
-    lastDream: null
+    lastDream: null,
+    // v4.0: Per-category LLM budget tracking
+    categories: {
+        crypto:   { used: 0, limit: 10000 },
+        politics: { used: 0, limit: 1500 },
+        sports:   { used: 0, limit: 1500 },
+        macro:    { used: 0, limit: 500 },
+        events:   { used: 0, limit: 1500 },
+    }
 };
 
 export class QuotaManager {
@@ -32,7 +40,7 @@ export class QuotaManager {
                 const raw = JSON.parse(fs.readFileSync(QUOTA_FILE, 'utf8'));
                 if (raw.date !== this._today()) {
                     // Reset diario — nueva fecha, nuevas cuotas
-                    this.q = { ...DEFAULTS, date: this._today(), lastDream: raw.lastDream || null };
+                    this.q = { ...JSON.parse(JSON.stringify(DEFAULTS)), date: this._today(), lastDream: raw.lastDream || null };
                 } else {
                     this.q = raw;
                 }
@@ -99,6 +107,33 @@ export class QuotaManager {
         return this.q.embed.used;
     }
 
+    // ── CATEGORY BUDGET (v4.0) ────────────────────────────────────────────────
+    canUseCategory(category) {
+        if (!this.q.categories) this.q.categories = { ...DEFAULTS.categories };
+        const cat = this.q.categories[category];
+        if (!cat) return true; // unknown category = no limit
+        return cat.used < cat.limit;
+    }
+
+    consumeCategory(category) {
+        if (!this.q.categories) this.q.categories = { ...DEFAULTS.categories };
+        if (!this.q.categories[category]) {
+            this.q.categories[category] = { used: 0, limit: 1500 };
+        }
+        this.q.categories[category].used++;
+        this._save();
+        return this.q.categories[category].used;
+    }
+
+    categoryStatus() {
+        if (!this.q.categories) return {};
+        const result = {};
+        for (const [cat, data] of Object.entries(this.q.categories)) {
+            result[cat] = { used: data.used || 0, limit: data.limit || 0, str: `${data.used}/${data.limit}` };
+        }
+        return result;
+    }
+
     // ── DREAM MODE ───────────────────────────────────────────────────────────
     shouldRunDream() {
         if (!this.q.lastDream) return true;
@@ -131,7 +166,8 @@ export class QuotaManager {
             gemini: `${this.q.gemini.used}/${this.q.gemini.limit} RPD ${this.isSaverMode() ? '⚠️ SAVER MODE' : '✅'}`,
             embed: `${this.q.embed.used}/${this.q.embed.limit} RPD`,
             lastDream: this.q.lastDream,
-            dreamReady: this.shouldRunDream()
+            dreamReady: this.shouldRunDream(),
+            categories: this.categoryStatus()
         };
     }
 }

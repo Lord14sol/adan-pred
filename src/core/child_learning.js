@@ -11,11 +11,12 @@ const LEARNING_PATH = path.join(DIR, 'child_learning.json');
 const SHADOWS_PATH = path.join(DIR, 'child_shadows.jsonl');
 
 const MAX_CHILDREN_PER_PARENT = 3;
-const MIN_PREDICTIONS_FOR_WEIGHT = 10;   // Need 10+ resolved to start weighting
-const MIN_PREDICTIONS_FOR_EVOLUTION = 100; // Need 100+ resolved to trigger evolution
-const EVOLUTION_INTERVAL = 200;           // Evolve every 200 resolved predictions (global)
-const MUTATION_RATE = 0.10;               // ±10% random noise on mutation
-const DIVERSITY_THRESHOLD = 0.90;         // If DNA similarity > 90%, force stronger mutation
+const MIN_PREDICTIONS_FOR_WEIGHT = 3;    // TRAINING: 3 preds to start weighting
+const MIN_PREDICTIONS_FOR_EVOLUTION = 15; // TRAINING: evolve sooner
+const EVOLUTION_INTERVAL = 5;             // TRAINING: evolve every 5 resolved — hyperspeed
+const MUTATION_RATE = 0.15;               // TRAINING: 15% mutation — explore more DNA space
+const DIVERSITY_THRESHOLD = 0.80;         // TRAINING: force diversity earlier
+const MIN_PARENT_ACCURACY = 50;           // v4.1: Parents must have >=50% accuracy to reproduce
 
 // ═══ DEFAULT DNA — the tunable parameters each child can evolve ═══
 const DEFAULT_DNA = {
@@ -40,6 +41,24 @@ const DNA_BOUNDS = {
     minConfidence: { min: 40, max: 80 },
 };
 
+// ═══ v4.0: LLM-TRACK DNA — Strategy parameters for non-crypto children ═══
+const LLM_DNA_DEFAULTS = {
+    confidenceFloor: 50,
+    edgeThresholdPct: 3,
+    newsRecencyHours: 24,
+    maxMarketsPerCycle: 5,
+    skipIfLiquidityBelow: 500,
+    generation: 1,
+};
+
+const LLM_DNA_BOUNDS = {
+    confidenceFloor: { min: 40, max: 75 },
+    edgeThresholdPct: { min: 3, max: 25 },
+    newsRecencyHours: { min: 1, max: 72 },
+    maxMarketsPerCycle: { min: 1, max: 8 },
+    skipIfLiquidityBelow: { min: 100, max: 10000 },
+};
+
 class ChildLearningEngine {
     constructor() {
         this.learning = {};   // { childId: { predictions, correct, wrong, accuracy, perSignal, dna, ... } }
@@ -55,27 +74,27 @@ class ChildLearningEngine {
      * Record a child's prediction as a shadow bet
      * Called from runChildScanner() whenever a child emits a non-NEUTRAL signal
      */
-    recordPrediction(childId, { direction, confidence, asset, marketId, marketCloseTime, reasons, regime = 'UNKNOWN' }) {
-        // Save entryPrice at prediction time for accurate resolution
-        const sym = this._assetToSymbol(asset);
+    recordPrediction(childId, { direction, confidence, asset, marketId, marketCloseTime, reasons, regime = 'UNKNOWN', track = 'quant', category = 'crypto', entryPrice = null }) {
         const shadow = {
             childId,
-            direction,       // 'UP' or 'DOWN'
+            direction,       // 'UP' or 'DOWN' (or 'YES'/'NO' for LLM track)
             confidence,
             asset,
             marketId: marketId || `${asset}_${Date.now()}`,
             marketCloseTime: marketCloseTime || new Date(Date.now() + 5 * 60000).toISOString(),
             reasons: reasons || [],
             regime,         // TRENDING, VOLATILE, MEAN_REVERTING
+            track,          // 'quant' or 'llm'
+            category,       // 'crypto', 'politics', 'sports', 'macro', 'events'
             ts: new Date().toISOString(),
-            entryPrice: null, // Set externally or from prices
+            entryPrice,     // Must be set at record time for accurate resolution
             resolved: false,
             correct: null,
         };
 
         this.shadows.push(shadow);
 
-        // Persist shadow
+        // Persist shadow (with entryPrice already set)
         try {
             fs.appendFileSync(SHADOWS_PATH, JSON.stringify(shadow) + '\n');
         } catch (e) { /* skip */ }
@@ -87,28 +106,59 @@ class ChildLearningEngine {
      * Check if any shadow predictions can be resolved
      * Called from the main checkResolutions() cycle
      */
-    checkResolutions(prices) {
+    /**
+     * Check resolutions — dual-track logic:
+     * - Track 'quant': resolve by Binance price movement (existing)
+     * - Track 'llm': resolve by Polymarket API polling (checkMarketResolution callback)
+     * @param {object} prices - Binance price data
+     * @param {function} [checkMarketResolutionFn] - async fn(marketId) → { resolved, resolution }
+     */
+    async checkResolutions(prices, checkMarketResolutionFn = null) {
         const now = Date.now();
         let resolved = 0;
 
         for (const s of this.shadows) {
             if (s.resolved) continue;
+
+            // ── LLM track: resolve via Polymarket API polling ──
+            if (s.track === 'llm') {
+                if (!checkMarketResolutionFn) continue;
+                try {
+                    const result = await checkMarketResolutionFn(s.marketId);
+                    if (!result || !result.resolved) continue;
+
+                    const actualDirection = result.resolution === 'YES' ? 'YES' : 'NO';
+                    const predicted = s.direction === 'UP' ? 'YES' : s.direction === 'DOWN' ? 'NO' : s.direction;
+                    const correct = (predicted === actualDirection);
+
+                    s.resolved = true;
+                    s.correct = correct;
+                    s.resolvedAt = new Date().toISOString();
+                    s.actualDirection = actualDirection;
+
+                    this._updateChildStats(s);
+                    resolved++;
+
+                    const icon = correct ? '✅' : '❌';
+                    console.log(`[CHILD LEARNING][LLM] ${icon} ${s.childId}: predicted ${predicted}, resolved ${actualDirection} | ${correct ? 'CORRECT' : 'WRONG'}`);
+                } catch (e) { /* skip */ }
+                continue;
+            }
+
+            // ── Quant track: resolve by price movement (existing logic) ──
             const closeTime = new Date(s.marketCloseTime).getTime();
             if (closeTime > now) continue; // Not closed yet
 
             try {
-                // Determine actual outcome from price movement
                 const sym = this._assetToSymbol(s.asset);
                 const currentPrice = prices?.[sym]?.price;
                 if (!currentPrice) continue;
 
-                // Compare against entry price saved at prediction time
                 let actualDirection;
                 if (s.entryPrice && s.entryPrice > 0) {
                     const pctChange = (currentPrice - s.entryPrice) / s.entryPrice;
                     actualDirection = pctChange > 0.001 ? 'UP' : pctChange < -0.001 ? 'DOWN' : 'NEUTRAL';
                 } else {
-                    // Fallback: use 5m trend if no entryPrice saved
                     const priceData = prices[sym];
                     actualDirection = priceData && priceData.trend5m > 0.05 ? 'UP' :
                         priceData && priceData.trend5m < -0.05 ? 'DOWN' : 'NEUTRAL';
@@ -121,7 +171,6 @@ class ChildLearningEngine {
                 s.resolvedAt = new Date().toISOString();
                 s.actualDirection = actualDirection;
 
-                // Update learning stats
                 this._updateChildStats(s);
                 resolved++;
 
@@ -135,7 +184,7 @@ class ChildLearningEngine {
             this._save();
             this._printReport();
 
-            // Check if evolution should trigger
+            // Check if evolution should trigger — DUAL POOL
             if (this.globalResolved - this.lastEvolution >= EVOLUTION_INTERVAL) {
                 this._evolve();
                 this.lastEvolution = this.globalResolved;
@@ -161,7 +210,8 @@ class ChildLearningEngine {
      * Get stats for a specific child
      */
     getChildStats(childId) {
-        return this.learning[childId] || this._initChild(childId);
+        const id = childId?.toLowerCase() || childId;
+        return this.learning[id] || this.learning[childId] || this._initChild(id);
     }
 
     /**
@@ -267,63 +317,117 @@ class ChildLearningEngine {
     /**
      * Get DNA for a child (for use in childSignal function to use evolved thresholds)
      */
-    getChildDNA(childId) {
+    getChildDNA(childId, track = 'quant') {
         const stats = this.getChildStats(childId);
+        if (track === 'llm') {
+            return stats.dna || { ...LLM_DNA_DEFAULTS };
+        }
         return stats.dna || { ...DEFAULT_DNA };
+    }
+
+    /**
+     * Initialize a child with LLM track defaults
+     */
+    initLLMChild(childId) {
+        if (!this.learning[childId]) {
+            this.learning[childId] = {
+                ...this._initChild(childId),
+                dna: { ...LLM_DNA_DEFAULTS },
+                track: 'llm',
+            };
+            this._save();
+        }
+        return this.learning[childId];
     }
 
     // ═══ PHASE 2: EVOLUTIONARY ENGINE ═══
 
     _evolve() {
+        // ── DUAL-POOL EVOLUTION: Crypto (quant) and LLM pools NEVER cross ──
+        this._evolvePool('quant', DNA_BOUNDS, DEFAULT_DNA);
+        this._evolvePool('llm', LLM_DNA_BOUNDS, LLM_DNA_DEFAULTS);
+    }
+
+    _evolvePool(trackName, bounds, defaults) {
         const children = Object.entries(this.learning)
-            .filter(([, stats]) => stats.totalResolved >= 20) // Only evolve children with enough data
+            .filter(([, stats]) => {
+                const childTrack = stats.track || 'quant';
+                return childTrack === trackName && stats.totalResolved >= 5;
+            })
             .sort((a, b) => b[1].accuracy - a[1].accuracy);
 
-        if (children.length < 3) {
-            console.log('[EVOLUTION] ⏳ Not enough children with data to evolve. Waiting...');
+        if (children.length < 1) return; // Need at least 1 child
+
+        console.log(`\n[EVOLUTION][${trackName.toUpperCase()}] 🧬 ═══ EVOLUTIONARY CYCLE ═══`);
+
+        // v4.1: Filter parents by MIN_PARENT_ACCURACY — stop bad genes from reproducing
+        const qualifiedParents = children.filter(([, stats]) => stats.accuracy >= MIN_PARENT_ACCURACY);
+        const [worstId, worstStats] = children[children.length - 1];
+
+        console.log(`[EVOLUTION][${trackName.toUpperCase()}] 🔬 Qualified parents (>=${MIN_PARENT_ACCURACY}% acc): ${qualifiedParents.length}/${children.length}`);
+        console.log(`[EVOLUTION][${trackName.toUpperCase()}] 💀 Worst: ${worstId} (${worstStats.accuracy}%) → CULLING`);
+
+        if (qualifiedParents.length === 0) {
+            console.log(`[EVOLUTION][${trackName.toUpperCase()}] ⛔ No parents qualify (all <${MIN_PARENT_ACCURACY}% accuracy) — skipping evolution, culling worst`);
+            // Still cull the worst child — rebirth with fresh defaults
+            this.learning[worstId] = {
+                ...this._initChild(worstId),
+                dna: { ...defaults, generation: (worstStats.dna?.generation || 1) + 1 },
+                track: trackName,
+                evolvedFrom: ['fresh_reset'],
+                evolvedAt: new Date().toISOString(),
+            };
             return;
         }
 
-        console.log('\n[EVOLUTION] 🧬 ═══ EVOLUTIONARY CYCLE TRIGGERED ═══');
+        let best1Id, best1Stats, best2Id, best2Stats;
 
-        // Top 2 performers
-        const [best1Id, best1Stats] = children[0];
-        const [best2Id, best2Stats] = children[1];
+        if (qualifiedParents.length === 1) {
+            // Self-crossover with 2x mutation
+            [best1Id, best1Stats] = qualifiedParents[0];
+            best2Id = best1Id;
+            best2Stats = best1Stats;
+            console.log(`[EVOLUTION][${trackName.toUpperCase()}] 🏆 Solo parent: ${best1Id} (${best1Stats.accuracy}%) — self-crossover with 2x mutation`);
+        } else {
+            [best1Id, best1Stats] = qualifiedParents[0];
+            [best2Id, best2Stats] = qualifiedParents[1];
+            console.log(`[EVOLUTION][${trackName.toUpperCase()}] 🏆 Best: ${best1Id} (${best1Stats.accuracy}%) + ${best2Id} (${best2Stats.accuracy}%)`);
+        }
 
-        // Bottom performer
-        const [worstId, worstStats] = children[children.length - 1];
+        const entropy = this._calculateShannonEntropy(children.map(c => c[1].dna), bounds);
+        console.log(`[EVOLUTION][${trackName.toUpperCase()}] 🧬 Gene Pool Entropy: H = ${entropy.toFixed(3)}`);
 
-        console.log(`[EVOLUTION] 🏆 Best: ${best1Id} (${best1Stats.accuracy}%) + ${best2Id} (${best2Stats.accuracy}%)`);
-        console.log(`[EVOLUTION] 💀 Worst: ${worstId} (${worstStats.accuracy}%) → CULLING`);
+        const effectiveMutationRate = qualifiedParents.length === 1 ? MUTATION_RATE * 2 : MUTATION_RATE;
 
-        // ── SHANNON ENTROPY: Diversity Penalty ──
-        // H = -Σ p_i * log(p_i). We calculate the entropy of the parameter distributions.
-        const entropy = this._calculateShannonEntropy(children.map(c => c[1].dna));
-        console.log(`[EVOLUTION] 🧬 Gene Pool Entropy: H = ${entropy.toFixed(3)}`);
+        // Crossover using pool-specific bounds
+        let newDNA = {};
+        for (const key of Object.keys(bounds)) {
+            newDNA[key] = Math.random() < 0.5
+                ? (best1Stats.dna?.[key] ?? defaults[key])
+                : (best2Stats.dna?.[key] ?? defaults[key]);
+        }
 
-        // Crossover: combine best parameters from top 2
-        let newDNA = this._crossover(best1Stats.dna, best2Stats.dna);
-
-        // Mutation: add random noise
-        let mutatedDNA = this._mutate(newDNA);
+        // Mutation
+        let mutatedDNA = {};
+        for (const key of Object.keys(bounds)) {
+            mutatedDNA[key] = this._mutateParam(newDNA[key] ?? defaults[key], key, effectiveMutationRate, bounds);
+        }
 
         // Diversity enforcement
         if (entropy < 0.5) {
-            console.log(`[EVOLUTION] 🚨 CRITICAL: Monoculture detected (H < 0.5). Forcing extreme mutation penalty!`);
-            // Force 3x mutation rate when entropy is dangerously low
-            Object.keys(DNA_BOUNDS).forEach(key => {
-                mutatedDNA[key] = this._mutateParam(mutatedDNA[key], key, MUTATION_RATE * 3);
-            });
+            console.log(`[EVOLUTION][${trackName.toUpperCase()}] 🚨 Monoculture! Forcing 3x mutation`);
+            for (const key of Object.keys(bounds)) {
+                mutatedDNA[key] = this._mutateParam(mutatedDNA[key], key, MUTATION_RATE * 3, bounds);
+            }
         } else {
-            // Standard diversity check (fallback)
             for (const [id, stats] of children) {
                 if (id === worstId) continue;
-                const similarity = this._dnaSimilarity(mutatedDNA, stats.dna);
+                const similarity = this._dnaSimilarity(mutatedDNA, stats.dna, bounds);
                 if (similarity > DIVERSITY_THRESHOLD) {
-                    console.log(`[EVOLUTION] 🔀 Local diversity penalty (${(similarity * 100).toFixed(0)}% similar to ${id})`);
-                    Object.keys(DNA_BOUNDS).forEach(key => {
-                        mutatedDNA[key] = this._mutateParam(mutatedDNA[key], key, MUTATION_RATE * 2);
-                    });
+                    console.log(`[EVOLUTION][${trackName.toUpperCase()}] 🔀 Diversity penalty (${(similarity * 100).toFixed(0)}% similar to ${id})`);
+                    for (const key of Object.keys(bounds)) {
+                        mutatedDNA[key] = this._mutateParam(mutatedDNA[key], key, MUTATION_RATE * 2, bounds);
+                    }
                     break;
                 }
             }
@@ -331,50 +435,50 @@ class ChildLearningEngine {
 
         mutatedDNA.generation = Math.max(best1Stats.dna?.generation || 1, best2Stats.dna?.generation || 1) + 1;
 
-        // Apply new DNA to worst performer (cull + rebirth)
+        // Cull + rebirth
         this.learning[worstId] = {
             ...this._initChild(worstId),
             dna: mutatedDNA,
+            track: trackName,
             evolvedFrom: [best1Id, best2Id],
             evolvedAt: new Date().toISOString(),
         };
 
-        console.log(`[EVOLUTION] 🌱 ${worstId} reborn as G${mutatedDNA.generation} from ${best1Id} × ${best2Id}`);
-        console.log(`[EVOLUTION] 📊 New DNA:`, JSON.stringify(mutatedDNA, null, 2));
-        console.log('[EVOLUTION] ═══════════════════════════════════\n');
+        console.log(`[EVOLUTION][${trackName.toUpperCase()}] 🌱 ${worstId} reborn as G${mutatedDNA.generation} from ${best1Id} × ${best2Id}`);
+        console.log(`[EVOLUTION][${trackName.toUpperCase()}] 📊 New DNA:`, JSON.stringify(mutatedDNA, null, 2));
+        console.log(`[EVOLUTION][${trackName.toUpperCase()}] ═══════════════════════════════════\n`);
     }
 
-    _crossover(dna1, dna2) {
+    _crossover(dna1, dna2, bounds = DNA_BOUNDS, defaults = DEFAULT_DNA) {
         const child = {};
-        for (const key of Object.keys(DNA_BOUNDS)) {
-            // Randomly pick from parent1 or parent2
-            child[key] = Math.random() < 0.5 ? (dna1?.[key] ?? DEFAULT_DNA[key]) : (dna2?.[key] ?? DEFAULT_DNA[key]);
+        for (const key of Object.keys(bounds)) {
+            child[key] = Math.random() < 0.5 ? (dna1?.[key] ?? defaults[key]) : (dna2?.[key] ?? defaults[key]);
         }
         return child;
     }
 
-    _mutate(dna) {
+    _mutate(dna, bounds = DNA_BOUNDS, defaults = DEFAULT_DNA) {
         const mutated = { ...dna };
-        for (const key of Object.keys(DNA_BOUNDS)) {
-            mutated[key] = this._mutateParam(mutated[key] ?? DEFAULT_DNA[key], key, MUTATION_RATE);
+        for (const key of Object.keys(bounds)) {
+            mutated[key] = this._mutateParam(mutated[key] ?? defaults[key], key, MUTATION_RATE, bounds);
         }
         return mutated;
     }
 
-    _mutateParam(value, paramName, rate) {
-        const noise = 1 + (Math.random() * 2 - 1) * rate; // Random between (1-rate) and (1+rate)
+    _mutateParam(value, paramName, rate, bounds = DNA_BOUNDS) {
+        const noise = 1 + (Math.random() * 2 - 1) * rate;
         const mutated = value * noise;
-        const bounds = DNA_BOUNDS[paramName];
-        if (!bounds) return mutated;
-        return Math.max(bounds.min, Math.min(bounds.max, parseFloat(mutated.toFixed(2))));
+        const b = bounds[paramName];
+        if (!b) return mutated;
+        return Math.max(b.min, Math.min(b.max, parseFloat(mutated.toFixed(2))));
     }
 
-    _dnaSimilarity(dna1, dna2) {
+    _dnaSimilarity(dna1, dna2, bounds = DNA_BOUNDS) {
         if (!dna1 || !dna2) return 0;
         let totalDiff = 0, count = 0;
-        for (const key of Object.keys(DNA_BOUNDS)) {
-            const v1 = dna1[key] ?? DEFAULT_DNA[key];
-            const v2 = dna2[key] ?? DEFAULT_DNA[key];
+        for (const key of Object.keys(bounds)) {
+            const v1 = dna1[key] ?? 0;
+            const v2 = dna2[key] ?? 0;
             const maxVal = Math.max(Math.abs(v1), Math.abs(v2), 0.01);
             totalDiff += Math.abs(v1 - v2) / maxVal;
             count++;
@@ -387,18 +491,16 @@ class ChildLearningEngine {
      * H = -Σ p_i * log(p_i)
      * High entropy = High diversity (healthy). Low entropy = Monoculture (danger).
      */
-    _calculateShannonEntropy(dnas) {
+    _calculateShannonEntropy(dnas, bounds = DNA_BOUNDS) {
         if (!dnas || dnas.length < 2) return 1.0;
 
-        // We calculate entropy by looking at the distribution of values for each parameter.
-        // We discretize the continuous parameter space into buckets (bins).
         let totalEntropy = 0;
-        const keys = Object.keys(DNA_BOUNDS);
-        const numBins = 5; // Divide the range of each parameter into 5 buckets
+        const keys = Object.keys(bounds);
+        const numBins = 5;
 
         for (const key of keys) {
-            const min = DNA_BOUNDS[key].min;
-            const max = DNA_BOUNDS[key].max;
+            const min = bounds[key].min;
+            const max = bounds[key].max;
             const range = max - min;
             const binCounts = new Array(numBins).fill(0);
 
@@ -560,4 +662,4 @@ class ChildLearningEngine {
 }
 
 export const childLearning = new ChildLearningEngine();
-export { MAX_CHILDREN_PER_PARENT, DEFAULT_DNA };
+export { MAX_CHILDREN_PER_PARENT, DEFAULT_DNA, LLM_DNA_DEFAULTS, LLM_DNA_BOUNDS };
