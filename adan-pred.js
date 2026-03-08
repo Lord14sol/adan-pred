@@ -2836,6 +2836,16 @@ async function doScan(state) {
     render(state); return;
   }
 
+  // ═══ v5.3: Run child scanners SYNCHRONOUSLY before reading intel ═══
+  // Previously scanners ran fire-and-forget (async) so intel was stale by the time we read it.
+  // Now we await them to guarantee fresh intel (seconds old, not minutes).
+  try {
+    await runAllChildScanners(prices, allMarkets);
+    console.log('[CHILD DIRECT] 🔄 Child scanners completed — intel is fresh');
+  } catch (e) {
+    console.log('[CHILD DIRECT] ⚠ Scanner error:', e.message);
+  }
+
   // ═══ v5: CHILD-DIRECT-TRADE — Children bypass Gemini brain ═══
   // Scan all children's intel. If a child with ≥60% accuracy has a non-NEUTRAL signal
   // AND a matching market is mispriced → execute trade directly. Gemini becomes fallback only.
