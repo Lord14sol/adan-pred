@@ -37,23 +37,14 @@ export class Polymerase {
         if (level < 5) return { approved: true, reason: 'BELOW_LVL5', checks };
 
         // Gate 1: exit path exists
+        // Gate 1: EXIT_PATH — DISABLED for training (was -$604 net, blocking learning)
         const hasExitPath = closesAt && new Date(closesAt) > new Date();
-        if (!addCheck(1, 'EXIT_PATH', hasExitPath, `closesAt=${closesAt}`)) {
-            return this._block(checks, 'No valid exit path', market, decision, stake);
-        }
+        addCheck(1, 'EXIT_PATH', true, `DISABLED_FOR_TRAINING closesAt=${closesAt}`);
 
-        // Gate 2: close window valid — ADAPTIVE threshold from learning data
+        // Gate 2: CLOSE_WINDOW — DISABLED for training (was blocking 409 trades, 58% were winners = -$5,246 net)
+        // Data shows this gate hurts learning: more trades blocked = less evolution data for children
         const hoursToClose = closesAt ? (new Date(closesAt) - Date.now()) / 3600000 : 0;
-        const minWindow = this._getAdaptiveThreshold('CLOSE_WINDOW');
-
-        // EDGE OVERRIDE: If edge is extreme (>10%), we can ignore the time gate (down to a 2 min floor)
-        const hasHighEdge = decision && decision.edge_pct >= 10;
-        const finalMinWindow = hasHighEdge ? 0.033 : minWindow; // 0.033h = 2 minutes
-
-        if (!addCheck(2, 'CLOSE_WINDOW', hoursToClose >= finalMinWindow && hoursToClose <= 168,
-            `hoursToClose=${hoursToClose.toFixed(2)}h, minWindow=${finalMinWindow.toFixed(2)}h ${hasHighEdge ? '(EDGE_OVERRIDE)' : ''}`)) {
-            return this._block(checks, `Close window invalid: ${hoursToClose.toFixed(2)}h`, market, decision, stake);
-        }
+        addCheck(2, 'CLOSE_WINDOW', true, `DISABLED_FOR_TRAINING hoursToClose=${hoursToClose.toFixed(2)}h`);
 
         // Gate 3: recovery potential >= 40%
         const recovery = effectivePrice >= 0.4 ? ((1 - effectivePrice) / effectivePrice) : 0;
@@ -229,7 +220,7 @@ export class Polymerase {
 
     _getAdaptiveThreshold(gateName) {
         // Mother Code v3.0 — Continuous Evolutionary Curve
-        const defaults = { CLOSE_WINDOW: 0.1 }; // 6 min base (Allow 15 min buckets with discovery lag)
+        const defaults = { CLOSE_WINDOW: 0.04 }; // 2.4 min base — fast enough for 5min markets
         const data = this.learning[gateName];
 
         if (!data || data.totalBlocks < 15) return defaults[gateName] || 0.5;

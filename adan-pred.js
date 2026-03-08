@@ -2335,9 +2335,9 @@ async function evaluate_and_trade(decision, prices, state) {
     const fgData = state?.prices?._meta?.fearGreed;
     featureTracker.recordEntry(tradeId, featureTracker.extractFeatures({
       fearGreed: fgData?.value || 0,
-      fundingRate: market.priceData?.funding || 0,
-      trendStrength: market.priceData?.trend || 0,
-      volRatio: market.priceData?.volRatio || 1,
+      fundingRate: market.priceData?.funding?.rate || 0,
+      trendStrength: market.priceData?.trend5m || 0,
+      volRatio: market.priceData?.vol?.ratio || 1,
       sessionName: sessionAdj.sessionName,
       humanState: lastHumanState,
       edge: effectiveEdge,
@@ -2349,23 +2349,25 @@ async function evaluate_and_trade(decision, prices, state) {
   } catch (e) { }
 
   // ═══ FEATURE IMPORTANCE: Record entry for Point-Biserial ranking ═══
+  // v5.2 FIX: Property names now match actual Binance data structure
   try {
+    const pd = market.priceData;
     featureImportance.recordEntry(tradeId, {
-      rsi: market.priceData?.rsi || 50,
-      macdHist: market.priceData?.macd?.hist || 0,
-      bbPosition: market.priceData?.bb?.position || 0.5,
-      vwapDeviation: market.priceData?.vwapDev || 0,
+      rsi: pd?.rsi || 50,
+      macdHist: pd?.macd?.hist || 0,
+      bbPosition: pd?.bb?.pct != null ? pd.bb.pct / 100 : 0.5,
+      vwapDeviation: pd?.vwap5m?.pct || 0,
       fearGreed: state?.prices?._meta?.fearGreed?.value || 50,
       newsScore: 0,
-      fundingRate: market.priceData?.funding || 0,
+      fundingRate: pd?.funding?.rate || 0,
       oiChange: 0,
-      whaleWalls: 0,
-      regime: market.priceData?.regime || 'NORMAL',
+      whaleWalls: pd?.orderBook ? (pd.orderBook.buyPressure > 60 ? 1 : pd.orderBook.buyPressure < 40 ? -1 : 0) : 0,
+      regime: pd?.regime || 'NORMAL',
       sessionEdge: sessionAdj.multiplier || 1,
       humanState: lastHumanState || 'RATIONAL_MARKET',
-      oracleSignal: 0,
-      volRatio: market.priceData?.volRatio || 1,
-      trendStrength: market.priceData?.trend || 0
+      oracleSignal: pd?.obImbalance === 'BUY_WALL' ? 1 : pd?.obImbalance === 'SELL_WALL' ? -1 : 0,
+      volRatio: pd?.vol?.ratio || 1,
+      trendStrength: pd?.trend5m || 0
     });
   } catch (e) { }
 
@@ -2850,11 +2852,11 @@ async function doScan(state) {
     const stats = childLearning.getChildStats(spec.id);
     let acc = stats.totalResolved >= 5 ? stats.accuracy : 50;
 
-    // v5.1 CONTRARIAN FLIP: If child has 100+ preds and <15% accuracy,
+    // v5.2 CONTRARIAN FLIP: If child has 100+ preds and <25% accuracy,
     // they consistently predict WRONG — invert their signal for profit.
-    // A 0% accuracy child flipped becomes ~100%. Pure information theory.
+    // Data: eth-5min(19%), sol-15min(18.9%), bnb-15min(17%), bnb-1hr(15.9%) all qualify.
     let flipped = false;
-    if (stats.totalResolved >= 100 && acc < 15) {
+    if (stats.totalResolved >= 100 && acc < 25) {
       intel.direction = intel.direction === 'UP' ? 'DOWN' : 'UP';
       acc = 100 - acc; // 0% → 100%, 5% → 95%, 14% → 86%
       flipped = true;
