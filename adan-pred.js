@@ -54,8 +54,10 @@ import {
 
 import {
   polyFetch, fetchPolymarkets, applyParticleFilter, normalizePolymarket,
-  expit, logit
+  expit, logit, classifyMarket, checkMarketResolution
 } from './src/api/polymarket.js';
+
+import { externalData } from './src/api/external_data.js';
 
 import {
   TOP, BOT, row, sep, trow, sparkline, renderTreePanel, startDashboard, render,
@@ -91,6 +93,10 @@ let consecutiveLosses = 0;
 let lastHumanState = 'RATIONAL_MARKET';
 let lastSessionAdj = null;
 let lastSmartMoneyData = null;
+
+// v4.1: Anti YES-bias alternator + streak breaker
+let _lastTrainingSide = 'NO';     // Fix 1: alternator starts at NO so first forced = YES
+let _recentDirections = [];        // Fix 3: anti-streak guard
 
 // ── External Intelligence APIs ───────────────────────────────────────────────
 async function fetchFearGreed() {
@@ -355,17 +361,21 @@ async function runChildScanner(spec, allPrices, allMarkets) {
     }
 
     // ═══ CHILD LEARNING: Record prediction as shadow bet ═══
+    // ALWAYS record non-neutral signals — even without a matching market
+    // This feeds the evolutionary engine with data for DNA optimization
     if (sig.dir !== 'NEUTRAL') {
-      const shadow = childLearning.recordPrediction(spec.id, {
+      childLearning.recordPrediction(spec.id, {
         direction: sig.dir,
         confidence: sig.conf,
         asset: spec.assetName,
-        marketId: bestMarket?.id || `${spec.assetName}_${Date.now()}`,
+        marketId: bestMarket?.id || `${spec.assetName}_shadow_${Date.now()}`,
         marketCloseTime: bestMarket?.closesAt || new Date(Date.now() + (spec.windowMin || 5) * 60000).toISOString(),
         reasons: sig.reason ? sig.reason.split(', ') : [],
         regime: d?.regime || 'UNKNOWN',
+        track: 'quant',
+        category: 'crypto',
+        entryPrice: d?.price || 0,
       });
-      if (shadow) shadow.entryPrice = d?.price || 0;
     }
 
     const intel = {
@@ -484,6 +494,256 @@ const GRANDCHILD_SPECS = {
     { id: 'bnb-1hr-rsi', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 60, focus: 'rsi-extreme' },
   ],
 };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── v4.0: CATEGORY CHILDREN — LLM-informed non-crypto market scanners ──────
+// ══════════════════════════════════════════════════════════════════════════════
+
+const CHILD_SPECS_CATEGORY = [
+  { id: 'politics-daily', category: 'politics', track: 'llm', scanInterval: 3600000 },
+  { id: 'sports-daily',   category: 'sports',   track: 'llm', scanInterval: 3600000 },
+  { id: 'macro-weekly',   category: 'macro',    track: 'llm', scanInterval: 14400000 },
+  { id: 'events-daily',   category: 'events',   track: 'llm', scanInterval: 3600000 },
+];
+
+const GRANDCHILD_SPECS_CATEGORY = {
+  'politics-daily': [
+    { id: 'us-elections', category: 'politics', focus: 'US elections and primaries' },
+    { id: 'global-politics', category: 'politics', focus: 'international politics and diplomacy' },
+    { id: 'regulatory', category: 'politics', focus: 'regulation and policy changes' },
+  ],
+  'sports-daily': [
+    { id: 'nfl-scanner', category: 'sports', focus: 'NFL games and playoffs' },
+    { id: 'nba-scanner', category: 'sports', focus: 'NBA games and championships' },
+    { id: 'soccer-scanner', category: 'sports', focus: 'soccer/football worldwide' },
+  ],
+  'macro-weekly': [
+    { id: 'central-bank', category: 'macro', focus: 'Fed, ECB, central bank decisions' },
+    { id: 'inflation-tracker', category: 'macro', focus: 'CPI, PPI, inflation data' },
+    { id: 'employment-tracker', category: 'macro', focus: 'jobs reports and unemployment' },
+  ],
+  'events-daily': [
+    { id: 'tech-launches', category: 'events', focus: 'tech product launches and earnings' },
+    { id: 'weather-tracker', category: 'events', focus: 'extreme weather and natural disasters' },
+    { id: 'entertainment', category: 'events', focus: 'awards, entertainment, cultural events' },
+  ],
+};
+
+// Track last scan time per category child
+const _categoryScanTimestamps = {};
+
+// v4.1 Fix 4: Category trade candidates from LLM children
+let _categoryTradeCandidates = [];
+const CATEGORY_MAX_POSITIONS = 3;
+const CATEGORY_MAX_STAKE = 150;
+
+/**
+ * categoryChildSignal — LLM-informed signal for non-crypto markets
+ * Builds a prompt with external context and asks Gemma to estimate probability
+ */
+async function categoryChildSignal(market, contextData, dna) {
+  const confidenceFloor = dna?.confidenceFloor ?? 55;
+  const edgeThresholdPct = dna?.edgeThresholdPct ?? 10;
+
+  const prompt = `You are a prediction market analyst. Analyze this market and estimate the probability of YES.
+
+MARKET: "${market.title}"
+Current YES price: ${(market.yesPrice * 100).toFixed(1)}%
+Liquidity: $${market.liquidity?.toFixed(0) || '?'}
+
+CONTEXT DATA:
+${contextData}
+
+Based on the context, estimate:
+1. Your probability estimate for YES (0-100%)
+2. Direction: YES or NO (which side has edge)
+3. Confidence in your estimate (0-100%)
+4. Brief reason (1 sentence)
+
+Respond in JSON format:
+{"probability": 55, "direction": "YES", "confidence": 65, "reason": "..."}`;
+
+  try {
+    const response = await routeLLM({
+      prompt,
+      weight: 'Light',
+      reason: `category-${market._category}`
+    });
+
+    // Parse JSON from response
+    const jsonMatch = response.match(/\{[\s\S]*?"probability"[\s\S]*?\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const prob = parseFloat(parsed.probability) || 50;
+    const conf = parseFloat(parsed.confidence) || 50;
+    const dir = (parsed.direction || '').toUpperCase();
+
+    // Apply DNA filters
+    if (conf < confidenceFloor) return null;
+
+    // Calculate edge
+    const marketProb = market.yesPrice * 100;
+    const edgePct = dir === 'YES' ? prob - marketProb : marketProb - (100 - prob);
+    if (Math.abs(edgePct) < edgeThresholdPct) return null;
+
+    return {
+      direction: dir === 'YES' ? 'UP' : 'DOWN',
+      confidence: Math.round(conf),
+      probability: Math.round(prob),
+      edge: parseFloat(edgePct.toFixed(1)),
+      reason: parsed.reason || 'LLM analysis',
+      suggestedSide: dir,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * runCategoryChildScanner — Scans markets for a specific category
+ */
+async function runCategoryChildScanner(spec, allMarkets) {
+  try {
+    if (!fs.existsSync(INTEL_DIR)) fs.mkdirSync(INTEL_DIR, { recursive: true });
+
+    // Check quota
+    if (!quota.canUseGemma() || !quota.canUseCategory(spec.category)) return [];
+
+    const dna = childLearning.getChildDNA(spec.id, 'llm');
+    const maxMarkets = dna.maxMarketsPerCycle || 3;
+    const minLiquidity = dna.skipIfLiquidityBelow || 1000;
+
+    // Filter markets by category, sort by liquidity
+    const categoryMarkets = allMarkets
+      .filter(m => m._category === spec.category && (m.liquidity || 0) >= minLiquidity)
+      .sort((a, b) => (b.liquidity || 0) - (a.liquidity || 0))
+      .slice(0, maxMarkets);
+
+    if (categoryMarkets.length === 0) return [];
+
+    const results = [];
+
+    for (const market of categoryMarkets) {
+      // Fetch external context
+      const contextData = await externalData.fetchContextForCategory(spec.category, market.title);
+
+      // Get LLM signal
+      const signal = await categoryChildSignal(market, contextData, dna);
+
+      // Consume quota
+      quota.consumeGemma();
+      quota.consumeCategory(spec.category);
+
+      if (!signal) continue;
+
+      // Record shadow prediction
+      childLearning.recordPrediction(spec.id, {
+        direction: signal.direction,
+        confidence: signal.confidence,
+        asset: spec.category,
+        marketId: market.id,
+        marketCloseTime: market.closesAt || new Date(Date.now() + 24 * 3600000).toISOString(),
+        reasons: [signal.reason],
+        regime: 'UNKNOWN',
+        track: 'llm',
+        category: spec.category,
+      });
+
+      // Write intel file
+      const intel = {
+        spec: spec.id,
+        category: spec.category,
+        track: 'llm',
+        ts: new Date().toISOString(),
+        market: {
+          id: market.id,
+          title: market.title,
+          yesPrice: market.yesPrice,
+          liquidity: market.liquidity,
+          closesAt: market.closesAt,
+        },
+        signal: {
+          dir: signal.direction,
+          conf: signal.confidence,
+          probability: signal.probability,
+          edge: signal.edge,
+          reason: signal.reason,
+          suggestedSide: signal.suggestedSide,
+        },
+      };
+
+      const intelPath = path.join(INTEL_DIR, `${spec.id}-${market.id.slice(0, 8)}.json`);
+      fs.writeFileSync(intelPath, JSON.stringify(intel, null, 2));
+      results.push(intel);
+
+      // v4.1 Fix 4: Collect high-confidence signals as trade candidates
+      if (signal.confidence >= 65 && signal.edge >= 5) {
+        _categoryTradeCandidates.push({
+          market,
+          signal,
+          spec,
+          ts: Date.now(),
+        });
+        console.log(`[CATEGORY TRADE] 🎯 Candidate: "${market.title.slice(0, 40)}" conf:${signal.confidence}% edge:${signal.edge}%`);
+      }
+
+      console.log(`[CATEGORY][${spec.category.toUpperCase()}] ${signal.suggestedSide} on "${market.title.slice(0, 50)}" | conf:${signal.confidence}% edge:${signal.edge}%`);
+    }
+
+    return results;
+  } catch (e) {
+    console.error(`[CATEGORY] Error scanning ${spec.category}: ${e.message}`);
+    return [];
+  }
+}
+
+/**
+ * v4.1 Fix 4: Process category trade candidates — real trades from LLM children
+ * Takes best candidates by edge, caps stake, and executes via evaluate_and_trade
+ */
+async function processCategoryTrades(prices, state) {
+  if (_categoryTradeCandidates.length === 0) return;
+
+  // Count existing category positions (non-crypto)
+  const positions = loadPositions();
+  const cryptoAssets = ['btc', 'eth', 'sol', 'bnb'];
+  const categoryPositions = positions.filter(p => !cryptoAssets.includes((p.asset || '').toLowerCase()));
+
+  const availableSlots = CATEGORY_MAX_POSITIONS - categoryPositions.length;
+  if (availableSlots <= 0) {
+    console.log(`[CATEGORY TRADE] 🚫 ${categoryPositions.length}/${CATEGORY_MAX_POSITIONS} category slots full — skipping`);
+    _categoryTradeCandidates = [];
+    return;
+  }
+
+  // Sort by edge descending, take best candidates
+  const candidates = _categoryTradeCandidates
+    .filter(c => (Date.now() - c.ts) < 600000) // max 10 min old
+    .sort((a, b) => b.signal.edge - a.signal.edge)
+    .slice(0, availableSlots);
+
+  for (const cand of candidates) {
+    const { market, signal } = cand;
+    const side = signal.suggestedSide || (signal.direction === 'UP' ? 'YES' : 'NO');
+    const edge = signal.edge / 100;
+
+    console.log(`[CATEGORY TRADE] 🎰 Executing ${side} on "${market.title.slice(0, 50)}" | edge:${signal.edge}% conf:${signal.confidence}%`);
+
+    const catDecision = {
+      action: 'BET',
+      market: { ...market, _categoryTrade: true },
+      side,
+      edge_pct: signal.edge,
+      confidence_pct: signal.confidence,
+      thought: `[CATEGORY TRADE] LLM child signal: ${side} conf:${signal.confidence}% edge:${signal.edge}%`,
+    };
+
+    await evaluate_and_trade(catDecision, prices, state);
+  }
+
+  _categoryTradeCandidates = [];
+}
 
 // Grandchild signal — same rule-based but focuses on one indicator
 function grandchildSignal(d, focus) {
@@ -959,16 +1219,17 @@ async function runAllChildScanners(allPrices, allMarkets) {
   const xpData = expProgress(pnl.exp || 0);
   let results = [];
 
-  // NEW: Run Golden Round Table Parent Scanners
+  // ── ALWAYS run CHILD_SPECS scanners — they feed the evolutionary engine ──
+  // These are the 12 crypto children that generate shadow predictions for DNA evolution
+  const childResults = await Promise.all(CHILD_SPECS.map(s => runChildScanner(s, allPrices, allMarkets)));
+  results = results.concat(childResults);
+
+  // ── Mesa Redonda Parent Scanners (Apple/Snake/Eva) — complementary intel ──
   if (config.mesaRedonda && config.mesaRedonda.parents) {
     const parentResults = await Promise.all(
       config.mesaRedonda.parents.map(parent => runParentScanner(parent, allPrices, allMarkets))
     );
     results = results.concat(parentResults);
-  } else {
-    // Fallback to old logic if Mesa Redonda is not defined
-    console.log(Y + "WARNING: Mesa Redonda config not found. Falling back to old CHILD_SPECS." + X);
-    results = await Promise.all(CHILD_SPECS.map(s => runChildScanner(s, allPrices, allMarkets)));
   }
 
   // Keep existing grandchild logic for now
@@ -1011,6 +1272,28 @@ async function runAllChildScanners(allPrices, allMarkets) {
         // console.error(`Error processing grandchild for child ${child.spec}:`, e);
       }
     }
+  }
+
+  // ── v4.0: Category children (LLM-informed) — run in parallel with crypto ──
+  const now = Date.now();
+  const categoryPromises = CHILD_SPECS_CATEGORY.map(async spec => {
+    const lastScan = _categoryScanTimestamps[spec.id] || 0;
+    if (now - lastScan < spec.scanInterval) return []; // Respect scan interval
+    _categoryScanTimestamps[spec.id] = now;
+
+    // Initialize LLM child learning if needed
+    childLearning.initLLMChild(spec.id);
+
+    return runCategoryChildScanner(spec, allMarkets);
+  });
+
+  try {
+    const categoryResults = await Promise.all(categoryPromises);
+    for (const catResult of categoryResults) {
+      if (Array.isArray(catResult)) results.push(...catResult);
+    }
+  } catch (e) {
+    console.error(`[CATEGORY] Error in category scanners: ${e.message}`);
   }
 
   return results.filter(Boolean);
@@ -1861,15 +2144,11 @@ function kellyStake(pnl, side, myProb, marketYesPrice, edge, confidence = 50) {
   // Base Kelly fraction
   const kelly = Math.max(0, (p * odds - q) / odds);
 
-  // Fractional Kelly (Bayesian Penalty)
-  // Master System Prompt: f* = (EV / Variance) * Confidence Scalar
-  // We approximate this by scaling down the raw Kelly fraction based on LLM confidence.
-  // 90%+ confidence = 1/2 Kelly (aggressive)
-  // 70-89% confidence = 1/4 Kelly (standard)
-  // <70% confidence = 1/8 Kelly (conservative)
-  let kellyFraction = 0.25; // Default 1/4 Kelly
-  if (confidence >= 90) kellyFraction = 0.50; // 1/2 Kelly
-  else if (confidence < 70) kellyFraction = 0.125; // 1/8 Kelly
+  // Fractional Kelly — TRAINING MODE: aggressive to maximize data
+  // Real mode would use 1/4 Kelly, but paper = learn fast
+  let kellyFraction = 0.50; // TRAINING: 1/2 Kelly base
+  if (confidence >= 90) kellyFraction = 0.75; // TRAINING: 3/4 Kelly
+  else if (confidence < 70) kellyFraction = 0.35; // TRAINING: still decent size
 
   // Drawdown-based Kelly scaling: reduce when in drawdown
   const fund = pnl.fund || 10000;
@@ -1886,12 +2165,12 @@ function kellyStake(pnl, side, myProb, marketYesPrice, edge, confidence = 50) {
   const finalKelly = kelly * kellyFraction;
   const raw = fund * finalKelly;
 
-  // Dynamic max based on WR — protect capital when losing
+  // Dynamic max — TRAINING MODE: bigger bets = more meaningful data
   const wr = pnl.trades > 0 ? pnl.wins / pnl.trades : 0.5;
-  const maxStake = wr >= 0.60 ? 400    // 60%+ WR → aggressive, up to $400
-    : wr >= 0.50 ? 250    // 50-59% WR → moderate, up to $250
-      : wr >= 0.40 ? 150    // 40-49% WR → conservative, up to $150
-        : 75;   // <40% WR → survival mode, max $75
+  const maxStake = wr >= 0.60 ? 500    // TRAINING: up to $500
+    : wr >= 0.50 ? 400    // TRAINING: up to $400
+      : wr >= 0.40 ? 300    // TRAINING: up to $300
+        : 150;   // TRAINING: min $150 even in bad WR
 
   // Round to nearest $25, clamp $25-maxStake
   return Math.round(Math.min(Math.max(raw, 25), maxStake) / 25) * 25;
@@ -1991,8 +2270,8 @@ async function evaluate_and_trade(decision, prices, state) {
   const potentialProfit = (1 / Math.max(rawOdds, 0.01)) - 1;
   const ev = (p * potentialProfit) - (1 - p);
 
-  // Minimum EV threshold: must cover spreads and slippage
-  const minEV = 0.001; // ~0.1% minimum edge to cover friction
+  // Minimum EV threshold — TRAINING: allow negative EV to learn from mistakes
+  const minEV = -0.10; // TRAINING: allow up to -10% EV — learn from losses too
   if (ev < minEV) {
     console.log(`[EV GATE] ⛔ ${ev <= 0 ? 'NEGATIVE' : 'INSUFFICIENT'} EV: ${ev.toFixed(4)} (min: ${minEV}). Market: ${(market.title || '').slice(0, 30)}...`);
     try {
@@ -2009,7 +2288,19 @@ async function evaluate_and_trade(decision, prices, state) {
   const sessionMult = sessionAdj.stakeMultiplier;
   const metabolicMult = metabolism.getStakeMultiplier(pnlNow.fund || 0, lastHumanState);
   const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj);
-  const stake = Math.round(Math.max(25, baseStake * combined) / 25) * 25;
+  let stake = Math.round(Math.max(100, baseStake * combined) / 25) * 25; // TRAINING: min $100 per bet
+
+  // v5: Child-direct trades use accuracy-based stake sizing instead of Kelly
+  if (decision._childDirect && decision._childStake) {
+    stake = decision._childStake;
+    console.log(`[CHILD DIRECT STAKE] 📐 ${decision._childSpec} acc-based stake: $${stake} (bypasses Kelly)`);
+  }
+
+  // v4.1 Fix 4: Cap stake for category trades
+  if (market._categoryTrade) {
+    stake = Math.min(stake, CATEGORY_MAX_STAKE);
+    console.log(`[CATEGORY TRADE] 📉 Stake capped to $${stake} (max $${CATEGORY_MAX_STAKE})`);
+  }
 
   if (humanMult === 0) {
     console.log('[MOTHER CODE] ⛔ NEWS_SHOCK — skipping all bets');
@@ -2397,18 +2688,12 @@ async function doScan(state) {
     && (pnl.wins / Math.max(pnl.trades, 1)) >= sc.minWinRate
     && childCount < maxC
     && (pnl.treasury || 0) > 0;
-  if (spawnReady) {
+  // Spawn ALL missing children in one cycle (paper trade — maximize learning speed)
+  while (spawnReady && (pnl.children || []).length < maxC && (pnl.treasury || 0) > 0) {
     const newChild = await spawnChild(pnl, null);
-    if (newChild) {
-      pnl = loadPnL();
-      cls();
-      console.log('\n' + C + BOLD + '  ╔══════════════════════════════════════════════════════════════╗');
-      console.log(C + BOLD + '  ║  👶 CHILD BORN!  ' + Y + BOLD + (newChild.name || newChild.spec).padEnd(12) + C + BOLD + '  spec: ' + newChild.spec.padEnd(14) + 'Gen ' + newChild.generation + ' ║');
-      console.log(C + BOLD + '  ║  Capital: $' + newChild.capital.toFixed(2) + '  Specialization: ' + newChild.spec.padEnd(20) + '      ║');
-      console.log(C + BOLD + '  ║  "I am ' + (newChild.name || 'UNNAMED') + '. I serve ADAN. I scan. I learn. I report."          ║');
-      console.log(C + BOLD + '  ╚══════════════════════════════════════════════════════════════╝' + X + '\n');
-      await new Promise(r => setTimeout(r, 4000));
-    }
+    if (!newChild) break;
+    pnl = loadPnL();
+    console.log(C + BOLD + '  👶 CHILD BORN: ' + Y + BOLD + (newChild.name || newChild.spec) + C + '  spec: ' + newChild.spec + '  Gen ' + newChild.generation + X);
   }
 
   // Check grandchildren spawning (LVL 4+ only, silently in background)
@@ -2509,7 +2794,7 @@ async function doScan(state) {
   // Bypass Boredom Filter if we are in Night Watch mode (scanning non-crypto markets)
   const isNightWatchMode = activeNow.length === 0;
 
-  if (!anyActive && activeSyms.length > 0 && !isNightWatchMode) {
+  if (false && !anyActive && activeSyms.length > 0 && !isNightWatchMode) { // TRAINING: disabled boredom filter
     const bbAvg = (activeSyms.reduce((s, [, d]) => s + (d.bb?.width || 0), 0) / activeSyms.length * 100).toFixed(2);
     const volAvg = (activeSyms.reduce((s, [, d]) => s + (d.vol?.ratio || 1), 0) / activeSyms.length).toFixed(2);
     state.thought = `⏸ AUTO-SKIP — Market dormant (BB width avg: ${bbAvg}% < 0.6%, vol ratio avg: ${volAvg}x < 0.75x).\nNo conviction in Binance. Polymarket prices have nothing real to lag. Preserving tokens + capital.\nNext check in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
@@ -2525,7 +2810,7 @@ async function doScan(state) {
   if (hourData) {
     const hourTotal = (hourData.wins || 0) + (hourData.losses || 0);
     const hourWR = hourTotal > 0 ? (hourData.wins || 0) / hourTotal : 0.5;
-    if (hourTotal >= 3 && hourWR < 0.30) {
+    if (false && hourTotal >= 3 && hourWR < 0.30) { // TRAINING: disabled hour filter
       state.thought = `⏸ HOUR FILTER — UTC hour ${curHour} has ${Math.round(hourWR * 100)}% WR over ${hourTotal} trades (< 30% threshold).\nHistorically a losing hour. Skipping to protect capital. Better to wait for a high-WR window.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
       state.mode = 'result';
       state.lastScan = new Date().toLocaleTimeString();
@@ -2541,7 +2826,7 @@ async function doScan(state) {
   openPos.forEach(p => { lockedCapital += (p.stake || 0); });
   const lockupRatio = lockedCapital / currentTreasury;
 
-  if (lockupRatio >= 0.60) {
+  if (lockupRatio >= 0.90) { // TRAINING: allow 90% capital deployment
     state.thought = `🛑 CAPITAL LOCKUP VETO [EVA] — Locked capital ($${lockedCapital.toFixed(2)}) is ≥ 60% of Treasury ($${currentTreasury.toFixed(2)}). Max exposure reached. Waiting for resolutions before opening new positions.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
     state.mode = 'result';
     state.lastScan = new Date().toLocaleTimeString();
@@ -2549,12 +2834,92 @@ async function doScan(state) {
     render(state); return;
   }
 
-  // 4. Think (Neural Pipeline)
+  // ═══ v5: CHILD-DIRECT-TRADE — Children bypass Gemini brain ═══
+  // Scan all children's intel. If a child with ≥60% accuracy has a non-NEUTRAL signal
+  // AND a matching market is mispriced → execute trade directly. Gemini becomes fallback only.
+  const childDirectTrades = [];
+  const childTradedMarkets = new Set();
+  const availableMarkets = (state.markets || []).filter(m =>
+    m.closesAt && new Date(m.closesAt) > new Date() && m.yesPrice >= 0.10 && m.yesPrice <= 0.90
+  );
+
+  for (const spec of CHILD_SPECS) {
+    const intel = readLatestChildIntel(spec.id);
+    if (!intel || intel.direction === 'NEUTRAL') continue;
+
+    const stats = childLearning.getChildStats(spec.id);
+    const acc = stats.totalResolved >= 5 ? stats.accuracy : 50;
+    if (acc < 60) continue;
+
+    // Find matching market for this child's asset
+    const assetLower = (spec.assetName || '').toLowerCase();
+    const matchingMarket = availableMarkets.find(m => {
+      const mAsset = (m.asset || '').toLowerCase();
+      return mAsset === assetLower && !childTradedMarkets.has(m.id || m.conditionId);
+    });
+    if (!matchingMarket) continue;
+
+    const side = intel.direction === 'UP' ? 'YES' : 'NO';
+    const childProb = intel.confidence / 100;
+    const marketImpliedProb = side === 'YES' ? matchingMarket.yesPrice : (1 - matchingMarket.yesPrice);
+    const mispricingEdge = childProb - marketImpliedProb;
+
+    // v5 MISPRICING FILTER: Only trade when market disagrees with child by >3%
+    if (mispricingEdge <= 0.03) {
+      console.log(`[CHILD DIRECT] ⏭ ${spec.id} acc:${acc}% — mispricing ${(mispricingEdge*100).toFixed(1)}% ≤ 3% threshold on ${(matchingMarket.title||'').slice(0,35)}`);
+      continue;
+    }
+
+    // v5 ACCURACY-BASED STAKE SIZING: 60%→$100, 70%→$150, 80%→$200, max $300
+    const childStake = Math.min(300, 100 + Math.round((acc - 60) * 5 / 25) * 25);
+
+    const score = (acc / 100) * intel.confidence * mispricingEdge;
+
+    console.log(`[CHILD DIRECT] ✅ ${spec.id} → ${intel.direction} acc:${acc}% conf:${intel.confidence}% mispricing:${(mispricingEdge*100).toFixed(1)}% stake:$${childStake} score:${score.toFixed(1)} on ${(matchingMarket.title||'').slice(0,35)}`);
+
+    childDirectTrades.push({
+      market: matchingMarket,
+      side,
+      edge: mispricingEdge,
+      score,
+      spec: spec.id,
+      intel,
+      acc,
+      childStake,
+    });
+    childTradedMarkets.add(matchingMarket.id || matchingMarket.conditionId);
+  }
+
+  // Sort by score descending, execute best child-direct trades
+  childDirectTrades.sort((a, b) => b.score - a.score);
+  for (const ct of childDirectTrades) {
+    const decision = {
+      action: 'BET',
+      market: ct.market,
+      side: ct.side,
+      edge_pct: ct.edge * 100,
+      confidence_pct: ct.intel.confidence,
+      myProb: ct.intel.confidence / 100,
+      edge: ct.edge,
+      confidence: ct.intel.confidence,
+      thought: `[CHILD DIRECT] ${ct.spec} (acc:${ct.acc}% conf:${ct.intel.confidence}%) says ${ct.side}. Mispricing edge: ${(ct.edge*100).toFixed(1)}%. Stake: $${ct.childStake}.`,
+      _childDirect: true,
+      _childStake: ct.childStake,
+      _childSpec: ct.spec,
+    };
+    console.log(`[CHILD DIRECT] 🎯 Executing: ${ct.side} on ${(ct.market.title||'').slice(0,40)} | ${ct.spec} acc:${ct.acc}% | stake:$${ct.childStake}`);
+    await evaluate_and_trade(decision, prices, state);
+  }
+
+  if (childDirectTrades.length > 0) {
+    console.log(`[CHILD DIRECT] 📊 ${childDirectTrades.length} child-driven trade(s) executed. Gemini brain skipped for covered markets.`);
+  }
+
+  // 4. Think (Neural Pipeline) — only for markets NOT covered by children
   state.mode = 'thinking'; render(state);
   let decision;
   try {
     decision = await think(markets, prices, pnl, openPos, state);
-    // Slippage Engine penalty injected inside think() logic
     state.apiCost = parseFloat(((state.apiCost || 0) + (decision.apiTokens || 2000) / 1e6 * 9).toFixed(5));
   } catch (e) {
     state.thought = 'Claude error: ' + e.message; state.mode = 'result'; render(state); return;
@@ -2566,7 +2931,34 @@ async function doScan(state) {
   state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
 
   console.log(`[DEBUG] Decision: ${decision.action}, Market: ${decision.market ? decision.market.title : 'NULL'}`);
+
+  // v5: If brain wants to BET on a market already traded by children, skip duplicate
+  if (decision.action === 'BET' && decision.market) {
+    const mId = decision.market.id || decision.market.conditionId;
+    if (childTradedMarkets.has(mId)) {
+      console.log(`[CHILD DIRECT] ⏭ Brain wanted ${decision.side} on ${(decision.market.title||'').slice(0,35)} but children already traded it`);
+      decision = { ...decision, action: 'SKIP', thought: `[CHILD COVERED] Children already traded this market. ${decision.thought || ''}` };
+    }
+  }
+
+  // v4.1 Fix 3: Anti-streak guard — force opposite after 3 consecutive same-direction bets
+  if (decision.action === 'BET' && decision.side) {
+    if (_recentDirections.length >= 3) {
+      const last3 = _recentDirections.slice(-3);
+      if (last3.every(d => d === decision.side)) {
+        const forced = decision.side === 'YES' ? 'NO' : 'YES';
+        console.log(`[STREAK BREAKER] ⚡ Last 3 bets were ${decision.side} — forced opposite: ${forced}`);
+        decision = { ...decision, side: forced, thought: `[STREAK BREAKER] Forced ${forced}. ` + (decision.thought || '') };
+      }
+    }
+    _recentDirections.push(decision.side);
+    if (_recentDirections.length > 10) _recentDirections = _recentDirections.slice(-10);
+  }
+
   if (decision.action === 'BET' && decision.market) await evaluate_and_trade(decision, prices, state);
+
+  // v4.1 Fix 4: Process category trade candidates from LLM children
+  await processCategoryTrades(prices, state);
 
   render(state);
 }
@@ -2628,6 +3020,25 @@ async function setup() {
   console.log('  ╚══════════════════════════════════════════════════════════════════╝' + X + '\n');
   await new Promise(r => setTimeout(r, 2000));
   return config;
+}
+
+// ── Fast-path helper: read latest child intel for a spec ──────────────────
+function readLatestChildIntel(spec) {
+  try {
+    const slug = spec.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const intelPath = path.join(INTEL_DIR, slug + '.json');
+    if (!fs.existsSync(intelPath)) return null;
+    const intel = JSON.parse(fs.readFileSync(intelPath, 'utf8'));
+    const age = (Date.now() - new Date(intel.ts).getTime()) / 60000;
+    if (age > 10) return null; // stale intel (>10 min)
+    if (!intel.signal || intel.signal.dir === 'NEUTRAL') return null;
+    return {
+      childId: spec,
+      direction: intel.signal.dir,
+      confidence: intel.signal.conf || intel.signal.confidence || 50,
+      age,
+    };
+  } catch { return null; }
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -2716,7 +3127,7 @@ async function main() {
 
       // ── Child Learning: Resolve shadow predictions ──
       try {
-        childLearning.checkResolutions(state.prices || {});
+        await childLearning.checkResolutions(state.prices || {}, checkMarketResolution);
       } catch (e) { }
 
       // Skip scan if NEWS_SHOCK
@@ -2738,15 +3149,20 @@ async function main() {
   setTimeout(loop, 2000);
   setInterval(() => { state.pnl = loadPnL(); state.positions = loadPositions(); if (state.mode === 'idle') render(state); }, 30000);
 
-  // ── Oracle Fast Loop: independent 60s cycle for front-running ──
+  // ── Oracle Fast Loop: 60s cycle — prices + fast-path for 5min markets ──
+  let fastLoopBusy = false;
   setInterval(async () => {
+    if (fastLoopBusy) return;
+    fastLoopBusy = true;
     try {
       const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+      const prices = {};
       await Promise.all(symbols.map(async sym => {
         const klines = await fetchBinanceKlines(sym, '1m', 5);
         if (!klines.length) return;
         const closes = klines.map(k => k.close);
         const price = closes[closes.length - 1];
+        prices[sym] = { price, closes };
         oracle.recordPrice(sym, {
           price,
           rsi: calcRSI(closes),
@@ -2755,7 +3171,52 @@ async function main() {
           closes
         });
       }));
-      // Check for strong signals
+
+      // Fast-path: check for 5min markets closing in 2-5 min that main loop misses
+      const openPos = loadPositions().open;
+      const openIds = new Set(openPos.map(p => p.marketId));
+      if (openPos.length < MAX_POSITIONS && state.mode !== 'thinking') {
+        const strat = loadStrategy();
+        const raw5m = await polyFetch('/events?tag_slug=bitcoin&limit=50&active=true&closed=false');
+        const raw5mSol = await polyFetch('/events?tag_slug=solana&limit=50&active=true&closed=false');
+        const allRaw = [...(Array.isArray(raw5m) ? raw5m : []), ...(Array.isArray(raw5mSol) ? raw5mSol : [])];
+        const nowMs = Date.now();
+        for (const ev of allRaw) {
+          if (!/up.or.down/i.test(ev.title || '')) continue;
+          for (const m of (ev.markets || [])) {
+            if (openIds.has(m.id)) continue;
+            const endMs = m.endDate ? new Date(m.endDate).getTime() : 0;
+            const minsLeft = (endMs - nowMs) / 60000;
+            // Only 5min markets closing in 2-5 min window
+            if (minsLeft < 2 || minsLeft > 5) continue;
+            if (!m.question) m.question = ev.title;
+            m._isUpDown = true;
+            const nm = normalizePolymarket(m, state.prices || {});
+            if (!nm || nm.yesPrice >= 0.85 || nm.yesPrice <= 0.15) continue;
+            const edge = Math.abs(nm.yesPrice - 0.5);
+            if (edge < 0.05) continue; // need 5%+ edge
+            console.log(`[FAST PATH] ⚡ Found 5min market closing in ${minsLeft.toFixed(1)}min: ${nm.title.slice(0,50)} edge=${(edge*100).toFixed(1)}%`);
+            // Use child consensus instead of full LLM brain
+            const childIntel = readLatestChildIntel(nm.asset === 'btc' ? 'BTC-5min' : nm.asset === 'sol' ? 'SOL-5min' : 'ETH-5min');
+            if (childIntel && childIntel.confidence >= 40) { // TRAINING: lower threshold for fast path
+              const fastDecision = {
+                action: 'BET', market: nm,
+                side: childIntel.direction === 'UP' ? 'YES' : 'NO',
+                edge_pct: edge * 100,
+                confidence_pct: childIntel.confidence,
+                thought: `[FAST PATH] Child ${childIntel.childId} says ${childIntel.direction} @ ${childIntel.confidence}% conf. Edge: ${(edge*100).toFixed(1)}%`,
+              };
+              console.log(`[FAST PATH] 🎯 Executing via child signal: ${childIntel.direction} @ ${childIntel.confidence}%`);
+              await evaluate_and_trade(fastDecision, state.prices || {}, state);
+              state.pnl = loadPnL(); state.positions = loadPositions();
+              render(state);
+              break; // One fast-path trade per cycle
+            }
+          }
+        }
+      }
+
+      // Log strong oracle signals
       for (const sym of symbols) {
         const sig = oracle.analyze(sym);
         if (sig.hasSignal && (sig.signalType === 'STRONG_MOVE' || sig.signalType === 'FLASH_MOVE')) {
@@ -2763,6 +3224,7 @@ async function main() {
         }
       }
     } catch (e) { /* oracle fast loop error — silent */ }
+    fastLoopBusy = false;
   }, 60000);
 }
 

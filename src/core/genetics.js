@@ -2,15 +2,18 @@ import fs from 'fs';
 import path from 'path';
 import {
   HOME, DIR, DYN_WEIGHTS_PATH, INTEL_DIR, TREE_RULES,
-  C, BOLD, X, R, M,
+  C, BOLD, X, R, M, G, Y,
   loadPnL, savePnL, loadSoul, appendToSoul, loadStrategy, loadDynWeights,
   loadConfig, saveConfig, expProgress
 } from './config.js';
+import { childLearning } from './child_learning.js';
 
 // ── Claude naming for children ────────────────────────────────────────────────
 const CHILD_NAMES = {
   'BTC-5min': 'HERMES', 'ETH-5min': 'ATHENA', 'SOL-5min': 'HELIOS',
   'BTC-15min': 'KRONOS', 'ETH-15min': 'DAEDALUS', 'SOL-15min': 'APOLLO',
+  'BNB-5min': 'ARES', 'BNB-15min': 'PROTEUS',
+  'BTC-1hr': 'TITAN', 'ETH-1hr': 'ZEUS', 'SOL-1hr': 'POSEIDON', 'BNB-1hr': 'HADES',
   'ALT-coins': 'PROTEUS', '1H-windows': 'TITAN', 'BTC/ETH/SOL-15min': 'ARES'
 };
 async function nameChild(spec, signal) {
@@ -37,7 +40,11 @@ async function spawnChild(pnl, specialization) {
   if ((pnl.wins / Math.max(pnl.trades, 1)) < sc.minWinRate) return null;
   if ((pnl.treasury || 0) <= 0) return null;
 
-  const SPECS = ['BTC-5min', 'ETH-5min', 'SOL-5min', 'BTC-15min', 'ETH-15min', 'SOL-15min'];
+  const SPECS = [
+    'BTC-5min', 'ETH-5min', 'SOL-5min', 'BNB-5min',
+    'BTC-15min', 'ETH-15min', 'SOL-15min', 'BNB-15min',
+    'BTC-1hr', 'ETH-1hr', 'SOL-1hr', 'BNB-1hr'
+  ];
   const taken = children.map(c => c.spec);
   const nextSpec = specialization || SPECS.find(s => !taken.includes(s)) || 'BTC-5min';
 
@@ -233,7 +240,22 @@ function pruneDeadChildren(pnl) {
       dead.push({ ...ch, deathReason: 'capital', finalWR: cp.trades > 0 ? Math.round(cp.wins / cp.trades * 100) : 0, finalTrades: cp.trades });
       continue;
     }
-    // Death 2: consistently low intel score (incompetence)
+    // Death 2: incompetence — but PROTECT children with good real accuracy
+    // Check real prediction accuracy from child_learning (resolved shadow bets)
+    const specSlug = (ch.spec || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    const learnStats = childLearning.learning?.[specSlug] || childLearning.learning?.[ch.spec] || childLearning.learning?.[ch.spec?.toLowerCase()] || {};
+    const realResolved = learnStats.totalResolved || 0;
+    const realAccuracy = realResolved >= 5 ? Math.round((learnStats.correct || 0) / realResolved * 100) : null;
+
+    // IMMUNITY: if child has >= 5 resolved predictions and accuracy >= 50%, it survives
+    // Good children should NEVER die — they are the goal of evolution
+    if (realAccuracy !== null && realAccuracy >= 50) {
+      console.log(G + '  🛡️ IMMUNE: ' + (ch.name || ch.spec) + ' — acc:' + realAccuracy + '% (' + realResolved + ' preds) — protected from death' + X);
+      alive.push(ch);
+      continue;
+    }
+
+    // Only kill by intelScore if child has NO proven track record OR bad accuracy
     const slug2 = ch.spec.replace(/[^a-z0-9]/gi, '-').toLowerCase();
     const intelPath2 = path.join(INTEL_DIR, slug2 + '.json');
     if (fs.existsSync(intelPath2)) {
@@ -243,7 +265,13 @@ function pruneDeadChildren(pnl) {
         if (hist2.length >= 15) {
           const avgScore = hist2.reduce((a, b) => a + b, 0) / hist2.length;
           if (avgScore < 40) {
-            dead.push({ ...ch, deathReason: 'incompetence', avgScore: avgScore.toFixed(0), finalTrades: cp.trades || 0 });
+            // Double check: if real accuracy exists and is decent (>= 40%), spare it
+            if (realAccuracy !== null && realAccuracy >= 40) {
+              console.log(Y + '  ⚠️ SPARED: ' + (ch.name || ch.spec) + ' — intelScore low (' + avgScore.toFixed(0) + ') but real acc:' + realAccuracy + '% — keeping alive' + X);
+              alive.push(ch);
+              continue;
+            }
+            dead.push({ ...ch, deathReason: 'incompetence', avgScore: avgScore.toFixed(0), finalTrades: cp.trades || 0, realAccuracy });
             continue;
           }
         }
@@ -268,12 +296,95 @@ function pruneDeadChildren(pnl) {
     console.log(R + BOLD + '\n  ✗ CHILD DIED: ' + (d.name || d.spec) + ' (' + d.spec + ') — ' + cause + X);
   }
 
-  // Update father's tree
-  for (const d of dead) {
-    d.status = 'dead';
-    d.deathTime = new Date().toISOString();
+  // ── v5: REBIRTH WITH CROSSOVER DNA ──
+  // Dead children are reborn with DNA crossed over from top 2 living children by accuracy.
+  // For each DNA param: 50% chance from parent1, 50% from parent2, then 15% mutation.
+  const reborn = [];
+
+  // Find top 2 living children by REAL accuracy (from child_learning)
+  const aliveScored = [];
+  for (const ch of alive) {
+    const specSlug = (ch.spec || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    const learnData = childLearning.learning?.[specSlug] || childLearning.learning?.[ch.spec] || childLearning.learning?.[ch.spec?.toLowerCase()] || {};
+    const resolved = learnData.totalResolved || 0;
+    const accuracy = resolved >= 3 ? (learnData.correct || 0) / resolved : 0;
+    const score = accuracy * 100 + Math.log(resolved + 1) * 5;
+    const cpPath = path.join(ch.dir || path.join(DIR, 'children', ch.id || ch.spec), 'pnl.json');
+    let childData = null;
+    try { childData = JSON.parse(fs.readFileSync(cpPath, 'utf8')); childData._spec = ch.spec; } catch { }
+    aliveScored.push({ ch, score, childData, accuracy });
   }
-  pnl.children = [...alive, ...dead];
+  aliveScored.sort((a, b) => b.score - a.score);
+
+  const parent1 = aliveScored[0]?.childData || null;
+  const parent2 = aliveScored[1]?.childData || parent1; // fallback to self-crossover if only 1 alive
+
+  if (parent1) {
+    console.log(`[CROSSOVER] 🧬 Parents: ${parent1._spec} (score:${aliveScored[0]?.score.toFixed(1)}, acc:${(aliveScored[0]?.accuracy*100).toFixed(0)}%) × ${parent2._spec} (score:${aliveScored[1]?.score?.toFixed(1) || '?'}, acc:${(aliveScored[1]?.accuracy*100 || 0).toFixed(0)}%)`);
+  }
+
+  for (const d of dead) {
+    const childDir = d.dir || path.join(DIR, 'children', d.id || d.spec);
+    const cpPath = path.join(childDir, 'pnl.json');
+
+    // v5: Crossover DNA from top 2 parents, then mutate 15%
+    const dna1 = parent1?.dna || d.dna || {};
+    const dna2 = parent2?.dna || d.dna || {};
+    const allKeys = new Set([...Object.keys(dna1), ...Object.keys(dna2)]);
+    const mutatedDNA = {};
+    const MUTATION_RATE = 0.15;
+    for (const key of allKeys) {
+      if (key === 'generation' || key === 'cognitiveStyle' || key === 'crossoverFrom' || key === 'isElite' || key === 'mutation') {
+        mutatedDNA[key] = dna1[key] ?? dna2[key];
+        continue;
+      }
+      // 50/50 crossover: pick from parent1 or parent2
+      const chosen = Math.random() < 0.5 ? (dna1[key] ?? dna2[key]) : (dna2[key] ?? dna1[key]);
+      if (typeof chosen !== 'number') { mutatedDNA[key] = chosen; continue; }
+      // Apply 15% mutation on top
+      const noise = 1 + (Math.random() * 2 - 1) * MUTATION_RATE;
+      mutatedDNA[key] = parseFloat((chosen * noise).toFixed(4));
+    }
+    mutatedDNA.generation = Math.max(dna1.generation || 1, dna2.generation || 1) + 1;
+    mutatedDNA.crossoverFrom = [parent1?._spec || 'self', parent2?._spec || 'self'];
+
+    // Reset the child's PnL — fresh start with evolved DNA
+    try {
+      if (fs.existsSync(cpPath)) {
+        const cp = JSON.parse(fs.readFileSync(cpPath, 'utf8'));
+        cp.trades = 0; cp.wins = 0; cp.losses = 0; cp.net = 0;
+        cp.exp = 0;
+        cp.dna = mutatedDNA;
+        cp.generation = mutatedDNA.generation;
+        cp.rebornAt = new Date().toISOString();
+        cp.crossoverFrom = mutatedDNA.crossoverFrom;
+        fs.writeFileSync(cpPath, JSON.stringify(cp, null, 2));
+      }
+    } catch { }
+
+    // Clear the stale intel scoreHistory so it doesn't immediately die again
+    const slug = d.spec.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const iPath = path.join(INTEL_DIR, slug + '.json');
+    try {
+      if (fs.existsSync(iPath)) {
+        const intel = JSON.parse(fs.readFileSync(iPath, 'utf8'));
+        intel.scoreHistory = []; // Reset — give it a clean slate
+        fs.writeFileSync(iPath, JSON.stringify(intel, null, 2));
+      }
+    } catch { }
+
+    d.status = 'alive'; // REBORN, not dead
+    d.dna = mutatedDNA;
+    d.generation = mutatedDNA.generation;
+    d.rebornAt = new Date().toISOString();
+    reborn.push(d);
+
+    const parents = mutatedDNA.crossoverFrom.join(' × ');
+    console.log(C + BOLD + '\n  🧬 CHILD REBORN: ' + (d.name || d.spec) + ' → Gen ' + mutatedDNA.generation + ' (crossover: ' + parents + ', mutated 15%)' + X);
+    appendToSoul(`\n### CHILD REBORN — ${new Date().toISOString()}:\n${d.name || d.spec} reborn as Gen ${mutatedDNA.generation}. DNA crossover from ${parents} with 15% mutation.\nNatural selection continues. Stronger genome deployed.\n`);
+  }
+
+  pnl.children = [...alive, ...reborn];
   savePnL(pnl);
 }
 
