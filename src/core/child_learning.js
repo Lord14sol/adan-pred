@@ -384,8 +384,36 @@ class ChildLearningEngine {
             console.log(`[EVOLUTION][${trackName.toUpperCase()}] 📊 ${id}: acc=${stats.accuracy}% trades=${stats.totalResolved} skill=${skill.p.toFixed(3)}${skill.isSkilled ? '✓' : ''} composite=${composite.toFixed(3)}`);
         }
 
+        // ── DEAD ZONE KILLER: Force-reset children stuck at 25-45% with 200+ trades ──
+        // These children are too bad to be useful but too good to contrarian-flip.
+        // Fresh random DNA breaks them out of local minima that crossover can't escape.
+        for (const [id, stats] of children) {
+            if (stats.totalResolved >= 200 && stats.accuracy >= 25 && stats.accuracy < 45) {
+                console.log(`[EVOLUTION][${trackName.toUpperCase()}] 💀 DEAD ZONE KILL: ${id} (${stats.accuracy}% over ${stats.totalResolved} trades) — stuck in 25-45% dead zone → fresh random DNA`);
+                const freshDNA = {};
+                for (const key of Object.keys(bounds)) {
+                    const b = bounds[key];
+                    freshDNA[key] = parseFloat((b.min + Math.random() * (b.max - b.min)).toFixed(2));
+                }
+                freshDNA.generation = (stats.dna?.generation || 1) + 1;
+                this.learning[id] = {
+                    ...this._initChild(id),
+                    dna: freshDNA,
+                    track: trackName,
+                    evolvedFrom: ['dead_zone_reset'],
+                    evolvedAt: new Date().toISOString(),
+                };
+            }
+        }
+
         // v4.1: Filter parents by MIN_PARENT_ACCURACY — stop bad genes from reproducing
-        const qualifiedParents = children.filter(([, stats]) => stats.accuracy >= MIN_PARENT_ACCURACY);
+        // Re-fetch children after dead zone kills
+        const survivingChildren = Object.entries(this.learning)
+            .filter(([, stats]) => {
+                const childTrack = stats.track || 'quant';
+                return childTrack === trackName && stats.totalResolved >= 5;
+            });
+        const qualifiedParents = survivingChildren.filter(([, stats]) => stats.accuracy >= MIN_PARENT_ACCURACY);
         const [worstId, worstStats] = children[children.length - 1];
 
         console.log(`[EVOLUTION][${trackName.toUpperCase()}] 🔬 Qualified parents (>=${MIN_PARENT_ACCURACY}% acc): ${qualifiedParents.length}/${children.length}`);

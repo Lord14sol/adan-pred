@@ -2220,13 +2220,25 @@ async function evaluate_and_trade(decision, prices, state) {
   }
 
   // ═══ WILMOTT v6.0: Pre-trade analysis (16 quantitative checks) ═══
+  // TRAINING MODE: Wilmott gates LOG + SHADOW but do NOT block trades.
+  // This preserves training data collection while recording what would have been blocked.
   const positions = loadPositions();
   const wilmottCheck = wilmott.preTrade(market, decision, pnlNow.fund || 5000, positions.open);
   if (!wilmottCheck.approved) {
-    console.log(`[WILMOTT] ⛔ BLOCKED: ${wilmottCheck.reason} — ${(market.title || '').slice(0, 40)}`);
-    return;
+    console.log(`[WILMOTT] 👻 SHADOW BLOCK (training): ${wilmottCheck.reason} — ${(market.title || '').slice(0, 40)}`);
+    // Record shadow but DON'T return — let the trade through for training data
+    try {
+      const wilmottShadowPath = path.join(DIR, 'wilmott_shadows.jsonl');
+      fs.appendFileSync(wilmottShadowPath, JSON.stringify({
+        ts: new Date().toISOString(),
+        reason: wilmottCheck.reason,
+        market: (market.title || '').slice(0, 60),
+        side, edge, confidence,
+        checks: wilmottCheck.checks,
+      }) + '\n');
+    } catch { }
   }
-  const wilmottStakeMult = wilmottCheck.stakeMultiplier || 1.0;
+  const wilmottStakeMult = wilmottCheck.approved ? (wilmottCheck.stakeMultiplier || 1.0) : 0.5; // Reduce stake if wilmott would block
   if (wilmottCheck.crashMode) {
     console.log(`[WILMOTT] 🔴 CRASH MODE ACTIVE — stake ×${wilmottStakeMult.toFixed(2)}`);
   }
@@ -2936,6 +2948,19 @@ async function doScan(state) {
     }
 
     if (acc < 60) continue;
+
+    // v6.0 Fix: Z-score gate — only trade if edge is statistically significant
+    // Prevents children with 2 trades / 100% acc from trading (that's luck, not skill)
+    const wins = flipped ? stats.wrong : stats.correct;
+    const losses = flipped ? stats.correct : stats.wrong;
+    const totalN = wins + losses;
+    const winRate = totalN > 0 ? wins / totalN : 0.5;
+    const se = totalN > 0 ? Math.sqrt(winRate * (1 - winRate) / totalN) : 1;
+    const zScore = se > 0 ? (winRate - 0.5) / se : 0;
+    if (zScore < 1.5) {
+      console.log(`[CHILD DIRECT] ⏭ ${spec.id} acc:${acc}% but z-score ${zScore.toFixed(2)} < 1.5 (need more trades for statistical significance)`);
+      continue;
+    }
 
     // Find matching market for this child's asset
     const assetLower = (spec.assetName || '').toLowerCase();

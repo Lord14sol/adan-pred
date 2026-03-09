@@ -54,13 +54,14 @@ export class Polymerase {
             return this._block(checks, `Low recovery potential: ${(recovery * 100).toFixed(1)}%`, market, decision, stake);
         }
 
-        // Gate 3.5: Wilmott VaR Gate (Ch 19) — block when portfolio VaR > 20% of fund
+        // Gate 3.5: Wilmott VaR Gate (Ch 19) — TRAINING: log only, don't block
         try {
             const wilmottResult = wilmott.preTrade(market, decision, stake * 50, []); // fund estimate
             if (!wilmottResult.approved && wilmottResult.reason?.includes('VaR')) {
-                return this._block(checks, wilmottResult.reason, market, decision, stake);
+                addCheck(3.5, 'WILMOTT_VAR', true, `SHADOW: ${wilmottResult.reason} (training: not blocking)`);
+            } else {
+                addCheck(3.5, 'WILMOTT_VAR', true, `VaR OK | crashMode=${wilmottResult.crashMode || false}`);
             }
-            addCheck(3.5, 'WILMOTT_VAR', true, `VaR OK | crashMode=${wilmottResult.crashMode || false}`);
         } catch { addCheck(3.5, 'WILMOTT_VAR', true, 'wilmott not ready'); }
 
         // Gate 4: liquidity >= 2x stake
