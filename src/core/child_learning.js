@@ -4,6 +4,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { wilmott } from './wilmott_quant.js';
 
 const HOME = process.env.HOME || process.env.USERPROFILE || '/tmp';
 const DIR = process.env.ADAN_DIR || path.join(HOME, '.adan-pred');
@@ -354,11 +355,34 @@ class ChildLearningEngine {
                 const childTrack = stats.track || 'quant';
                 return childTrack === trackName && stats.totalResolved >= 5;
             })
-            .sort((a, b) => b[1].accuracy - a[1].accuracy);
+            .sort((a, b) => {
+                // Wilmott Ch17+Ch75: Growth rate × Skill Factor
+                // Composite = accuracy × log(trades+1) × skillBonus
+                // Skill Factor (Ch 75): p = 2×(winRate-0.5), bonus if statistically significant
+                const calcScore = (stats) => {
+                    if (stats.totalResolved < 20) return stats.accuracy / 100;
+                    const freqEdge = (stats.accuracy / 100) * Math.log(stats.totalResolved + 1);
+                    const skill = wilmott.skill.computeSkill(stats.correct || 0, stats.wrong || 0);
+                    const skillBonus = skill.isSkilled ? 1.0 + skill.p : 1.0;
+                    return freqEdge * skillBonus;
+                };
+                return calcScore(b[1]) - calcScore(a[1]);
+            });
 
         if (children.length < 1) return; // Need at least 1 child
 
         console.log(`\n[EVOLUTION][${trackName.toUpperCase()}] 🧬 ═══ EVOLUTIONARY CYCLE ═══`);
+
+        // Log composite scores (Wilmott frequency×edge×skill ranking)
+        for (const [id, stats] of children) {
+            const skill = wilmott.skill.computeSkill(stats.correct || 0, stats.wrong || 0);
+            const freqEdge = stats.totalResolved >= 20
+                ? (stats.accuracy / 100) * Math.log(stats.totalResolved + 1)
+                : stats.accuracy / 100;
+            const skillBonus = skill.isSkilled ? 1.0 + skill.p : 1.0;
+            const composite = freqEdge * skillBonus;
+            console.log(`[EVOLUTION][${trackName.toUpperCase()}] 📊 ${id}: acc=${stats.accuracy}% trades=${stats.totalResolved} skill=${skill.p.toFixed(3)}${skill.isSkilled ? '✓' : ''} composite=${composite.toFixed(3)}`);
+        }
 
         // v4.1: Filter parents by MIN_PARENT_ACCURACY — stop bad genes from reproducing
         const qualifiedParents = children.filter(([, stats]) => stats.accuracy >= MIN_PARENT_ACCURACY);

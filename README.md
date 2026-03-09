@@ -1,10 +1,72 @@
-# ADAN-PRED v5.2: Autonomous Quantitative Agentic Firm
+# ADAN-PRED v6.0: Autonomous Quantitative Agentic Firm
+## Darwinism × Paul Wilmott's Quantitative Finance
 ---
 
 ## Executive Summary
-ADAN-PRED is a non-deterministic, Darwinian autonomous hedge fund architecture designed for real-time operation on prediction markets (Polymarket). It utilizes a multi-layered intelligence pipeline combining Binance technical analysis, genetic child swarm evolution, and LLM reasoning to identify and execute trades with positive expected value.
+ADAN-PRED is a non-deterministic, Darwinian autonomous hedge fund architecture designed for real-time operation on prediction markets (Polymarket). It combines **Binance technical analysis**, **genetic child swarm evolution**, **LLM reasoning**, and **16 quantitative concepts from Paul Wilmott's "Quantitative Finance"** (1,401 pages) to identify and execute trades with positive expected value.
 
 **Current Stats (paper trading):** 647 trades | 50.5% WR | +$1,276 net P&L | 12 children across 4 assets
+
+## What ADAN Became in v6.0
+
+ADAN evolved from a brute-force Darwinian trader into a **mathematically rigorous autonomous quantitative firm**. The children still evolve via natural selection, but now their sizing, strategy selection, and survival ranking are governed by institutional-grade quant finance:
+
+- **Before:** Fixed stake formulas, naive volatility, no crash awareness, pure accuracy ranking
+- **After:** Half-Kelly optimal sizing, EWMA volatility, crash-mode correlation collapse, VaR portfolio limits, skill-factor evolution, uncertainty-range pricing, fat-tail confidence adjustment, transaction cost gates, illiquidity feedback, and arbitrage detection
+
+Think of it as: **Renaissance Technologies' risk engine grafted onto a Darwinian swarm intelligence.**
+
+---
+
+## v6 Architecture: Wilmott Quantitative Layer
+
+### 16 Concepts from Paul Wilmott's "Quantitative Finance"
+
+#### TIER 1: Game Changers (6 concepts)
+
+| # | Concept | Chapter | Implementation |
+|---|---------|---------|----------------|
+| 1 | **EWMA Volatility** | Ch 42/49 | σ²_n = λ×σ²_{n-1} + (1-λ)×R²_n. Replaces naive std dev in regime classifier. λ=0.94 (RiskMetrics). Reacts to crashes instantly. |
+| 2 | **Uncertain Parameters** | Ch 52 | Avellaneda-Levy-Parás-Lyons model. Computes fair value range [V_min, V_max] using σ±30%. Only trades when market price falls OUTSIDE uncertainty band. |
+| 3 | **CrashMetrics** | Ch 43/58 | During crash ALL correlations → 1. Detects crash mode (EWMA vol > 4% + sharp drop). Stake ×0.3 in crash. Worst-case portfolio loss = Σ crypto-long exposure × 20%. |
+| 4 | **Portfolio VaR** | Ch 19 | VaR = -α × √δt × √(ΣΣ Δi×Δj×σi×σj×ρij). 99% confidence (α=2.326). Blocks new trades when VaR > 20% of fund. |
+| 5 | **Crash Allocation** | Ch 67 | Korn-Wilmott ODE: π̂(t) decreases toward horizon. Never invest > 1/k*. Time-adjusted stake multiplier. |
+| 6 | **Skill Factor** | Ch 75 | p = 2×(winRate - 0.5). Children ranked by composite = freq × edge × skillBonus. Statistically significant skill (z>1.645) gets bonus in evolution. |
+
+#### TIER 2: High Value (6 concepts)
+
+| # | Concept | Chapter | Implementation |
+|---|---------|---------|----------------|
+| 7 | **Transaction Costs** | Ch 48 | K = κ/(σ√δt). Minimum edge must exceed 2× spread (2%). Blocks trades where edge < spread. |
+| 8 | **Binary Fair Value** | Ch 7 | Binary_call = e^{-r(T-t)} × N(d2). Black-Scholes for binary options. Fair value calculator. |
+| 9 | **Jump Diffusion** | Ch 57 | Kurtosis detection. Excess kurtosis > 3.5 → confidence reduced up to 30%. Fat tails = more uncertainty. |
+| 10 | **Feedback Effect** | Ch 61 | σ_effective = σ/(1 - ε×∂Δ/∂S). Stake reduced in illiquid markets: >10% of daily volume = ×0.25. |
+| 11 | **Utility Theory** | Ch 62 | CRRA U(W) = (W^γ-1)/γ. Certainty equivalent exposed for analysis. Half-Kelly = log utility. |
+| 12 | **Arbitrage Detection** | Ch 17 | If YES + NO < 1.0 - fees → arbitrage exists. Scanner runs every cycle, logs opportunities. |
+
+#### TIER 3: Philosophical (embedded in design)
+
+| # | Concept | Chapter | How It Manifests |
+|---|---------|---------|------------------|
+| 13 | Discrete Hedging Error | Ch 47 | Always residual risk → Half Kelly, never full Kelly |
+| 14 | "Simple but no simpler" | — | 7 features is enough. Don't overfit. |
+| 15 | Real Options | Ch 73 | Mispricing threshold = exercise boundary. Wait for edge. |
+| 16 | GARCH Mean-Reversion | Ch 49 | Vol always returns to mean → EWMA forecast for multi-step horizon |
+
+### Wilmott Pre-Trade Pipeline
+```
+Market Signal → 8 Wilmott Gates:
+  1. CrashMode check (vol + returns)        → stake ×0.3 if crash
+  2. VaR limit (99% confidence)             → BLOCK if VaR > 20% fund
+  3. Uncertainty range (σ band)             → log if price inside range
+  4. Crash allocation (time-adjusted)       → stake reduction near horizon
+  5. Transaction cost (edge vs spread)      → BLOCK if edge < 2%
+  6. Fat tails (kurtosis > 3.5)            → confidence reduction
+  7. Illiquidity feedback (stake/volume)    → stake ×0.25 to ×1.0
+  8. Crash exposure (worst-case portfolio)  → stake ×0.5 if >30% fund
+```
+
+---
 
 ## v5 Architecture: Children-First Trading
 
@@ -19,17 +81,21 @@ Binance Data → 12 Children (evolved DNA) → Signal + Accuracy Check
   └── no qualifying child → Gemini brain fallback
 ```
 
-### Accuracy-Based Stake Sizing
-- 60% accuracy → $100 (base)
-- 70% accuracy → $150
-- 80% accuracy → $200
-- Formula: `stake = Math.min(300, 100 + Math.round((acc - 60) * 5 / 25) * 25)`
+### Half-Kelly Stake Sizing (v5.3 + v6.0)
+```javascript
+edge = childConfidence/100 - marketPrice  // mispricing
+variance = edge × (1 - edge)              // Bernoulli variance
+fullKelly = edge / variance               // Wilmott Ch17
+halfKelly = fullKelly / 2                  // safety margin
+stake = fund × halfKelly × copulaAdj × wilmottMult  // all adjustments
+// Capped: $50 min, $300 max (training mode)
+```
 
 ### Contrarian Flip (v5.1)
-Children with 100+ predictions and <25% accuracy consistently predict the WRONG direction. Instead of killing them, ADAN **inverts their signal** — a 0% accuracy child flipped becomes ~100% accuracy. Pure information theory.
+Children with 100+ predictions and <25% accuracy consistently predict WRONG. ADAN **inverts their signal** — pure information theory.
 
 ### DNA Crossover (v5.0)
-When a child dies, it's reborn with DNA crossed over from the **top 2 living children** by accuracy. For each DNA parameter: 50% chance from parent 1, 50% from parent 2, then 15% mutation applied.
+When a child dies, it's reborn with DNA crossed over from **top 2 by composite score** (accuracy × frequency × skill). 15% mutation rate.
 
 ## The Dynasty: Genetic Swarm Intelligence
 
@@ -40,7 +106,7 @@ Each child specializes in one asset + timeframe using evolved DNA thresholds:
 - **SOL**: 5min, 15min, 1hr
 - **BNB**: 5min, 15min, 1hr
 
-DNA parameters evolve via natural selection: `rsiOversold`, `rsiOverbought`, `macdWeight`, `trendMinPct`, `volSpikeThreshold`, `minConfidence`, `patience`.
+DNA parameters evolve: `rsiOversold`, `rsiOverbought`, `macdWeight`, `trendMinPct`, `volSpikeThreshold`, `minConfidence`.
 
 ### 4 LLM Category Children
 - **politics-daily**: Political prediction markets
@@ -48,16 +114,26 @@ DNA parameters evolve via natural selection: `rsiOversold`, `rsiOverbought`, `ma
 - **macro-weekly**: Macroeconomic events
 - **events-daily**: Global events
 
-### Evolution Cycle
+### Evolution Cycle (v6.0: Skill-Weighted)
 1. Children predict → outcomes tracked by `child_learning.js`
-2. Every N predictions → worst child replaced via crossover of top 2
-3. DNA mutates 15% on rebirth → escapes local minima
-4. Tournament of Death at trade 20 → bottom 50% culled
+2. Every 5 resolved → worst child (by **composite score**) replaced via crossover of top 2
+3. Composite score = `accuracy × log(trades+1) × skillBonus` (Wilmott Ch17+Ch75)
+4. Skill factor: `p = 2×(winRate - 0.5)`, bonus if z-score > 1.645 (95% significant)
+5. DNA mutates 15% on rebirth → escapes local minima
+6. Shannon Entropy monitoring → forces 3× mutation if monoculture detected
+
+### Regime-Aware Signals (v5.3)
+Children adjust indicator weights based on detected market regime:
+- **TRENDING**: MACD ×1.5, Trend ×1.5, RSI ×0.5, BB ×0.5
+- **MEAN_REVERTING**: RSI ×1.5, BB ×1.5, MACD ×0.5, Trend ×0.5
+- **VOLATILE**: All weights ×0.75 (reduce confidence)
+
+Regime detection now uses **EWMA volatility** (not naive std dev) + **kurtosis** for fat-tail awareness.
 
 ## Intelligence Layers
 
 ### Technical Analysis (Binance)
-7 features fed to children (fixed in v5.2 — previously only RSI was active):
+7 features fed to children:
 - **RSI** (1m, 5m, 1h)
 - **MACD** histogram
 - **Bollinger Bands** %B position
@@ -77,25 +153,33 @@ DNA parameters evolve via natural selection: `rsiOversold`, `rsiOverbought`, `ma
 - **CYBER**: Euphoric bull markets
 - **DEFAULT**: Standard conditions
 
-### Risk Gates
-- **Kelly Criterion** stake sizing (brain trades)
-- **Polymerase Gates**: RECOVERY_POTENTIAL active (57% accuracy, +$2,558 saved). CLOSE_WINDOW and EXIT_PATH disabled for training (were net negative).
-- **Capital Lockup**: Max 90% treasury utilization
-- **EV Gate**: Minimum -10% EV threshold (training mode)
-- **LMSR**: Fair value estimation with logit components
+### Risk Gates (Multi-Layer)
+1. **Polymerase Gates**: RECOVERY_POTENTIAL + VaR (Wilmott) active
+2. **Wilmott Engine**: 8 pre-trade quantitative checks
+3. **Kelly Criterion**: Half-Kelly for child trades, full Kelly for brain
+4. **Copula Risk**: Portfolio correlation penalty (0.5-1.0×)
+5. **Capital Lockup**: Max 90% treasury utilization
+6. **EV Gate**: Minimum -10% EV threshold (training mode)
+7. **LMSR**: Fair value estimation with logit components
+8. **CrashMetrics**: Emergency 70% stake reduction in crash mode
 
 ## Quantitative Infrastructure
-- **Brier Score Calibration**: 0.316 (tracks prediction accuracy)
-- **Feature Importance**: Point-Biserial ranking of which indicators predict wins
-- **Metacalibration**: Per-confidence-bucket accuracy tracking
-- **Particle Filter**: Smooths market prices, tracks true underlying probability
+- **EWMA Volatility** (Wilmott Ch 42): λ=0.94 RiskMetrics, replaces naive std dev
+- **Portfolio VaR** (Wilmott Ch 19): 99% confidence, blocks at 20% of fund
+- **CrashMetrics** (Wilmott Ch 58): All correlations → 1 during crash
+- **Skill Factor** (Wilmott Ch 75): Statistical significance of child skill
+- **Arbitrage Scanner** (Wilmott Ch 17): Detects mispriced YES+NO combos
+- **Brier Score Calibration**: Tracks prediction accuracy
+- **Feature Importance**: Point-Biserial ranking
+- **Metacalibration**: Per-confidence-bucket accuracy
+- **Particle Filter**: Smooths prices, tracks true probability
 - **Copula Risk**: Portfolio-level correlation analysis
 - **Greeks Timing**: Delta/theta-inspired exit urgency
 
 ## Dashboard
 Real-time telemetry at `http://localhost:3141`:
 - Live prices with sparklines (BTC, ETH, SOL, BNB)
-- Dynasty Tree with DNA, signals, accuracy per child
+- Dynasty Tree with DNA, signals, accuracy, skill factor per child
 - Conway Colony: Game of Life visualization of ecosystem
 - Open positions with edge, countdown, P&L
 - Hour heatmap (best/worst trading hours UTC)
@@ -114,12 +198,15 @@ node adan-pred.js
 | File | Purpose |
 |------|---------|
 | `adan-pred.js` | Main engine: scanning, trading, child management |
+| `src/core/wilmott_quant.js` | **16 Wilmott concepts**: EWMA, VaR, CrashMetrics, Skill Factor, etc. |
+| `src/core/regime_classifier.js` | EWMA-based regime detection + kurtosis |
 | `src/core/genetics.js` | DNA crossover, mutation, Tournament of Death |
-| `src/core/child_learning.js` | Accuracy tracking, evolution engine |
-| `src/core/polymerase.js` | Risk gates (shadow trade learning) |
+| `src/core/child_learning.js` | Accuracy tracking, skill-weighted evolution |
+| `src/core/polymerase.js` | Risk gates + VaR gate (shadow trade learning) |
 | `src/core/config.js` | Paths, PnL, positions management |
 | `src/api/polymarket.js` | Polymarket API integration |
 | `src/ui/dashboard.js` | HTTP dashboard + Conway Colony |
 
 ---
 *Autonomous intelligence research. Paper trading mode. Not financial advice.*
+*Quantitative framework based on Paul Wilmott's "Quantitative Finance" (Wiley, 2006).*

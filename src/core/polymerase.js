@@ -4,6 +4,7 @@
 // Part of Mother Code v2.0
 import fs from 'fs';
 import path from 'path';
+import { wilmott } from './wilmott_quant.js';
 
 const DIR = path.join(process.env.HOME, '.adan-pred');
 const BLOCKS_LOG = path.join(DIR, 'polymerase_blocks.jsonl');
@@ -52,6 +53,15 @@ export class Polymerase {
             `recovery=${(recovery * 100).toFixed(1)}%`)) {
             return this._block(checks, `Low recovery potential: ${(recovery * 100).toFixed(1)}%`, market, decision, stake);
         }
+
+        // Gate 3.5: Wilmott VaR Gate (Ch 19) — block when portfolio VaR > 20% of fund
+        try {
+            const wilmottResult = wilmott.preTrade(market, decision, stake * 50, []); // fund estimate
+            if (!wilmottResult.approved && wilmottResult.reason?.includes('VaR')) {
+                return this._block(checks, wilmottResult.reason, market, decision, stake);
+            }
+            addCheck(3.5, 'WILMOTT_VAR', true, `VaR OK | crashMode=${wilmottResult.crashMode || false}`);
+        } catch { addCheck(3.5, 'WILMOTT_VAR', true, 'wilmott not ready'); }
 
         // Gate 4: liquidity >= 2x stake
         const liquidityOk = !volume24h || volume24h >= stake * 2;

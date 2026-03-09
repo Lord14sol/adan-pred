@@ -88,6 +88,7 @@ import { childLearning } from './src/core/child_learning.js';
 import { regimeDetector } from './src/core/regime_classifier.js';
 import { featureImportance } from './src/core/feature_importance.js';
 import { riskOfRuin } from './src/core/risk_of_ruin.js';
+import { wilmott } from './src/core/wilmott_quant.js';
 
 let consecutiveLosses = 0;
 let lastHumanState = 'RATIONAL_MARKET';
@@ -238,9 +239,10 @@ async function fetchAllPrices() {
     // Order book imbalance: bid/ask ratio > 1.3 = buy wall dominant
     const obImbalance = orderBook ? (orderBook.buyPressure > 60 ? 'BUY_WALL' : orderBook.buyPressure < 40 ? 'SELL_WALL' : 'BALANCED') : 'UNKNOWN';
 
-    // ── Update Regime Classifier ──
+    // ── Update Regime Classifier + Wilmott EWMA (Ch 42/49) ──
     const assetName = sym.replace('USDT', '').toLowerCase();
     regimeDetector.updatePrice(assetName, price);
+    wilmott.updatePrice(assetName, price);
     const regimeInfo = regimeDetector.detectRegime(assetName);
 
     const d = {
@@ -300,8 +302,8 @@ const CHILD_SPECS = [
 
 // Rule-based signal using evolved DNA thresholds (no Claude needed)
 // Each child's DNA evolves its own RSI/MACD/trend thresholds over time
-function childSignal(d, dna = null) {
-  if (!d) return { dir: 'NEUTRAL', conf: 40, reason: 'no data' };
+function childSignal(d, dna = null, asset = null) {
+  if (!d) return { dir: 'NEUTRAL', conf: 40, reason: 'no data', regime: 'UNKNOWN' };
   // Use evolved DNA thresholds if available, otherwise defaults
   const rsiOversold = dna?.rsiOversold ?? 35;
   const rsiOverbought = dna?.rsiOverbought ?? 65;
@@ -311,21 +313,44 @@ function childSignal(d, dna = null) {
   const volSpikeThreshold = dna?.volSpikeThreshold ?? 1.5;
   const minConfidence = dna?.minConfidence ?? 55;
 
+  // ── Wilmott: Regime-Aware Indicator Weights ──
+  // Mean-reverting → favor RSI/BB; Trending → favor MACD/trend; Volatile → dampen all
+  let regime = 'MEAN_REVERTING';
+  let wRSI = 1.0, wMACD = 1.0, wTrend = 1.0, wBB = 1.0, wVol = 1.0;
+  if (asset) {
+    const regimeData = regimeDetector.detectRegime(asset);
+    regime = regimeData.regime;
+    if (regime === 'TRENDING') {
+      wMACD = 1.5; wTrend = 1.5; wRSI = 0.5; wBB = 0.5;
+    } else if (regime === 'MEAN_REVERTING') {
+      wRSI = 1.5; wBB = 1.5; wMACD = 0.5; wTrend = 0.5;
+    } else if (regime === 'VOLATILE') {
+      wRSI = 0.75; wMACD = 0.75; wTrend = 0.75; wBB = 0.75; wVol = 0.75;
+    }
+  }
+
+  // Weighted score accumulation (Wilmott regime-aware)
+  let score = 0;
   const bearish = [], bullish = [];
-  if (d.rsi < rsiOversold) bullish.push('RSI oversold ' + d.rsi.toFixed(0));
-  if (d.rsi > rsiOverbought) bearish.push('RSI overbought ' + d.rsi.toFixed(0));
-  if (d.macd?.hist < 0 && Math.abs(d.macd.hist) * macdWeight > 0.01) bearish.push('MACD bearish');
-  else if (d.macd?.hist > 0 && d.macd.hist * macdWeight > 0.01) bullish.push('MACD bullish');
-  if (d.trend5m < -trendMinPct) bearish.push('5m trend ' + d.trend5m.toFixed(2) + '%');
-  if (d.trend5m > trendMinPct) bullish.push('5m trend +' + d.trend5m.toFixed(2) + '%');
-  if (d.trend15m < -trend15mMinPct) bearish.push('15m trend ' + d.trend15m?.toFixed(2) + '%');
-  if (d.trend15m > trend15mMinPct) bullish.push('15m trend +' + d.trend15m?.toFixed(2) + '%');
-  if (d.vol?.trend === 'falling') bearish.push('vol falling');
-  if (d.vol?.spike || (d.vol?.ratio && d.vol.ratio > volSpikeThreshold)) bullish.push('vol spike');
-  const score = bullish.length - bearish.length;
-  if (score <= -2) return { dir: 'DOWN', conf: Math.min(85, minConfidence + bearish.length * 8), reason: bearish.slice(0, 3).join(', ') };
-  if (score >= 2) return { dir: 'UP', conf: Math.min(85, minConfidence + bullish.length * 8), reason: bullish.slice(0, 3).join(', ') };
-  return { dir: 'NEUTRAL', conf: 40, reason: 'conflicted signals' };
+  if (d.rsi < rsiOversold) { bullish.push('RSI oversold ' + d.rsi.toFixed(0)); score += wRSI; }
+  if (d.rsi > rsiOverbought) { bearish.push('RSI overbought ' + d.rsi.toFixed(0)); score -= wRSI; }
+  if (d.macd?.hist < 0 && Math.abs(d.macd.hist) * macdWeight > 0.01) { bearish.push('MACD bearish'); score -= wMACD; }
+  else if (d.macd?.hist > 0 && d.macd.hist * macdWeight > 0.01) { bullish.push('MACD bullish'); score += wMACD; }
+  if (d.trend5m < -trendMinPct) { bearish.push('5m trend ' + d.trend5m.toFixed(2) + '%'); score -= wTrend; }
+  if (d.trend5m > trendMinPct) { bullish.push('5m trend +' + d.trend5m.toFixed(2) + '%'); score += wTrend; }
+  if (d.trend15m < -trend15mMinPct) { bearish.push('15m trend ' + d.trend15m?.toFixed(2) + '%'); score -= wTrend; }
+  if (d.trend15m > trend15mMinPct) { bullish.push('15m trend +' + d.trend15m?.toFixed(2) + '%'); score += wTrend; }
+  if (d.vol?.trend === 'falling') { bearish.push('vol falling'); score -= wVol; }
+  if (d.vol?.spike || (d.vol?.ratio && d.vol.ratio > volSpikeThreshold)) { bullish.push('vol spike'); score += wVol; }
+  // Micro-trend tiebreaker: when no indicator fires (lateral market),
+  // use raw trend1m direction as weak signal so children can still trade and learn.
+  if (bullish.length === 0 && bearish.length === 0 && d.trend1m != null) {
+    if (d.trend1m > 0.15) { bullish.push('micro-trend +' + d.trend1m.toFixed(3) + '%'); score += 0.5; }
+    else if (d.trend1m < -0.15) { bearish.push('micro-trend ' + d.trend1m.toFixed(3) + '%'); score -= 0.5; }
+  }
+  if (score <= -1.0) return { dir: 'DOWN', conf: Math.min(85, minConfidence + bearish.length * 8), reason: bearish.slice(0, 3).join(', '), regime };
+  if (score >= 1.0) return { dir: 'UP', conf: Math.min(85, minConfidence + bullish.length * 8), reason: bullish.slice(0, 3).join(', '), regime };
+  return { dir: 'NEUTRAL', conf: 40, reason: 'conflicted signals', regime };
 }
 
 // Run one child scanner — fetch data, find best market, write intel
@@ -335,7 +360,7 @@ async function runChildScanner(spec, allPrices, allMarkets) {
     const priceKey = spec.asset;
     const d = allPrices[priceKey];
     const dna = childLearning.getChildDNA(spec.id);
-    const sig = childSignal(d, dna);
+    const sig = childSignal(d, dna, spec.asset);
 
     // Find relevant markets for this child
     const myMarkets = allMarkets.filter(m =>
@@ -706,7 +731,8 @@ async function processCategoryTrades(prices, state) {
   if (_categoryTradeCandidates.length === 0) return;
 
   // Count existing category positions (non-crypto)
-  const positions = loadPositions();
+  const posData = loadPositions();
+  const positions = posData.open || [];
   const cryptoAssets = ['btc', 'eth', 'sol', 'bnb'];
   const categoryPositions = positions.filter(p => !cryptoAssets.includes((p.asset || '').toLowerCase()));
 
@@ -786,7 +812,7 @@ function grandchildSignal(d, focus) {
     if (d.vol?.trend === 'rising' && d.trend15m < 0) return { dir: 'DOWN', conf: 67, reason: 'vol rising, price down' };
     return { dir: 'NEUTRAL', conf: 40, reason: 'vol flat' };
   }
-  return childSignal(d);
+  return childSignal(d, null, null);
 }
 
 // ── Spawn grandchildren when ADAN is LVL 4+ and child has enough EXP ─────────
@@ -2193,6 +2219,22 @@ async function evaluate_and_trade(decision, prices, state) {
     return;
   }
 
+  // ═══ WILMOTT v6.0: Pre-trade analysis (16 quantitative checks) ═══
+  const positions = loadPositions();
+  const wilmottCheck = wilmott.preTrade(market, decision, pnlNow.fund || 5000, positions.open);
+  if (!wilmottCheck.approved) {
+    console.log(`[WILMOTT] ⛔ BLOCKED: ${wilmottCheck.reason} — ${(market.title || '').slice(0, 40)}`);
+    return;
+  }
+  const wilmottStakeMult = wilmottCheck.stakeMultiplier || 1.0;
+  if (wilmottCheck.crashMode) {
+    console.log(`[WILMOTT] 🔴 CRASH MODE ACTIVE — stake ×${wilmottStakeMult.toFixed(2)}`);
+  }
+  if (wilmottCheck.adjustedConfidence && wilmottCheck.adjustedConfidence < confidence) {
+    console.log(`[WILMOTT] 📉 Fat-tail adj: conf ${confidence}→${wilmottCheck.adjustedConfidence} (kurtosis=${wilmottCheck.kurtosis?.toFixed(1)})`);
+    confidence = wilmottCheck.adjustedConfidence;
+  }
+
   // ═══ QUANT: Smart Money + Order Book (VPIN Kill Switch) ═══
   const smData = lastSmartMoneyData || { available: false };
   if (smData.available && smData.isVPINToxic) {
@@ -2260,7 +2302,7 @@ async function evaluate_and_trade(decision, prices, state) {
   }
 
   // ═══ QUANT: Copula portfolio risk ═══
-  const positions = loadPositions();
+  // positions already loaded by Wilmott preTrade above
   const portfolioRisk = copulaRisk.analyzePortfolio(positions.open);
   const copulaStakeAdj = portfolioRisk.stakeMultiplier;
 
@@ -2287,13 +2329,21 @@ async function evaluate_and_trade(decision, prices, state) {
   const humanMult = (lastHumanState === 'NEWS_SHOCK') ? 0 : 1.0;
   const sessionMult = sessionAdj.stakeMultiplier;
   const metabolicMult = metabolism.getStakeMultiplier(pnlNow.fund || 0, lastHumanState);
-  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj);
+  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult);
   let stake = Math.round(Math.max(100, baseStake * combined) / 25) * 25; // TRAINING: min $100 per bet
 
-  // v5: Child-direct trades use accuracy-based stake sizing instead of Kelly
-  if (decision._childDirect && decision._childStake) {
-    stake = decision._childStake;
-    console.log(`[CHILD DIRECT STAKE] 📐 ${decision._childSpec} acc-based stake: $${stake} (bypasses Kelly)`);
+  // v5.3 Wilmott: Child-direct trades use Half Kelly + Copula correlation penalty
+  if (decision._childDirect) {
+    const edge = decision.edge || 0.05;
+    const variance = edge * (1 - edge); // Bernoulli variance for binary outcome
+    const fullKelly = variance > 0 ? edge / variance : 0;
+    const halfKelly = fullKelly / 2;
+    const fund = pnlNow.fund || 5000;
+    const rawChildStake = Math.round(fund * halfKelly / 100) * 25;
+    // Apply copula correlation penalty (already calculated above)
+    const childStakeWithCopula = Math.round(rawChildStake * copulaStakeAdj / 25) * 25;
+    stake = Math.min(300, Math.max(50, childStakeWithCopula));
+    console.log(`[CHILD DIRECT STAKE] 📐 ${decision._childSpec} Half-Kelly: edge=${(edge*100).toFixed(1)}% f*=${(fullKelly*100).toFixed(1)}% → $${rawChildStake} × copula(${copulaStakeAdj.toFixed(2)}) = $${stake}`);
   }
 
   // v4.1 Fix 4: Cap stake for category trades
@@ -2312,6 +2362,7 @@ async function evaluate_and_trade(decision, prices, state) {
     '× Metabolic:', metabolicMult,
     '× Particle:', particleStakeAdj,
     '× Copula:', copulaStakeAdj,
+    '× Wilmott:', wilmottStakeMult,
     '= Final:', stake);
 
   cls();
@@ -2747,7 +2798,7 @@ async function doScan(state) {
       for (const [sym, d] of Object.entries(prices)) {
         if (!d || sym === '_meta') continue;
         const asset = sym.replace('USDT', '').toLowerCase();
-        const sig = childSignal(d, null); // Shadow mode uses base DNA
+        const sig = childSignal(d, null, sym); // Shadow mode uses base DNA
         if (sig.dir !== 'NEUTRAL' && sig.conf >= 60) {
           logShadowPrediction(asset, sig.dir === 'UP' ? 'UP' : 'DOWN', d.price, 5);
         }
@@ -2846,6 +2897,17 @@ async function doScan(state) {
     console.log('[CHILD DIRECT] ⚠ Scanner error:', e.message);
   }
 
+  // ═══ Wilmott v6.0: Arbitrage Scanner (Ch 17) ═══
+  try {
+    const arbOpps = wilmott.scanArbitrage(availableMarkets || allMarkets || []);
+    if (arbOpps.length > 0) {
+      console.log(`[WILMOTT] 🎯 ARBITRAGE detected: ${arbOpps.length} opportunity(s)`);
+      for (const arb of arbOpps.slice(0, 3)) {
+        console.log(`  → ${(arb.market || '').slice(0, 40)} | gap ${(arb.gap * 100).toFixed(1)}% | profit $${(arb.profitIfBuyBoth * 100).toFixed(0)}/contract`);
+      }
+    }
+  } catch { }
+
   // ═══ v5: CHILD-DIRECT-TRADE — Children bypass Gemini brain ═══
   // Scan all children's intel. If a child with ≥60% accuracy has a non-NEUTRAL signal
   // AND a matching market is mispriced → execute trade directly. Gemini becomes fallback only.
@@ -2894,12 +2956,9 @@ async function doScan(state) {
       continue;
     }
 
-    // v5 ACCURACY-BASED STAKE SIZING: 60%→$100, 70%→$150, 80%→$200, max $300
-    const childStake = Math.min(300, 100 + Math.round((acc - 60) * 5 / 25) * 25);
-
     const score = (acc / 100) * intel.confidence * mispricingEdge;
 
-    console.log(`[CHILD DIRECT] ✅ ${spec.id} → ${intel.direction} acc:${acc}% conf:${intel.confidence}% mispricing:${(mispricingEdge*100).toFixed(1)}% stake:$${childStake} score:${score.toFixed(1)} on ${(matchingMarket.title||'').slice(0,35)}`);
+    console.log(`[CHILD DIRECT] ✅ ${spec.id} → ${intel.direction} acc:${acc}% conf:${intel.confidence}% mispricing:${(mispricingEdge*100).toFixed(1)}% score:${score.toFixed(1)} on ${(matchingMarket.title||'').slice(0,35)}`);
 
     childDirectTrades.push({
       market: matchingMarket,
@@ -2909,7 +2968,6 @@ async function doScan(state) {
       spec: spec.id,
       intel,
       acc,
-      childStake,
       flipped,
     });
     childTradedMarkets.add(matchingMarket.id || matchingMarket.conditionId);
@@ -2927,12 +2985,11 @@ async function doScan(state) {
       myProb: ct.intel.confidence / 100,
       edge: ct.edge,
       confidence: ct.intel.confidence,
-      thought: `[CHILD DIRECT${ct.flipped ? ' CONTRARIAN' : ''}] ${ct.spec} (acc:${ct.acc}% conf:${ct.intel.confidence}%) says ${ct.side}${ct.flipped ? ' (FLIPPED)' : ''}. Mispricing edge: ${(ct.edge*100).toFixed(1)}%. Stake: $${ct.childStake}.`,
+      thought: `[CHILD DIRECT${ct.flipped ? ' CONTRARIAN' : ''}] ${ct.spec} (acc:${ct.acc}% conf:${ct.intel.confidence}%) says ${ct.side}${ct.flipped ? ' (FLIPPED)' : ''}. Mispricing edge: ${(ct.edge*100).toFixed(1)}%. Half-Kelly sizing.`,
       _childDirect: true,
-      _childStake: ct.childStake,
       _childSpec: ct.spec,
     };
-    console.log(`[CHILD DIRECT] 🎯 Executing: ${ct.side} on ${(ct.market.title||'').slice(0,40)} | ${ct.spec} acc:${ct.acc}% | stake:$${ct.childStake}`);
+    console.log(`[CHILD DIRECT] 🎯 Executing: ${ct.side} on ${(ct.market.title||'').slice(0,40)} | ${ct.spec} acc:${ct.acc}% | Half-Kelly + Copula`);
     await evaluate_and_trade(decision, prices, state);
   }
 
@@ -3131,14 +3188,15 @@ async function main() {
         consecutiveLosses = 0;
       }
 
-      // ── Mother Code: Apoptosis check (LVL 10+) ──
-      if (xpNow.level >= 10) {
-        const apo = apoptosis.shouldTrigger(state.pnl.fund || 0, consecutiveLosses, xpNow.level);
-        if (apo?.trigger) {
-          await apoptosis.triggerApoptosis(apo.reason, state.positions, state.pnl);
-          return;
-        }
-      }
+      // ── Mother Code: Apoptosis check — DISABLED FOR TRAINING ──
+      // Paper trading: we want ADAN to keep running and evolving regardless of fund level.
+      // if (xpNow.level >= 10) {
+      //   const apo = apoptosis.shouldTrigger(state.pnl.fund || 0, consecutiveLosses, xpNow.level);
+      //   if (apo?.trigger) {
+      //     await apoptosis.triggerApoptosis(apo.reason, state.positions, state.pnl);
+      //     return;
+      //   }
+      // }
 
       // Clean up old particle filter markets
       particleFilter.cleanup();
@@ -3154,6 +3212,9 @@ async function main() {
       try {
         await childLearning.checkResolutions(state.prices || {}, checkMarketResolution);
       } catch (e) { }
+
+      // ── Wilmott v6.0: Persist EWMA state ──
+      try { wilmott.saveState(); } catch { }
 
       // Skip scan if NEWS_SHOCK
       if (lastHumanState !== 'NEWS_SHOCK') {
