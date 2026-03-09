@@ -10778,5 +10778,28 @@
     },
     "resolved": false,
     "won": null
+  },
+  {
+    "id": "1773025883212",
+    "timestamp": "2026-03-09T03:11:23.212Z",
+    "features": {
+      "fearGreed": 8,
+      "fearBucket": "EXTREME_FEAR",
+      "fundingRate": -0.022545,
+      "fundingBucket": "NEG_STRONG",
+      "trendStrength": 2.2636210736384066,
+      "volRatio": 6.542576854418412,
+      "session": "Shanghai",
+      "humanState": "SLEEPING_HERD",
+      "utcHour": 3,
+      "hourBucket": "ASIA_NIGHT",
+      "edge": 0.08900000000000001,
+      "confidence": 60,
+      "asset": "ETH",
+      "smartMoneySig": "NO_DATA",
+      "spreadPct": 0
+    },
+    "resolved": false,
+    "won": null
   }
 ]
