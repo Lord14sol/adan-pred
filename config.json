@@ -1,4 +1,5 @@
 {
+  "onlyCrypto": true,
   "anthropicKey": "FROM_ENV",
   "mode": "paper",
   "createdAt": "2026-02-28T19:15:20.701Z",
@@ -10,7 +11,7 @@
         "role": "Contexto y Oportunidad",
         "specialization": "Polymarket",
         "prompt": "Analizo el sentimiento del mercado, identifico narrativas y encuentro oportunidades de alto potencial en Polymarket. Soy el 'qué' y el 'porqué'.",
-        "influence": 55.79
+        "influence": 61.46
       },
       {
         "id": "snake",
@@ -18,7 +19,7 @@
         "role": "Ejecución y Alpha",
         "specialization": "Solana/Jupiter",
         "prompt": "Busco la ejecución óptima en Solana (usando Jupiter), analizo la liquidez y encuentro el 'cuándo' y 'cómo' para maximizar el alpha. Soy la acción.",
-        "influence": 71.03
+        "influence": 57.23
       },
       {
         "id": "eva",
@@ -26,7 +27,7 @@
         "role": "Riesgo y Presupuesto",
         "specialization": "Control AGI",
         "prompt": "Gestiono el presupuesto de $5, asigno capital a las operaciones, y tengo la última palabra (el 'go' o 'no-go') para asegurar la supervivencia económica del enjambre.",
-        "influence": 68.35
+        "influence": 61.46
       }
     ],
     "competition": {

@@ -1,639 +1,258 @@
 #!/usr/bin/env python3
 """
-╔══════════════════════════════════════════════════════════════════════╗
-║  ADAN · Terminal Command Center                                      ║
-║  Cyberpunk TUI Dashboard — Real-time position & trade monitoring     ║
-║  Connects to ADAN API at localhost:3141                              ║
-║  Run: python3 adan-tui.py                                            ║
-╚══════════════════════════════════════════════════════════════════════╝
+ADAN Bloomberg Terminal V3
+High-Density Institutional Dashboard
 """
-
 import asyncio
 import json
-import random
-from datetime import datetime, timezone
-from typing import Optional
-
+import os
+import time
+from datetime import datetime
 import httpx
+
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
-from textual.widgets import Header, Footer, Static, DataTable, ProgressBar, Label, Rule
+from textual.containers import Container, Horizontal, Vertical, Grid
+from textual.widgets import Header, Footer, Static, DataTable, Log
 from textual.reactive import reactive
-from textual.timer import Timer
 from textual import work
-from textual.css.query import NoMatches
 
 API_BASE = "http://localhost:3141"
+LOG_FILE = os.path.expanduser("~/.adan-pred/adan.log")
+CONFIG_FILE = os.path.expanduser("~/.adan-pred/config.json")
 
-# ── Styles ─────────────────────────────────────────────────────────────────
 CSS = """
-Screen {
-    background: #0a0a0f;
+Screen { background: #000000; color: #00ff00; }
+#header-bar { height: 1; background: #ffaa00; color: #000000; text-style: bold; layout: horizontal; }
+.head-item { width: 1fr; content-align: center middle; }
+
+#main-grid {
+    layout: grid;
+    grid-size: 4 4;  /* 4 columns, 4 rows */
+    grid-rows: 25% 25% 25% 25%;
+    grid-columns: 25% 25% 25% 25%;
+    margin: 0;
+    padding: 0;
 }
 
-#topbar {
-    height: 3;
-    background: #0d0d18;
-    border-bottom: solid #1a4a8a;
-    layout: horizontal;
-}
-#topbar-logo {
-    width: 30;
-    content-align: left middle;
-    padding: 0 1;
-    color: #00ff88;
-    text-style: bold;
-}
-#topbar-status {
-    width: 1fr;
-    content-align: center middle;
-    color: #888;
-}
-#topbar-stats {
-    width: 50;
-    content-align: right middle;
-    padding: 0 1;
-    color: #aaa;
-}
-
-#main {
-    layout: vertical;
-}
-
-/* ── Position Grid ─── */
-#position-grid {
-    height: 14;
-    layout: horizontal;
-    margin: 0 1;
-}
-
-.pos-panel {
-    width: 1fr;
-    height: 100%;
-    background: #0d0d18;
-    border: solid #1a2a4a;
-    padding: 0 1;
-    margin: 0 1 0 0;
-}
-.pos-panel:last-of-type {
+/* PANELS */
+.panel {
+    border: ascii #ffaa00;
+    background: #000000;
+    padding: 0;
     margin: 0;
 }
 
-.pos-title {
-    color: #00ff88;
-    text-style: bold;
-    text-align: center;
-    padding: 0 0 0 0;
-}
-.pos-market {
-    color: #8888aa;
-    text-align: center;
-    padding: 0;
-}
-.pos-up-bar {
-    color: #00ff88;
-    padding: 0;
-}
-.pos-down-bar {
-    color: #ff4444;
-    padding: 0;
-}
-.pos-detail {
-    color: #aaaacc;
-    padding: 0;
-}
-.pos-pnl-pos {
-    color: #00ff88;
-    text-style: bold;
-    text-align: center;
-}
-.pos-pnl-neg {
-    color: #ff4444;
-    text-style: bold;
-    text-align: center;
-}
-.pos-timer {
-    color: #4488ff;
-    text-align: center;
-}
+/* Placements */
+#panel-stats { column-span: 1; row-span: 3; }
+#panel-positions { column-span: 2; row-span: 1; }
+#panel-history { column-span: 2; row-span: 2; }
+#panel-matrix { column-span: 1; row-span: 2; }
+#panel-swarm { column-span: 1; row-span: 1; }
+#panel-logs { column-span: 4; row-span: 1; }
 
-/* ── Stats Row ─── */
-#stats-row {
-    height: 5;
-    layout: horizontal;
-    margin: 1 1 0 1;
-}
+.title { color: #000000; text-style: bold; background: #ffaa00; text-align: center; }
 
-.stat-box {
-    width: 1fr;
-    height: 100%;
-    background: #0d0d18;
-    border: solid #1a2a4a;
-    padding: 0 1;
-    margin: 0 1 0 0;
-    content-align: center middle;
-}
-.stat-box:last-of-type {
-    margin: 0;
-}
-.stat-label {
-    color: #666688;
-    text-align: center;
-}
-.stat-value {
-    text-style: bold;
-    text-align: center;
-}
+DataTable { height: 1fr; background: #000000; color: #00ff00; }
+DataTable > .datatable--header { background: #111100; color: #ffaa00; }
+DataTable > .datatable--cursor { background: #333300; }
 
-/* ── Bottom Panels ─── */
-#bottom-row {
-    height: 1fr;
-    layout: horizontal;
-    margin: 1 1;
-}
-
-#trade-log-panel {
-    width: 2fr;
-    background: #0d0d18;
-    border: solid #1a2a4a;
-    padding: 0 1;
-    margin: 0 1 0 0;
-}
-#trade-log-title {
-    color: #ff8800;
-    text-style: bold;
-    padding: 0 0 0 0;
-}
-
-#mother-code-panel {
-    width: 1fr;
-    background: #0d0d18;
-    border: solid #1a2a4a;
-    padding: 0 1;
-}
-#mc-title {
-    color: #aa44ff;
-    text-style: bold;
-    padding: 0;
-}
-.mc-row {
-    color: #aaaacc;
-}
-.mc-val-green {
-    color: #00ff88;
-    text-style: bold;
-}
-.mc-val-red {
-    color: #ff4444;
-    text-style: bold;
-}
-.mc-val-yellow {
-    color: #ffaa00;
-    text-style: bold;
-}
-.mc-val-cyan {
-    color: #44aaff;
-    text-style: bold;
-}
-.mc-val-purple {
-    color: #aa44ff;
-    text-style: bold;
-}
-
-DataTable {
-    background: #0a0a0f;
-    color: #ccccdd;
-    height: 1fr;
-}
-DataTable > .datatable--header {
-    background: #1a1a2e;
-    color: #44aaff;
-    text-style: bold;
-}
-DataTable > .datatable--cursor {
-    background: #1a2a4a;
-}
-
-#price-ticker {
-    height: 3;
-    background: #080812;
-    border-top: solid #1a2a4a;
-    layout: horizontal;
-    padding: 0 1;
-}
-.ticker-item {
-    width: 1fr;
-    content-align: center middle;
-    color: #aaa;
-}
+Log { height: 1fr; color: #00ff00; background: #000000; }
 """
 
-
-class PositionPanel(Static):
-    """A single position card showing market data."""
-
-    def __init__(self, idx: int, **kwargs):
-        super().__init__(**kwargs)
-        self.idx = idx
-        self._data = None
-
-    def compose(self) -> ComposeResult:
-        yield Static("▶ POSITION " + str(self.idx + 1), classes="pos-title", id=f"pt-{self.idx}")
-        yield Static("Loading...", classes="pos-market", id=f"pm-{self.idx}")
-        yield Static("", classes="pos-up-bar", id=f"pub-{self.idx}")
-        yield Static("", classes="pos-down-bar", id=f"pdb-{self.idx}")
-        yield Static("", classes="pos-detail", id=f"pd-{self.idx}")
-        yield Static("", classes="pos-pnl-pos", id=f"ppnl-{self.idx}")
-        yield Static("", classes="pos-timer", id=f"ptm-{self.idx}")
-
-    def update_data(self, pos: Optional[dict], prices: dict):
-        """Update panel with position data or empty state."""
-        try:
-            title_el = self.query_one(f"#pt-{self.idx}", Static)
-            market_el = self.query_one(f"#pm-{self.idx}", Static)
-            up_el = self.query_one(f"#pub-{self.idx}", Static)
-            down_el = self.query_one(f"#pdb-{self.idx}", Static)
-            detail_el = self.query_one(f"#pd-{self.idx}", Static)
-            pnl_el = self.query_one(f"#ppnl-{self.idx}", Static)
-            timer_el = self.query_one(f"#ptm-{self.idx}", Static)
-
-            if pos is None:
-                title_el.update("▷ POSITION " + str(self.idx + 1) + " · EMPTY")
-                market_el.update("Waiting for entry signal...")
-                up_el.update("")
-                down_el.update("")
-                detail_el.update("")
-                pnl_el.update("—")
-                timer_el.update("")
-                return
-
-            title = (pos.get("marketTitle", "") or "")[:45]
-            side = pos.get("side", "YES")
-            stake = float(pos.get("stake", 0))
-            edge = float(pos.get("edge", 0)) * 100
-            my_price = float(pos.get("myPrice", 0)) * 100
-            mkt_price = float(pos.get("mktPrice", 0)) * 100
-
-            # Determine asset from title
-            asset = "BTC" if "Bitcoin" in title or "BTC" in title else \
-                    "ETH" if "Ethereum" in title or "ETH" in title else \
-                    "SOL" if "Solana" in title or "SOL" in title else "MKT"
-
-            price_key = f"{asset}USDT" if asset != "MKT" else ""
-            spot = prices.get(price_key, {}).get("price", 0) if price_key else 0
-            chg = prices.get(price_key, {}).get("change", 0) if price_key else 0
-
-            title_el.update(f"▶ POSITION {self.idx + 1} · {asset} · ${stake:.0f}")
-            market_el.update(title[:42])
-
-            # UP bar
-            up_pct = my_price if side == "YES" else (100 - my_price)
-            up_bar_len = max(1, int(up_pct / 100 * 30))
-            up_bar = "█" * up_bar_len + "░" * (30 - up_bar_len)
-            edge_color = "+" if edge > 0 else ""
-            up_el.update(f" UP  [{up_bar}] {up_pct:.1f}% | {edge_color}{edge:.1f}%")
-
-            # DOWN bar
-            down_pct = 100 - up_pct
-            down_bar_len = max(1, int(down_pct / 100 * 30))
-            down_bar = "█" * down_bar_len + "░" * (30 - down_bar_len)
-            down_el.update(f" DWN [{down_bar}] {down_pct:.1f}%")
-
-            # Detail
-            if spot > 0:
-                detail_el.update(f" {asset}: ${spot:,.2f} | Stake: ${stake:.0f} | Side: {side} | Edge: {edge:+.1f}%")
-            else:
-                detail_el.update(f" Stake: ${stake:.0f} | Side: {side} | Edge: {edge:+.1f}%")
-
-            # PnL estimation
-            est_pnl = stake * edge / 100
-            if est_pnl >= 0:
-                pnl_el.update(f"Est PnL: +${est_pnl:.2f}")
-                pnl_el.set_classes("pos-pnl-pos")
-            else:
-                pnl_el.update(f"Est PnL: -${abs(est_pnl):.2f}")
-                pnl_el.set_classes("pos-pnl-neg")
-
-            # Timer
-            closes = pos.get("closes", "")
-            timer_el.update(f"⏱ Closes: {closes}" if closes else "⏱ Monitoring...")
-
-        except NoMatches:
-            pass
-
-
-class AdanTUI(App):
-    """ADAN Terminal Command Center — Cyberpunk TUI."""
-
-    TITLE = "ADAN · Terminal Command Center"
+class AdanBloombergV3(App):
     CSS = CSS
-    BINDINGS = [
-        ("q", "quit", "Quit"),
-        ("r", "force_refresh", "Refresh"),
-        ("p", "toggle_pause", "Pause"),
-        ("m", "toggle_mc", "Mother Code"),
-        ("1", "zoom_1", "Zoom 1"),
-        ("2", "zoom_2", "Zoom 2"),
-        ("3", "zoom_3", "Zoom 3"),
-    ]
-
-    paused = reactive(False)
-    last_data = reactive(None)
-    mc_data = reactive(None)
-    tick_count = reactive(0)
+    BINDINGS = [("q", "quit", "Quit")]
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+        with Horizontal(id="header-bar"):
+            yield Static(" ADAN 4.9 PRO - BLOOMBERG TERMINAL V3 ", classes="head-item")
+            yield Static("Connecting to feed...", id="header-tickers", classes="head-item")
+            yield Static("LIVE · PAPER TRADE", classes="head-item")
 
-        with Container(id="topbar"):
-            yield Static(" ◈ ADAN PRED", id="topbar-logo")
-            yield Static("● CONNECTED · PAPER TRADE", id="topbar-status")
-            yield Static("refreshing...", id="topbar-stats")
+        with Container(id="main-grid"):
+            # LEFT: STATS & SPARKLINE
+            with Vertical(id="panel-stats", classes="panel"):
+                yield Static(" SOVEREIGN VAULT ", classes="title")
+                yield Static("Loading...", id="vault-data")
+                yield Static("\n PNL SPARKLINE ", classes="title")
+                yield Static("", id="sparkline-data")
 
-        with Container(id="main"):
-            # Position Grid (3 panels)
-            with Horizontal(id="position-grid"):
-                yield PositionPanel(0, classes="pos-panel", id="panel-0")
-                yield PositionPanel(1, classes="pos-panel", id="panel-1")
-                yield PositionPanel(2, classes="pos-panel", id="panel-2")
+            # CENTER TOP: ACTIVE POSITIONS
+            with Vertical(id="panel-positions", classes="panel"):
+                yield Static(" ACTIVE ORDER BOOK ", classes="title")
+                yield DataTable(id="dt-positions")
 
-            # Stats Row
-            with Horizontal(id="stats-row"):
-                with Vertical(classes="stat-box"):
-                    yield Static("VAULT", classes="stat-label")
-                    yield Static("$--", classes="stat-value", id="sv-fund")
-                with Vertical(classes="stat-box"):
-                    yield Static("NET P&L", classes="stat-label")
-                    yield Static("--", classes="stat-value", id="sv-net")
-                with Vertical(classes="stat-box"):
-                    yield Static("WIN RATE", classes="stat-label")
-                    yield Static("--%", classes="stat-value", id="sv-wr")
-                with Vertical(classes="stat-box"):
-                    yield Static("TRADES", classes="stat-label")
-                    yield Static("--", classes="stat-value", id="sv-trades")
-                with Vertical(classes="stat-box"):
-                    yield Static("LEVEL", classes="stat-label")
-                    yield Static("--", classes="stat-value", id="sv-level")
-                with Vertical(classes="stat-box"):
-                    yield Static("BRIER", classes="stat-label")
-                    yield Static("--", classes="stat-value", id="sv-brier")
+            # RIGHT TOP1: MARKET MATRIX
+            with Vertical(id="panel-matrix", classes="panel"):
+                yield Static(" ORACLE MATRIX ", classes="title")
+                yield DataTable(id="dt-matrix")
 
-            # Bottom: Trade Log + Mother Code
-            with Horizontal(id="bottom-row"):
-                with Vertical(id="trade-log-panel"):
-                    yield Static("▶ TRADE LOG · Live", id="trade-log-title")
-                    dt = DataTable(id="trade-table")
-                    dt.cursor_type = "row"
-                    yield dt
+            # CENTER MID: HISTORICAL SETTLEMENTS (Takes 2 rows)
+            with Vertical(id="panel-history", classes="panel"):
+                yield Static(" RECENT SETTLEMENTS (HISTORICAL) ", classes="title")
+                yield DataTable(id="dt-history")
 
-                with Vertical(id="mother-code-panel"):
-                    yield Static("▶ MOTHER CODE v2.0", id="mc-title")
-                    yield Static("", id="mc-body")
+            # RIGHT TOP2: AI SWARM DNA
+            with Vertical(id="panel-swarm", classes="panel"):
+                yield Static(" AI SWARM DNA (LIVE) ", classes="title")
+                yield Static("Fetching DNA...", id="swarm-data")
 
-            # Price ticker
-            with Horizontal(id="price-ticker"):
-                yield Static("BTC: --", classes="ticker-item", id="tk-btc")
-                yield Static("ETH: --", classes="ticker-item", id="tk-eth")
-                yield Static("SOL: --", classes="ticker-item", id="tk-sol")
-                yield Static("BNB: --", classes="ticker-item", id="tk-bnb")
-                yield Static("XRP: --", classes="ticker-item", id="tk-xrp")
-
-        yield Footer()
+            # BOTTOM: LIVE LOGS
+            with Vertical(id="panel-logs", classes="panel"):
+                yield Static(" NEUROLOGICAL STREAM (adan.log tail) ", classes="title")
+                yield Log(id="live-log", highlight=True)
 
     def on_mount(self) -> None:
-        """Set up the trade table and start the refresh timer."""
-        table = self.query_one("#trade-table", DataTable)
-        table.add_columns("Time", "Action", "Market", "Amount", "Price", "PnL")
+        # Columns Setup
+        self.query_one("#dt-positions", DataTable).add_columns("Market", "Side", "Stake", "Edge", "PnL")
+        self.query_one("#dt-history", DataTable).add_columns("Time", "Market", "Result", "Stake", "PnL")
+        self.query_one("#dt-matrix", DataTable).add_columns("Sym", "Price", "2m \u0394", "Signal")
 
-        # Start refresh loop
-        self.set_interval(1.5, self.refresh_data)
+        self.set_interval(2.0, self.refresh_data)
+        self.tail_log()
 
     @work(exclusive=True, thread=True)
     def refresh_data(self) -> None:
-        """Fetch data from ADAN API."""
-        if self.paused:
-            return
-
         try:
             with httpx.Client(timeout=3.0) as client:
-                state_r = client.get(f"{API_BASE}/api/state")
-                state = state_r.json()
-
-                mc_r = client.get(f"{API_BASE}/api/training-metrics")
-                mc = mc_r.json()
-
-            self.call_from_thread(self._apply_data, state, mc)
-        except Exception as e:
-            self.call_from_thread(self._show_error, str(e))
-
-    def _show_error(self, msg: str) -> None:
-        try:
-            self.query_one("#topbar-status", Static).update(f"⚠ ERROR: {msg[:40]}")
-        except NoMatches:
+                state = client.get(f"{API_BASE}/api/state").json()
+                metrics = client.get(f"{API_BASE}/api/training-metrics").json()
+            self.call_from_thread(self.update_ui, state, metrics)
+        except Exception:
             pass
 
-    def _apply_data(self, state: dict, mc: dict) -> None:
-        """Apply fetched data to UI."""
-        self.tick_count += 1
-
+    def update_ui(self, state: dict, metrics: dict) -> None:
+        # --- 1. SOVEREIGN VAULT ---
         pnl = state.get("pnl", {})
-        xp = state.get("xp", {})
-        st = state.get("state", {})
-        positions = state.get("positions", {})
-        opens = positions.get("open", [])
-        closed = positions.get("closed", [])
-        prices = st.get("prices", {})
-
-        # ── Topbar ──
-        now = datetime.now().strftime("%H:%M:%S")
-        mode = st.get("mode", "idle")
-        mode_icon = "⚡" if mode == "thinking" else "●"
-        status_text = f"{mode_icon} {'ANALYZING' if mode == 'thinking' else 'MONITORING'} · PAPER TRADE · {now}"
-        try:
-            self.query_one("#topbar-status", Static).update(status_text)
-            stats_text = f"Fund: ${pnl.get('fund', 0):,.0f} | WR: {pnl.get('wins', 0)}/{pnl.get('losses', 0)} | LVL {xp.get('level', 0)}"
-            self.query_one("#topbar-stats", Static).update(stats_text)
-        except NoMatches:
-            pass
-
-        # ── Position Panels ──
-        for i in range(3):
-            try:
-                panel = self.query_one(f"#panel-{i}", PositionPanel)
-                pos = opens[i] if i < len(opens) else None
-                panel.update_data(pos, prices)
-            except NoMatches:
-                pass
-
-        # ── Stats Row ──
         fund = pnl.get("fund", 0)
         net = pnl.get("net", 0)
-        wins = pnl.get("wins", 0)
-        losses = pnl.get("losses", 0)
-        trades = wins + losses
-        wr = round(wins / max(trades, 1) * 100, 1)
-        level = xp.get("level", 0)
-        brier = pnl.get("brierScore", None)
+        wr = pnl.get("wins", 0) / max(1, pnl.get("trades", 1)) * 100
+        
+        vault_text = f"""
+[#aaaaaa]Total Fund:[/]
+[b #00ff00]${fund:,.2f}[/]
 
+[#aaaaaa]Net PnL:[/]
+[b {'#00ff00' if net>=0 else '#ff4444'}]{net:+.2f}[/]
+
+[#aaaaaa]Win Rate:[/]    [#ffffff]{wr:.1f}%[/]
+[#aaaaaa]Trades:[/]      [#ffffff]{pnl.get('trades', 0)}[/]
+[#aaaaaa]Level:[/]       [#ffaa00]{state.get('xp', {}).get('level', 0)}[/]
+[#aaaaaa]Brier Score:[/] [#ffffff]{pnl.get('brierScore', 0):.4f}[/]
+"""
+        self.query_one("#vault-data", Static).update(vault_text)
+
+        # --- 2. SPARKLINE ---
+        closed = state.get("positions", {}).get("closed", [])
+        spark_char = [" ", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+        if closed:
+            recent_closed = closed[-25:]
+            pnls = [float(t.get("pnl", 0)) for t in recent_closed]
+            min_p = min(pnls)
+            max_p = max(pnls)
+            rng = max_p - min_p if max_p != min_p else 1
+            spark = ""
+            for p in pnls:
+                idx = int(((p - min_p) / rng) * 7)
+                color = "green" if p >= 0 else "red"
+                spark += f"[{color}]{spark_char[idx]}[/]"
+            self.query_one("#sparkline-data", Static).update(f"\n{spark}\n\n[#aaaaaa]Last 25 Trades[/]")
+
+        # --- 3. ACTIVE POSITIONS ---
+        dt_pos = self.query_one("#dt-positions", DataTable)
+        dt_pos.clear()
+        opens = state.get("positions", {}).get("open", [])
+        for pos in opens:
+            title = pos.get("marketTitle", "")[:35]
+            side = pos.get("side", "YES")
+            side_str = f"[#00ff00]{side}[/]" if side == "YES" else f"[#ff4444]{side}[/]"
+            stake = f"${pos.get('stake', 0):.0f}"
+            edge = f"{pos.get('edge', 0)*100:.1f}%"
+            epnl = pos.get('stake',0) * pos.get('edge',0)
+            pnl_s = f"[#00ff00]+${epnl:.1f}[/]" if epnl >= 0 else f"[#ff4444]-${abs(epnl):.1f}[/]"
+            dt_pos.add_row(title, side_str, stake, edge, pnl_s)
+
+        # --- 4. HISTORICAL SETTLEMENTS ---
+        dt_hist = self.query_one("#dt-history", DataTable)
+        dt_hist.clear()
+        if closed:
+            # Show last 15 trades inverted (newest first)
+            for pos in reversed(closed[-15:]):
+                time_str = pos.get("resolvedAt", "")[-14:-5] # Get Time HH:MM:SS
+                title = pos.get("marketTitle", "")[:45]
+                won = pos.get("won", False)
+                res_str = "[#00ff00]WIN[/]" if won else "[#ff4444]LOSS[/]"
+                stake = f"${pos.get('stake', 0):.0f}"
+                pnl_val = float(pos.get("pnl", 0))
+                pnl_s = f"[#00ff00]+${pnl_val:.1f}[/]" if pnl_val >= 0 else f"[#ff4444]-${abs(pnl_val):.1f}[/]"
+                dt_hist.add_row(time_str, title, res_str, stake, pnl_s)
+
+        # --- 5. ORACLE MATRIX ---
+        dt_mat = self.query_one("#dt-matrix", DataTable)
+        dt_mat.clear()
+        prices = state.get("state", {}).get("prices", {})
+        t_strings = []
+        for sym in ["BTC", "ETH", "SOL", "BNB"]:
+            p = prices.get(f"{sym}USDT", {})
+            pr = p.get('price', 0)
+            chg = p.get('change', 0)
+            if pr > 0:
+                t_strings.append(f"{sym}: ${pr:,.0f}")
+                col = "[#00ff00]" if chg > 0 else "[#ff4444]"
+                sig = "SCANNING" if abs(chg) < 0.3 else "[b #ffaa00]VOLATILE[/]"
+                dt_mat.add_row(sym, f"${pr:,.2f}", f"{col}{chg:+.2f}%[/]", sig)
+        
+        if t_strings:
+            self.query_one("#header-tickers", Static).update(" | ".join(t_strings))
+
+        # --- 6. AI SWARM DNA ---
+        cert = metrics.get("certification", {})
+        human = metrics.get("human", {}).get("stateBreakdown", {})
+        top_state = max(human, key=human.get) if human else "RATIONAL"
+        
+        # Read from config to get LIVE agent weights
+        virus, apple, snake, eva = 50, 50, 50, 0
         try:
-            self.query_one("#sv-fund", Static).update(f"${fund:,.0f}")
-            self.query_one("#sv-fund", Static).styles.color = "#00ff88" if fund > 0 else "#ff4444"
-
-            net_str = f"+${net:,.0f}" if net >= 0 else f"-${abs(net):,.0f}"
-            self.query_one("#sv-net", Static).update(net_str)
-            self.query_one("#sv-net", Static).styles.color = "#00ff88" if net >= 0 else "#ff4444"
-
-            self.query_one("#sv-wr", Static).update(f"{wr}%")
-            self.query_one("#sv-wr", Static).styles.color = "#00ff88" if wr >= 55 else "#ffaa00" if wr >= 50 else "#ff4444"
-
-            self.query_one("#sv-trades", Static).update(f"{wins}W/{losses}L ({trades})")
-
-            self.query_one("#sv-level", Static).update(f"LVL {level}")
-            self.query_one("#sv-level", Static).styles.color = "#aa44ff"
-
-            brier_str = f"{brier:.3f}" if brier and brier > 0 else "N/A"
-            self.query_one("#sv-brier", Static).update(brier_str)
-        except NoMatches:
+            with open(CONFIG_FILE, 'r') as f:
+                cfg = json.load(f)
+                inf = cfg.get("influence", {})
+                virus = inf.get("virus", 50)
+                apple = inf.get("apple", 50)
+                snake = inf.get("snake", 50)
+                eva = inf.get("eva", 0)
+        except Exception:
             pass
 
-        # ── Trade Log ──
+        swarm_txt = f"""
+[#aaaaaa]Primary Human State:[/]
+[b #ffaa00]{top_state}[/]
+
+[#aaaaaa]Certification Score:[/] [#00ff00]{cert.get('score', 0)}%[/]
+
+[#aaaaaa]VIRUS (Trend):[/]  [#00ff00]{virus:.1f}%[/]
+[#aaaaaa]APPLE (Logic):[/]  [#00ff00]{apple:.1f}%[/]
+[#aaaaaa]SNAKE (Fear):[/]   [#00ff00]{snake:.1f}%[/]
+[#aaaaaa]EVA   (Truth):[/] [#ff4444 if eva==0 else '#aa44ff']{eva:.1f}%[/]
+"""
+        self.query_one("#swarm-data", Static).update(swarm_txt)
+
+
+    @work(exclusive=True, thread=True)
+    def tail_log(self):
         try:
-            table = self.query_one("#trade-table", DataTable)
-            # Only update if we have new data
-            if closed and self.tick_count % 3 == 0:
-                table.clear()
-                for trade in reversed(closed[-15:]):
-                    won = trade.get("won", False)
-                    t_pnl = float(trade.get("pnl", 0))
-                    side = trade.get("side", "YES")
-                    stake = float(trade.get("stake", 0))
-                    title = (trade.get("marketTitle", "") or "")[:28]
-                    ts = trade.get("resolvedAt", trade.get("enteredAt", ""))
-                    t_time = ts[-8:] if len(ts) > 8 else ts
-
-                    action = f"[green]WIN {side}[/]" if won else f"[red]LOSS {side}[/]"
-                    pnl_str = f"[green]+${t_pnl:.0f}[/]" if t_pnl > 0 else f"[red]-${abs(t_pnl):.0f}[/]"
-
-                    table.add_row(
-                        t_time,
-                        "WIN" if won else "LOSS",
-                        title,
-                        f"${stake:.0f}",
-                        f"{side}",
-                        f"{'+'if t_pnl>0 else ''}{t_pnl:.0f}",
-                    )
-        except NoMatches:
-            pass
-
-        # ── Mother Code Panel ──
-        try:
-            mc_body = self.query_one("#mc-body", Static)
-            cert = mc.get("certification", {})
-            mc_pnl = mc.get("pnl", {})
-            human = mc.get("human", {}).get("stateBreakdown", {})
-            poly = mc.get("polymerase", {})
-            lmsr = mc.get("lmsr", {})
-            brier_mc = mc.get("brier", {})
-
-            # Human state
-            top_state = max(human, key=human.get) if human else "UNKNOWN"
-            state_color = "#00ff88" if "RATIONAL" in top_state else \
-                          "#ff4444" if "PANIC" in top_state else \
-                          "#ffaa00" if "FOMO" in top_state else "#44aaff"
-
-            cert_score = cert.get("score", 0)
-            cert_bar_len = max(0, int(cert_score / 100 * 20))
-            cert_bar = "█" * cert_bar_len + "░" * (20 - cert_bar_len)
-            cert_status = (cert.get("status", "") or "").replace("_", " ")
-
-            poly_blocks = poly.get("totalBlocks", 0)
-            lmsr_edge = lmsr.get("avgEdge", 0)
-            brier_val = brier_mc.get("score")
-            brier_str = f"{brier_val:.4f}" if brier_val is not None else "building"
-
-            # Module count
-            active_mods = sum(1 for l in [4,4,4,4,4,4,5,6,5,8,10,10,15,100] if level >= l)
-
-            lines = [
-                f"╔══════════════════════════════╗",
-                f"║ CERTIFICATION [{cert_bar}] {cert_score}%",
-                f"║ Status: {cert_status}",
-                f"╠══════════════════════════════╣",
-                f"║ Human: {top_state.replace('_',' ')}",
-                f"║ Poly Blocks: {poly_blocks}",
-                f"║ LMSR Edge: {lmsr_edge}%",
-                f"║ Brier: {brier_str}",
-                f"║ Modules: {active_mods}/14 active",
-                f"╠══════════════════════════════╣",
-                f"║ Session: {'ACTIVE' if opens else 'MONITORING'}",
-                f"║ Circuit: ARMED",
-                f"║ Apoptosis: {'ACTIVE' if level >= 10 else 'LVL 10+'}",
-                f"╚══════════════════════════════╝",
-            ]
-            mc_body.update("\n".join(lines))
-        except NoMatches:
-            pass
-
-        # ── Price Ticker ──
-        ticker_map = {"btc": "BTCUSDT", "eth": "ETHUSDT", "sol": "SOLUSDT", "bnb": "BNBUSDT", "xrp": "XRPUSDT"}
-        for sym, key in ticker_map.items():
-            try:
-                p = prices.get(key, {})
-                price = p.get("price", 0)
-                chg = p.get("change", 0)
-                icon = "▲" if chg > 0 else "▼" if chg < 0 else "●"
-                el = self.query_one(f"#tk-{sym}", Static)
-                el.update(f"{sym.upper()}: ${price:,.2f} {icon}{chg:+.1f}%")
-                el.styles.color = "#00ff88" if chg > 0 else "#ff4444" if chg < 0 else "#888"
-            except (NoMatches, Exception):
-                pass
-
-    # ── Actions ──
-    def action_force_refresh(self) -> None:
-        self.refresh_data()
-
-    def action_toggle_pause(self) -> None:
-        self.paused = not self.paused
-        try:
-            status = self.query_one("#topbar-status", Static)
-            if self.paused:
-                status.update("⏸ PAUSED — press [P] to resume")
-            else:
-                status.update("● RESUMED")
-        except NoMatches:
-            pass
-
-    def action_toggle_mc(self) -> None:
-        """Toggle Mother Code panel visibility."""
-        try:
-            mc = self.query_one("#mother-code-panel")
-            mc.display = not mc.display
-        except NoMatches:
-            pass
-
-    def action_zoom_1(self) -> None:
-        self._zoom_panel(0)
-
-    def action_zoom_2(self) -> None:
-        self._zoom_panel(1)
-
-    def action_zoom_3(self) -> None:
-        self._zoom_panel(2)
-
-    def _zoom_panel(self, idx: int) -> None:
-        """Toggle zoom on a specific panel."""
-        for i in range(3):
-            try:
-                panel = self.query_one(f"#panel-{i}", PositionPanel)
-                if i == idx:
-                    panel.display = True
-                    panel.styles.width = "100%" if panel.styles.width != "100%" else "1fr"
-                else:
-                    panel.display = panel.styles.width != "100%"
-            except NoMatches:
-                pass
-
+            with open(LOG_FILE, "r") as f:
+                f.seek(0, 2)
+                log_widget = self.query_one("#live-log", Log)
+                log_widget.write_line(">>> ESTABLISHING NEUROLINK SECURE CONNECTION...")
+                log_widget.write_line(">>> AWAITING SIGNAL FROM ADAN CORE...")
+                while True:
+                    line = f.readline()
+                    if line:
+                        self.call_from_thread(log_widget.write_line, line.strip())
+                    else:
+                        time.sleep(0.5)
+        except Exception as e:
+            self.call_from_thread(self.query_one("#live-log", Log).write_line, f"Error reading log: {e}")
 
 if __name__ == "__main__":
-    app = AdanTUI()
-    app.run()
+    AdanBloombergV3().run()

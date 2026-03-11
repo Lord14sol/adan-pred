@@ -866,7 +866,7 @@ class BrainTransitionManager {
 // Injects brain system prompt + all Golden Round Table data
 // ─────────────────────────────────────────────────────────────
 
-function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, metaCalibCtx, episodicAccuracy, featureImportanceCtx, riskOfRuinCtx }) {
+function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, metaCalibCtx, episodicAccuracy, featureImportanceCtx, riskOfRuinCtx, skillsBlock }) {
     const brain = BRAINS[brainName];
     if (!brain) throw new Error(`Unknown brain: ${brainName}`);
 
@@ -929,6 +929,7 @@ ${episodicAccuracy ? `━━━ EPISODIC ACCURACY ━━━\n${episodicAccuracy}
 ${featureImportanceCtx ? `━━━ FEATURE IMPORTANCE (Point-Biserial) ━━━\n${featureImportanceCtx}` : ''}
 
 ${riskOfRuinCtx ? `━━━ RISK OF RUIN ━━━\n${riskOfRuinCtx}` : ''}
+${skillsBlock ? `━━━ ${skillsBlock}` : ''}
 
 Analyze as ${brainName}-ADAN. Apply brain-specific rules and signal weights.
 Output: BET YES / BET NO / SKIP
@@ -997,6 +998,7 @@ async function runBrainCycle({
     riskOfRuinCtx,       // string — risk of ruin status
     brainManager,        // BrainTransitionManager instance
     onStatus,            // optional callback(status)
+    skillsBlock,         // string — active skills from Skill Tree
 }) {
 
     // ── 1. Gather all Golden Round Table signals ───────────────
@@ -1062,6 +1064,7 @@ async function runBrainCycle({
         episodicAccuracy,
         featureImportanceCtx,
         riskOfRuinCtx,
+        skillsBlock,
     });
 
     // ── 5. Call Hybrid Router ─────────────────────────────────

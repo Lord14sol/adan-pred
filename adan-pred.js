@@ -526,9 +526,9 @@ const GRANDCHILD_SPECS = {
 
 const CHILD_SPECS_CATEGORY = [
   { id: 'politics-daily', category: 'politics', track: 'llm', scanInterval: 3600000 },
-  { id: 'sports-daily',   category: 'sports',   track: 'llm', scanInterval: 3600000 },
-  { id: 'macro-weekly',   category: 'macro',    track: 'llm', scanInterval: 14400000 },
-  { id: 'events-daily',   category: 'events',   track: 'llm', scanInterval: 3600000 },
+  { id: 'sports-daily', category: 'sports', track: 'llm', scanInterval: 3600000 },
+  { id: 'macro-weekly', category: 'macro', track: 'llm', scanInterval: 14400000 },
+  { id: 'events-daily', category: 'events', track: 'llm', scanInterval: 3600000 },
 ];
 
 const GRANDCHILD_SPECS_CATEGORY = {
@@ -728,6 +728,11 @@ async function runCategoryChildScanner(spec, allMarkets) {
  * Takes best candidates by edge, caps stake, and executes via evaluate_and_trade
  */
 async function processCategoryTrades(prices, state) {
+  const config = loadConfig();
+  if (config.onlyCrypto) {
+    _categoryTradeCandidates = [];
+    return;
+  }
   if (_categoryTradeCandidates.length === 0) return;
 
   // Count existing category positions (non-crypto)
@@ -760,7 +765,10 @@ async function processCategoryTrades(prices, state) {
       action: 'BET',
       market: { ...market, _categoryTrade: true },
       side,
+      myProb: signal.confidence / 100,
+      edge: signal.edge / 100,
       edge_pct: signal.edge,
+      confidence: signal.confidence,
       confidence_pct: signal.confidence,
       thought: `[CATEGORY TRADE] LLM child signal: ${side} conf:${signal.confidence}% edge:${signal.edge}%`,
     };
@@ -1301,6 +1309,8 @@ async function runAllChildScanners(allPrices, allMarkets) {
   }
 
   // ── v4.0: Category children (LLM-informed) — run in parallel with crypto ──
+  if (config.onlyCrypto) return results.filter(Boolean); // Skip categories in crypto-only mode
+
   const now = Date.now();
   const categoryPromises = CHILD_SPECS_CATEGORY.map(async spec => {
     const lastScan = _categoryScanTimestamps[spec.id] || 0;
@@ -2104,6 +2114,7 @@ async function think(markets, prices, pnl, openPos, state) {
       featureImportanceCtx: featureImportance.getPromptContext(),
       riskOfRuinCtx: riskOfRuin.getDashboardStr(pnl, PAPER_BET_SIZE),
       brainManager,
+      skillsBlock,
       onStatus: (msg) => {
         state.status = msg;
         _startThinkSpin(msg); // Update terminal spinner with current step
@@ -2191,12 +2202,14 @@ function kellyStake(pnl, side, myProb, marketYesPrice, edge, confidence = 50) {
   const finalKelly = kelly * kellyFraction;
   const raw = fund * finalKelly;
 
-  // Dynamic max — TRAINING MODE: bigger bets = more meaningful data
+  // Dynamic max — INSTITUTIONAL MODE: Percentage-based limits (unlocks compounding)
   const wr = pnl.trades > 0 ? pnl.wins / pnl.trades : 0.5;
-  const maxStake = wr >= 0.60 ? 500    // TRAINING: up to $500
-    : wr >= 0.50 ? 400    // TRAINING: up to $400
-      : wr >= 0.40 ? 300    // TRAINING: up to $300
-        : 150;   // TRAINING: min $150 even in bad WR
+  const maxStakePct = wr >= 0.60 ? 0.05    // Elite WR: 5% max risk per trade
+    : wr >= 0.50 ? 0.04    // Good WR: 4% max risk per trade
+      : wr >= 0.40 ? 0.02    // Ave WR: 2% max risk per trade
+        : 0.01;            // Bad WR: 1% risk
+
+  const maxStake = fund * maxStakePct;
 
   // Round to nearest $25, clamp $25-maxStake
   return Math.round(Math.min(Math.max(raw, 25), maxStake) / 25) * 25;
@@ -2355,7 +2368,7 @@ async function evaluate_and_trade(decision, prices, state) {
     // Apply copula correlation penalty (already calculated above)
     const childStakeWithCopula = Math.round(rawChildStake * copulaStakeAdj / 25) * 25;
     stake = Math.min(300, Math.max(50, childStakeWithCopula));
-    console.log(`[CHILD DIRECT STAKE] 📐 ${decision._childSpec} Half-Kelly: edge=${(edge*100).toFixed(1)}% f*=${(fullKelly*100).toFixed(1)}% → $${rawChildStake} × copula(${copulaStakeAdj.toFixed(2)}) = $${stake}`);
+    console.log(`[CHILD DIRECT STAKE] 📐 ${decision._childSpec} Half-Kelly: edge=${(edge * 100).toFixed(1)}% f*=${(fullKelly * 100).toFixed(1)}% → $${rawChildStake} × copula(${copulaStakeAdj.toFixed(2)}) = $${stake}`);
   }
 
   // v4.1 Fix 4: Cap stake for category trades
@@ -2825,6 +2838,12 @@ async function doScan(state) {
     }
 
     // ── NIGHT WATCH BROAD SCANNER ─────────────
+    if (strat.onlyCrypto || config.onlyCrypto) {
+      state.thought = '🌙 VIGILIA NOCTURNA: Mercados Crypto a corto plazo cerrados. Esperando liquidez...';
+      state.mode = 'result'; state.lastScan = new Date().toLocaleTimeString();
+      state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
+      render(state); return;
+    }
     // Fetch ALL active markets regardless of close time or crypto tag to train the models locally
     state.status = 'Activating Night Watch Broad Scanner...'; render(state);
     const fallback = await polyFetch('/markets?limit=100&active=true&closed=false&order=volumeNum&ascending=false');
@@ -2977,13 +2996,13 @@ async function doScan(state) {
 
     // v5 MISPRICING FILTER: Only trade when market disagrees with child by >3%
     if (mispricingEdge <= 0.03) {
-      console.log(`[CHILD DIRECT] ⏭ ${spec.id} acc:${acc}% — mispricing ${(mispricingEdge*100).toFixed(1)}% ≤ 3% threshold on ${(matchingMarket.title||'').slice(0,35)}`);
+      console.log(`[CHILD DIRECT] ⏭ ${spec.id} acc:${acc}% — mispricing ${(mispricingEdge * 100).toFixed(1)}% ≤ 3% threshold on ${(matchingMarket.title || '').slice(0, 35)}`);
       continue;
     }
 
     const score = (acc / 100) * intel.confidence * mispricingEdge;
 
-    console.log(`[CHILD DIRECT] ✅ ${spec.id} → ${intel.direction} acc:${acc}% conf:${intel.confidence}% mispricing:${(mispricingEdge*100).toFixed(1)}% score:${score.toFixed(1)} on ${(matchingMarket.title||'').slice(0,35)}`);
+    console.log(`[CHILD DIRECT] ✅ ${spec.id} → ${intel.direction} acc:${acc}% conf:${intel.confidence}% mispricing:${(mispricingEdge * 100).toFixed(1)}% score:${score.toFixed(1)} on ${(matchingMarket.title || '').slice(0, 35)}`);
 
     childDirectTrades.push({
       market: matchingMarket,
@@ -3010,11 +3029,11 @@ async function doScan(state) {
       myProb: ct.intel.confidence / 100,
       edge: ct.edge,
       confidence: ct.intel.confidence,
-      thought: `[CHILD DIRECT${ct.flipped ? ' CONTRARIAN' : ''}] ${ct.spec} (acc:${ct.acc}% conf:${ct.intel.confidence}%) says ${ct.side}${ct.flipped ? ' (FLIPPED)' : ''}. Mispricing edge: ${(ct.edge*100).toFixed(1)}%. Half-Kelly sizing.`,
+      thought: `[CHILD DIRECT${ct.flipped ? ' CONTRARIAN' : ''}] ${ct.spec} (acc:${ct.acc}% conf:${ct.intel.confidence}%) says ${ct.side}${ct.flipped ? ' (FLIPPED)' : ''}. Mispricing edge: ${(ct.edge * 100).toFixed(1)}%. Half-Kelly sizing.`,
       _childDirect: true,
       _childSpec: ct.spec,
     };
-    console.log(`[CHILD DIRECT] 🎯 Executing: ${ct.side} on ${(ct.market.title||'').slice(0,40)} | ${ct.spec} acc:${ct.acc}% | Half-Kelly + Copula`);
+    console.log(`[CHILD DIRECT] 🎯 Executing: ${ct.side} on ${(ct.market.title || '').slice(0, 40)} | ${ct.spec} acc:${ct.acc}% | Half-Kelly + Copula`);
     await evaluate_and_trade(decision, prices, state);
   }
 
@@ -3043,7 +3062,7 @@ async function doScan(state) {
   if (decision.action === 'BET' && decision.market) {
     const mId = decision.market.id || decision.market.conditionId;
     if (childTradedMarkets.has(mId)) {
-      console.log(`[CHILD DIRECT] ⏭ Brain wanted ${decision.side} on ${(decision.market.title||'').slice(0,35)} but children already traded it`);
+      console.log(`[CHILD DIRECT] ⏭ Brain wanted ${decision.side} on ${(decision.market.title || '').slice(0, 35)} but children already traded it`);
       decision = { ...decision, action: 'SKIP', thought: `[CHILD COVERED] Children already traded this market. ${decision.thought || ''}` };
     }
   }
@@ -3306,16 +3325,19 @@ async function main() {
             if (!nm || nm.yesPrice >= 0.85 || nm.yesPrice <= 0.15) continue;
             const edge = Math.abs(nm.yesPrice - 0.5);
             if (edge < 0.05) continue; // need 5%+ edge
-            console.log(`[FAST PATH] ⚡ Found 5min market closing in ${minsLeft.toFixed(1)}min: ${nm.title.slice(0,50)} edge=${(edge*100).toFixed(1)}%`);
+            console.log(`[FAST PATH] ⚡ Found 5min market closing in ${minsLeft.toFixed(1)}min: ${nm.title.slice(0, 50)} edge=${(edge * 100).toFixed(1)}%`);
             // Use child consensus instead of full LLM brain
             const childIntel = readLatestChildIntel(nm.asset === 'btc' ? 'BTC-5min' : nm.asset === 'sol' ? 'SOL-5min' : 'ETH-5min');
             if (childIntel && childIntel.confidence >= 40) { // TRAINING: lower threshold for fast path
               const fastDecision = {
                 action: 'BET', market: nm,
                 side: childIntel.direction === 'UP' ? 'YES' : 'NO',
+                myProb: childIntel.confidence / 100,
+                edge: edge,
                 edge_pct: edge * 100,
+                confidence: childIntel.confidence,
                 confidence_pct: childIntel.confidence,
-                thought: `[FAST PATH] Child ${childIntel.childId} says ${childIntel.direction} @ ${childIntel.confidence}% conf. Edge: ${(edge*100).toFixed(1)}%`,
+                thought: `[FAST PATH] Child ${childIntel.childId} says ${childIntel.direction} @ ${childIntel.confidence}% conf. Edge: ${(edge * 100).toFixed(1)}%`,
               };
               console.log(`[FAST PATH] 🎯 Executing via child signal: ${childIntel.direction} @ ${childIntel.confidence}%`);
               await evaluate_and_trade(fastDecision, state.prices || {}, state);

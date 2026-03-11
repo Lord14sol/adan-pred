@@ -17,9 +17,13 @@ export class Metabolism {
         let mult = 1.0;
 
         // Fund-based scaling (use fund not treasury)
+        // If fund < 1000, strangle bets to survive.
         if (fund < 100) mult = 0;
         else if (fund < 500) mult = 0.3;
         else if (fund < 1000) mult = 0.6;
+        // Exponential Unleash: If fund > 1000, multiplier equals fund/1000.
+        // E.g., $13,500 fund = 13.5x multiplier on base risk.
+        else mult = Math.max(1.0, fund / 1000);
 
         // Human state adjustments
         if (humanState === 'SLEEPING_HERD') mult *= 0.7;
