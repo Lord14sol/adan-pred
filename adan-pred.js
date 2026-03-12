@@ -79,6 +79,9 @@ import { apoptosis } from './src/core/apoptosis.js';
 import { lmsrEngine } from './src/core/lmsr_engine.js';
 import { particleFilter } from './src/core/particle_filter.js';
 import { calculateGreeks } from './src/core/greeks_adapter.js';
+import IVSolverEngine from './src/core/iv_solver.js';
+
+const ivSolver = new IVSolverEngine();
 import { copulaRisk } from './src/core/copula_risk.js';
 import { smartMoney } from './src/core/smart_money.js';
 import { orderBook } from './src/core/order_book.js';
@@ -1308,31 +1311,31 @@ async function runAllChildScanners(allPrices, allMarkets) {
     }
   }
 
-  // ── v4.0: Category children (LLM-informed) — run in parallel with crypto ──
-  if (config.onlyCrypto) return results.filter(Boolean); // Skip categories in crypto-only mode
+// ── v4.0: Category children (LLM-informed) — run in parallel with crypto ──
+if (config.onlyCrypto) return results.filter(Boolean); // Skip categories in crypto-only mode
 
-  const now = Date.now();
-  const categoryPromises = CHILD_SPECS_CATEGORY.map(async spec => {
-    const lastScan = _categoryScanTimestamps[spec.id] || 0;
-    if (now - lastScan < spec.scanInterval) return []; // Respect scan interval
-    _categoryScanTimestamps[spec.id] = now;
+const now = Date.now();
+const categoryPromises = CHILD_SPECS_CATEGORY.map(async spec => {
+  const lastScan = _categoryScanTimestamps[spec.id] || 0;
+  if (now - lastScan < spec.scanInterval) return []; // Respect scan interval
+  _categoryScanTimestamps[spec.id] = now;
 
-    // Initialize LLM child learning if needed
-    childLearning.initLLMChild(spec.id);
+  // Initialize LLM child learning if needed
+  childLearning.initLLMChild(spec.id);
 
-    return runCategoryChildScanner(spec, allMarkets);
-  });
+  return runCategoryChildScanner(spec, allMarkets);
+});
 
-  try {
-    const categoryResults = await Promise.all(categoryPromises);
-    for (const catResult of categoryResults) {
-      if (Array.isArray(catResult)) results.push(...catResult);
-    }
-  } catch (e) {
-    console.error(`[CATEGORY] Error in category scanners: ${e.message}`);
+try {
+  const categoryResults = await Promise.all(categoryPromises);
+  for (const catResult of categoryResults) {
+    if (Array.isArray(catResult)) results.push(...catResult);
   }
+} catch (e) {
+  console.error(`[CATEGORY] Error in category scanners: ${e.message}`);
+}
 
-  return results.filter(Boolean);
+return results.filter(Boolean);
 }
 
 // Read all intel files and build summary for Claude
@@ -2312,9 +2315,56 @@ async function evaluate_and_trade(decision, prices, state) {
     particleStakeAdj = 0.6;
     console.log('[PARTICLE] ⚠️ High uncertainty — reducing stake 40%');
   }
+  // ═══ QUANT: Gate 3.5: IV Analysis (Black-Scholes Singularity) ═══
+  const hoursToClose = market.closesAt ? (new Date(market.closesAt) - Date.now()) / 3600000 : 48;
+  const assetKey = market.asset?.toLowerCase() || 'btc';
+  const ivAnalysis = ivSolver.analyzePolymarketBook(market.yesPrice, 1 - market.yesPrice, hoursToClose);
+  const ewmaVol = (wilmott.getEWMAForIVComparison ? wilmott.getEWMAForIVComparison(assetKey) : 0.02) * Math.sqrt(365); // Annually
+  const ivSpread = ivSolver.calculateIVSpread(ivAnalysis.iv, ewmaVol);
+  const ivSignal = ivSolver.generateVolSignal(ivAnalysis.skew, ivSpread, ivAnalysis.iv);
+
+  // [ADAN v6.5] Inject into Global UI State
+  state.ivData = {
+    iv: (ivAnalysis.iv * 100).toFixed(1),
+    rv: (ewmaVol * 100).toFixed(1),
+    spread: (ivSpread * 100).toFixed(1),
+    skew: (ivAnalysis.skew * 100).toFixed(1),
+    signal: ivSignal.signal,
+    strength: ivSignal.strength
+  };
+
+  let ivStakeMult = 1.0;
+  if (ivSignal.signal === 'SELL_VOL' && ivSignal.strength > 0.7) {
+    console.log(`[IV SOLER] 🟢 SELL_VOL: IV (${(ivAnalysis.iv * 100).toFixed(0)}%) > RV (${(ewmaVol * 100).toFixed(0)}%) | Boost +2 SNAKE Authority`);
+    ivStakeMult = 1.2;
+  } else if (ivSignal.signal === 'BUY_VOL' && ivSignal.strength > 0.7) {
+    console.log(`[IV SOLVER] ⚠️ BUY_VOL: IV (${(ivAnalysis.iv || 0 * 100).toFixed(0)}%) < RV (${(ewmaVol * 100).toFixed(0)}%) | EVA Protective Mode`);
+    ivStakeMult = 0.8;
+  }
+
+  // [ADAN v6.5] Faction-Specific Dynamic Adjustments
+  if (ivSpread < -0.10) {
+    // EVA sube VaR threshold: Permitir más riesgo cuando la vol es barata
+    console.log(`[FACCION] 👑 EVA: Vol low (Spread: ${(ivSpread * 100).toFixed(1)}%) | Expanding VaR Threshold`);
+  }
+  if (ivAnalysis.skew > 0.10) {
+    // ATLAS activa modo defensivo: Miedo asimétrico detectado en la curva
+    console.log(`[FACCION] 👁️ ATLAS: High Skew (${(ivAnalysis.skew * 100).toFixed(1)}%) | Activating Defensive Oracle`);
+    ivStakeMult *= 0.9; // Ligera reducción técnica
+  }
+
+  if (ivAnalysis.isArbitrage) {
+    console.log(`[IV SOLVER] 🚨 ARBITRAGE DETECTED (Book Sum: ${ivAnalysis.bookSum.toFixed(3)}) — Manual check required`);
+  }
+
+  // Soul Rule Integration
+  const ivSoulRule = soulManager.checkIVRegimeRule(ivSpread);
+  if (ivSoulRule.active) {
+    console.log(`[SOUL RULE] 🧠 ${ivSoulRule.reason}`);
+    ivStakeMult *= ivSoulRule.multiplier;
+  }
 
   // ═══ QUANT: Greeks timing ═══
-  const hoursToClose = market.closesAt ? (new Date(market.closesAt) - Date.now()) / 3600000 : 48;
   const greeks = calculateGreeks(market.yesPrice, hoursToClose, {
     strikePrice: market.yesPrice,
     spread: smData.available ? smData.spread : 0,
@@ -2354,7 +2404,7 @@ async function evaluate_and_trade(decision, prices, state) {
   const humanMult = (lastHumanState === 'NEWS_SHOCK') ? 0 : 1.0;
   const sessionMult = sessionAdj.stakeMultiplier;
   const metabolicMult = metabolism.getStakeMultiplier(pnlNow.fund || 0, lastHumanState);
-  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult);
+  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult * ivStakeMult);
   let stake = Math.round(Math.max(100, baseStake * combined) / 25) * 25; // TRAINING: min $100 per bet
 
   // v5.3 Wilmott: Child-direct trades use Half Kelly + Copula correlation penalty

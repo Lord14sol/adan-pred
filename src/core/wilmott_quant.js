@@ -598,8 +598,13 @@ class WilmottEngine {
             ewmaVolatilities: vols,
             kurtosis: kurtoses,
             crashMode: this.crash.crashMode,
-            tier: 'WILMOTT_v6.0'
+            tier: 'WILMOTT_v6.5'
         };
+    }
+
+    // [ADAN v6.5] Support for IV Solver Comparison
+    getEWMAForIVComparison(asset) {
+        return this.ewma.getVolatility(asset);
     }
 
     // ── Persistence ──

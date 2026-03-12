@@ -799,6 +799,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
       </div>
     </div>
 
+    <!-- IV MONITOR (v6.5 Black-Scholes Singularity) -->
+    <div class="card">
+      <div class="card-title">IV MONITOR · Black-Scholes</div>
+      <div class="stat-row"><span class="stat-lbl">Implied Vol (IV)</span><span class="stat-val" id="iv-val" style="color:var(--purple)">--%</span></div>
+      <div class="stat-row"><span class="stat-lbl">Realized Vol (RV)</span><span class="stat-val" id="rv-val" style="color:var(--cyan)">--%</span></div>
+      <div class="stat-row"><span class="stat-lbl">IV Spread</span><span class="stat-val" id="iv-spread" style="color:var(--green)">--%</span></div>
+      <div class="stat-row"><span class="stat-lbl">Volatility Skew</span><span class="stat-val" id="iv-skew" style="color:var(--yellow)">--%</span></div>
+      <div class="stat-row"><span class="stat-lbl">Signal</span><span class="stat-val" id="iv-signal" style="padding:2px 6px;border:2px solid var(--border);font-size:10px">IDLE</span></div>
+    </div>
+
     <!-- Live Markets (Moved to Sidebar exactly below Mother Code) -->
     <div class="card">
       <div class="card-title">Live Markets Scanner</div>
@@ -1820,6 +1830,19 @@ async function refresh() {
     const open=(d.positions?.open||[]).length;
     document.getElementById('s-slots').textContent=(9-open)+'/9 free';
     document.getElementById('s-treas').textContent='\$'+(pnl.treasury||0).toFixed(2);
+
+    // IV Monitor (v6.5)
+    const ivData = st?.ivData;
+    if (ivData) {
+      document.getElementById('iv-val').textContent = ivData.iv + '%';
+      document.getElementById('rv-val').textContent = ivData.rv + '%';
+      document.getElementById('iv-spread').textContent = (ivData.spread > 0 ? '+' : '') + ivData.ivSpread + '%';
+      document.getElementById('iv-skew').textContent = ivData.skew + '%';
+      const sigEl = document.getElementById('iv-signal');
+      sigEl.textContent = ivData.signal;
+      sigEl.style.color = ivData.signal === 'SELL_VOL' ? 'var(--green)' : ivData.signal === 'BUY_VOL' ? 'var(--red)' : 'var(--grey)';
+      sigEl.style.borderColor = ivData.signal === 'SELL_VOL' ? 'var(--green)' : ivData.signal === 'BUY_VOL' ? 'var(--red)' : 'var(--border)';
+    }
 
     // Calibration
     document.getElementById('calib-row').innerHTML=Object.entries(d.calib||{}).map(([k,v])=>{
@@ -3405,9 +3428,9 @@ setInterval(stepAdanWorld, 200);
       // ── v4.1: Category Children (LLM track) ──
       const CATEGORY_SPECS = [
         { id: 'politics-daily', category: 'politics' },
-        { id: 'sports-daily',   category: 'sports'   },
-        { id: 'macro-weekly',   category: 'macro'    },
-        { id: 'events-daily',   category: 'events'   },
+        { id: 'sports-daily', category: 'sports' },
+        { id: 'macro-weekly', category: 'macro' },
+        { id: 'events-daily', category: 'events' },
       ];
       const categoryChildEntries = [];
       for (const spec of CATEGORY_SPECS) {
@@ -3423,7 +3446,7 @@ setInterval(stepAdanWorld, 200);
               market = latest.market || null;
             }
           }
-        } catch {}
+        } catch { }
         const stats = childLearning.getChildStats ? childLearning.getChildStats(spec.id) : null;
         const learn = (childLearning.learning || {})[spec.id];
         categoryChildEntries.push({
@@ -3489,7 +3512,7 @@ setInterval(stepAdanWorld, 200);
         lastEvolution: childLearning.lastEvolution || 0,
         nextEvolutionIn: 10 - ((childLearning.globalResolved || 0) - (childLearning.lastEvolution || 0)),
         pendingShadows: (childLearning.shadows || []).filter(s => !s.resolved).length,
-        children: Object.fromEntries(learningEntries.filter(([,v]) => typeof v === 'object').map(([id, v]) => [id, {
+        children: Object.fromEntries(learningEntries.filter(([, v]) => typeof v === 'object').map(([id, v]) => [id, {
           track: v.track || 'quant',
           generation: v.dna?.generation || 1,
           totalResolved: v.totalResolved || 0,
@@ -3506,7 +3529,7 @@ setInterval(stepAdanWorld, 200);
           const lines = fs.readFileSync(csPath, 'utf8').split('\n').filter(Boolean);
           dynastyShadows = lines.slice(-80).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).reverse();
         }
-      } catch {}
+      } catch { }
 
       res.end(JSON.stringify({
         ts: new Date().toISOString(),
@@ -3913,7 +3936,22 @@ function render(s) {
     return W + asset.toUpperCase() + X + D + ':' + X + (acc === null ? D + '--' : col + BOLD + acc + '%') + X + D + '(' + d.p + ')' + X;
   }).join('   ');
   console.log(row('  CALIBRATION  ' + calibLine));
-  console.log(sep(M));
+  console.log(SEP(M));
+
+  // ── IV MONITOR (TUI) ──
+  const ivData = s.ivData;
+  if (ivData) {
+    const ivCol = ivData.signal === 'SELL_VOL' ? G : ivData.signal === 'BUY_VOL' ? R : Y;
+    console.log(row(
+      Y + BOLD + '  IV MONITOR  ' + X +
+      D + '  IV:' + X + BOLD + ivData.iv + '%' + X +
+      D + '  RV:' + X + BOLD + ivData.rv + '%' + X +
+      D + '  SPREAD:' + X + (parseFloat(ivData.spread) >= 0 ? G : R) + ivData.spread + '%' + X +
+      D + '  SKEW:' + X + M + ivData.skew + '%' + X +
+      '  ' + ivCol + BOLD + '[' + ivData.signal + ']' + X
+    ));
+    console.log(sep(M));
+  }
 
   // ── OPEN POSITIONS ──
   if (openPos.length > 0) {

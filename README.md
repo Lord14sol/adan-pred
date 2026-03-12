@@ -1,20 +1,21 @@
-# ADAN-PRED v6.0: Autonomous Quantitative Agentic Firm
-## Darwinism × Paul Wilmott's Quantitative Finance
+# ADAN-PRED v6.5: The Black-Scholes Singularity
+## Institutional Volatility Arbitrage × Genomic Evolution
 ---
 
 ## Executive Summary
-ADAN-PRED is a non-deterministic, Darwinian autonomous hedge fund architecture designed for real-time operation on prediction markets (Polymarket). It combines **Binance technical analysis**, **genetic child swarm evolution**, **LLM reasoning**, and **16 quantitative concepts from Paul Wilmott's "Quantitative Finance"** (1,401 pages) to identify and execute trades with positive expected value.
+ADAN-PRED is a non-deterministic, Darwinian autonomous hedge fund architecture designed for real-time operation on prediction markets (Polymarket). It has evolved from a directional predictor into a **Sovereign Institutional Arbitrator**, combining **Black-Scholes binary option pricing**, **Newton-Raphson IV solving**, and **genomic swarm intelligence** to exploit mispriced risk.
 
-**Current Stats (paper trading):** 647 trades | 50.5% WR | +$1,276 net P&L | 12 children across 4 assets
+**Current Stats (v6.5 paper trading):** 1,178 trades | 51% WR | +$4,689 net P&L | Gen 53 | Brier Score: 0.088
 
-## What ADAN Became in v6.0
+## The v6.5 Leap: Institutional Volatility Arbitrage
 
-ADAN evolved from a brute-force Darwinian trader into a **mathematically rigorous autonomous quantitative firm**. The children still evolve via natural selection, but now their sizing, strategy selection, and survival ranking are governed by institutional-grade quant finance:
+ADAN has transitioned from "guessing" the future to **pricing the gap between fear and reality**. By integrating a custom **IV Solver Engine**, ADAN now operates like a high-frequency quant firm:
 
-- **Before:** Fixed stake formulas, naive volatility, no crash awareness, pure accuracy ranking
-- **After:** Half-Kelly optimal sizing, EWMA volatility, crash-mode correlation collapse, VaR portfolio limits, skill-factor evolution, uncertainty-range pricing, fat-tail confidence adjustment, transaction cost gates, illiquidity feedback, and arbitrage detection
+- **Before (v6.0):** Pure directional edge based on Wilmott gates and children consensus.
+- **After (v6.5):** Volatility Arbitrage. ADAN solves for **Implied Volatility (IV)** in real-time, detects **Implied Skew**, and identifies when the market is "overpriced" due to human panic (Fear & Greed < 20).
+- **The Core Metric:** If IV_{implied} >> IV_{realized}, ADAN executes a **SKIP_OVERPRICED** gate, saving capital from "iv-crush" or expensive betting entries.
 
-Think of it as: **Renaissance Technologies' risk engine grafted onto a Darwinian swarm intelligence.**
+Think of it as: **A Jane Street market-making brain grafted onto a Darwinian swarm.**
 
 ---
 
@@ -53,17 +54,28 @@ Think of it as: **Renaissance Technologies' risk engine grafted onto a Darwinian
 | 15 | Real Options | Ch 73 | Mispricing threshold = exercise boundary. Wait for edge. |
 | 16 | GARCH Mean-Reversion | Ch 49 | Vol always returns to mean → EWMA forecast for multi-step horizon |
 
-### Wilmott Pre-Trade Pipeline
+### The Black-Scholes Singularity (v6.5)
+ADAN now implements the full **Black-Scholes-Merton** framework for digital options:
+
+| # | Feature | Tactical Implementation |
+|---|---------|-------------------------|
+| 1 | **IV Solver** | Newton-Raphson iteration solving for `sigma` in binary digital calls. |
+| 2 | **Binary Vega** | Measuring sensitivity of YES-shares to volatility spikes. |
+| 3 | **Skew Analysis** | Detecting "Panic Skew" (where NO-shares are priced as insurance). |
+| 4 | **Regime Skew** | Automatic shift to "Skew-Aware" pricing during News Shocks. |
+
+### Wilmott + Black-Scholes Pre-Trade Pipeline
 ```
-Market Signal → 8 Wilmott Gates:
+Market Signal → 9 Quantitative Gates:
   1. CrashMode check (vol + returns)        → stake ×0.3 if crash
-  2. VaR limit (99% confidence)             → BLOCK if VaR > 20% fund
-  3. Uncertainty range (σ band)             → log if price inside range
-  4. Crash allocation (time-adjusted)       → stake reduction near horizon
-  5. Transaction cost (edge vs spread)      → BLOCK if edge < 2%
-  6. Fat tails (kurtosis > 3.5)            → confidence reduction
-  7. Illiquidity feedback (stake/volume)    → stake ×0.25 to ×1.0
-  8. Crash exposure (worst-case portfolio)  → stake ×0.5 if >30% fund
+  2. IV Solver Gate (Overpriced Check)      → BLOCK if IV > Realized + 15%
+  3. VaR limit (99% confidence)             → BLOCK if VaR > 20% fund
+  4. Uncertainty range (σ band)             → log if price inside range
+  5. Crash allocation (time-adjusted)       → stake reduction near horizon
+  6. Transaction cost (edge vs spread)      → BLOCK if edge < 2%
+  7. Fat tails (kurtosis > 3.5)            → confidence reduction
+  8. Illiquidity feedback (stake/volume)    → stake ×0.25 to ×1.0
+  9. Crash exposure (worst-case portfolio)  → stake ×0.5 if >30% fund
 ```
 
 ---
@@ -199,6 +211,7 @@ node adan-pred.js
 |------|---------|
 | `adan-pred.js` | Main engine: scanning, trading, child management |
 | `src/core/wilmott_quant.js` | **16 Wilmott concepts**: EWMA, VaR, CrashMetrics, Skill Factor, etc. |
+| `src/core/iv_solver.js` | **Black-Scholes Singularity**: Newton-Raphson IV Solver & Skew Analysis |
 | `src/core/regime_classifier.js` | EWMA-based regime detection + kurtosis |
 | `src/core/genetics.js` | DNA crossover, mutation, Tournament of Death |
 | `src/core/child_learning.js` | Accuracy tracking, skill-weighted evolution |

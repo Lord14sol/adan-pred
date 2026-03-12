@@ -12,6 +12,7 @@ export class SoulManager {
     constructor() {
         this.rules = this._load();
         this.deduplicateRules();
+        this.ivCounter = 0; // [ADAN v6.5] Track consecutive IV spikes
     }
 
     deduplicateRules() {
@@ -112,6 +113,23 @@ export class SoulManager {
         this.rules = this.rules.filter(r => !(r.sample_size >= 10 && r.confidence < 0.25));
         fs.writeFileSync(RULES_FILE, JSON.stringify(this.rules, null, 2));
         fs.appendFileSync(SOUL_FILE, `\n[${new Date().toISOString()}] ${tag}: ${text}`);
+    }
+
+    // [ADAN v6.5] Automated IV Regime Rule
+    checkIVRegimeRule(ivSpread) {
+        if (ivSpread > 0.20) {
+            this.ivCounter++;
+            if (this.ivCounter >= 3) {
+                return {
+                    active: true,
+                    multiplier: 0.5,
+                    reason: "IV_REGIME_OVERPRICED: IV spread > 20% for 3+ cycles. Reducing stakes to 50%."
+                };
+            }
+        } else {
+            this.ivCounter = 0;
+        }
+        return { active: false, multiplier: 1.0 };
     }
 }
 export const soulManager = new SoulManager();
