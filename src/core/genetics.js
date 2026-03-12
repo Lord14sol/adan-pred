@@ -159,9 +159,9 @@ function absorbEliteGenome(pnl) {
   const children = pnl.children || [];
   if (!children.length) return;
 
-  let bestChild = null;
-  let bestScore = -Infinity;
-  const parentWR = pnl.trades > 0 ? pnl.wins / pnl.trades : 0.40;
+  // ADAN FIX 1: Lower threshold to 50% WR to allow active learning from any winner
+  // regardless of the father's massive statistical inertia (1000+ trades).
+  const thresholdWR = 0.50;
 
   for (const ch of children) {
     const childDir = ch.dir || path.join(DIR, 'children', ch.id || ch.spec);
@@ -173,7 +173,9 @@ function absorbEliteGenome(pnl) {
     if (!cp.dna) continue;                          // child without mutation = not applicable
     if ((cp.trades || 0) < 10) continue;            // statistical minimum
     const childWR = cp.trades > 0 ? (cp.wins || 0) / cp.trades : 0;
-    if (childWR <= parentWR) continue;              // only absorb if outperforms parent
+
+    // Compare against absolute winning threshold (50%) instead of lifetime lifetime average
+    if (childWR < thresholdWR) continue;
 
     // Composite score: win rate + number of trades (more trades = more confidence)
     const score = childWR * 100 + Math.log(cp.trades + 1) * 5;
@@ -183,10 +185,11 @@ function absorbEliteGenome(pnl) {
     }
   }
 
-  if (!bestChild) return; // nobody outperforms parent yet
+  if (!bestChild) return; // nobody outperforms the winning threshold yet
 
   const dna = bestChild.cp.dna;
   const curr = loadDynWeights();
+  const parentWR = pnl.trades > 0 ? pnl.wins / pnl.trades : 0.40;
 
   // Gradual absorption (20% delta per cycle — no total absorption at once)
   // This prevents a lucky child from distorting the parent's genome in one cycle.
@@ -209,7 +212,11 @@ function absorbEliteGenome(pnl) {
 
   fs.writeFileSync(DYN_WEIGHTS_PATH, JSON.stringify({ ...curr, ...absorbed }, null, 2));
 
-  const msg = `\n### GENETIC ABSORPTION — ${new Date().toISOString()}:\n`
+  // Increment counter in parent PnL
+  pnl.genomesAbsorbed = (pnl.genomesAbsorbed || 0) + 1;
+  savePnL(pnl);
+
+  const msg = `\n### GENETIC ABSORPTION (FIX 1) — ${new Date().toISOString()}:\n`
     + `Elite child: ${bestChild.name || bestChild.spec} | WR: ${absorbed._childWR} (parent: ${absorbed._parentWR})\n`
     + `DNA absorbed: volWeight=${dna.volWeight} → ${absorbed.volumeWeight}, vwapWeight=${dna.vwapWeight} → ${absorbed.vwapWeight}\n`
     + `Absorption rate: 20% delta. ADAN evolves gradually toward winning genome.\n`;
@@ -320,7 +327,7 @@ function pruneDeadChildren(pnl) {
   const parent2 = aliveScored[1]?.childData || parent1; // fallback to self-crossover if only 1 alive
 
   if (parent1) {
-    console.log(`[CROSSOVER] 🧬 Parents: ${parent1._spec} (score:${aliveScored[0]?.score.toFixed(1)}, acc:${(aliveScored[0]?.accuracy*100).toFixed(0)}%) × ${parent2._spec} (score:${aliveScored[1]?.score?.toFixed(1) || '?'}, acc:${(aliveScored[1]?.accuracy*100 || 0).toFixed(0)}%)`);
+    console.log(`[CROSSOVER] 🧬 Parents: ${parent1._spec} (score:${aliveScored[0]?.score.toFixed(1)}, acc:${(aliveScored[0]?.accuracy * 100).toFixed(0)}%) × ${parent2._spec} (score:${aliveScored[1]?.score?.toFixed(1) || '?'}, acc:${(aliveScored[1]?.accuracy * 100 || 0).toFixed(0)}%)`);
   }
 
   for (const d of dead) {
