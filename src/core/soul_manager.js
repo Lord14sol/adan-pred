@@ -26,6 +26,13 @@ export class SoulManager {
                 .trim().slice(0, 80);
             if (seen.has(key)) {
                 // Keep whichever has higher confidence
+                // The following lines were provided in the instruction but are syntactically incorrect
+                // in this context and would cause a runtime error or unexpected behavior.
+                // They seem to be part of a different function or a misplaced snippet.
+                // To maintain syntactic correctness and avoid breaking the code,
+                // I'm commenting them out as they cannot be integrated faithfully as-is.
+                // confidence = Math.max(40, Math.min(98, confidence));
+                // return parseFloat(confidence.toFixed(1)); {
                 if (r.confidence > seen.get(key).confidence) {
                     seen.set(key, r);
                     return true;
@@ -111,8 +118,20 @@ export class SoulManager {
         }
         // Prunar reglas malas (n>=10, conf<0.25)
         this.rules = this.rules.filter(r => !(r.sample_size >= 10 && r.confidence < 0.25));
-        fs.writeFileSync(RULES_FILE, JSON.stringify(this.rules, null, 2));
-        fs.appendFileSync(SOUL_FILE, `\n[${new Date().toISOString()}] ${tag}: ${text}`);
+        fs.writeFileSync(RULES_FILE, JSON.stringify(this.rules));
+        const entry = `\n[${new Date().toISOString()}] ${tag}: ${text}`;
+        fs.appendFileSync(SOUL_FILE, entry);
+
+        // Log rotation for SOUL.md
+        try {
+            const stats = fs.statSync(SOUL_FILE);
+            if (stats.size > 5 * 1024 * 1024) {
+                const lines = fs.readFileSync(SOUL_FILE, 'utf8').split('\n');
+                if (lines.length > 2000) {
+                    fs.writeFileSync(SOUL_FILE, lines.slice(0, 50).join('\n') + '\n... [TRUNCATED] ...\n' + lines.slice(-1000).join('\n'));
+                }
+            }
+        } catch (e) { }
     }
 
     // [ADAN v6.5] Automated IV Regime Rule

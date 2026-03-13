@@ -188,7 +188,24 @@ Goal: 55%+ win rate over 20 predictions → real USDC.
   }
   return fs.readFileSync(SOUL_PATH, 'utf8');
 }
-function appendToSoul(entry) { fs.writeFileSync(SOUL_PATH, loadSoul() + '\n' + entry); }
+function appendToSoul(entry) {
+  // Use append for performance
+  fs.appendFileSync(SOUL_PATH, '\n' + entry);
+
+  // Log Rotation: if > 5MB, keep only header + most recent history
+  try {
+    const stats = fs.statSync(SOUL_PATH);
+    if (stats.size > 5 * 1024 * 1024) {
+      const content = fs.readFileSync(SOUL_PATH, 'utf8');
+      const lines = content.split('\n');
+      if (lines.length > 2000) {
+        const header = lines.slice(0, 50).join('\n'); // Keep identity/rules
+        const footer = lines.slice(-1000).join('\n'); // Keep last 1k lines
+        fs.writeFileSync(SOUL_PATH, header + '\n\n... [TRUNCATED FOR SPEED] ...\n\n' + footer);
+      }
+    }
+  } catch (e) { }
+}
 
 // ── EXP / Level ─────────────────────────────────────────────────────────────
 function expForLevel(L) { if (L <= 1) return 0; return Math.round((50 / 3) * (Math.pow(L, 3) - 6 * Math.pow(L, 2) + 17 * L - 12)); }

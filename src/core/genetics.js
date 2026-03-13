@@ -162,6 +162,8 @@ function absorbEliteGenome(pnl) {
   // ADAN FIX 1: Lower threshold to 50% WR to allow active learning from any winner
   // regardless of the father's massive statistical inertia (1000+ trades).
   const thresholdWR = 0.50;
+  let bestChild = null;
+  let bestScore = -Infinity;
 
   for (const ch of children) {
     const childDir = ch.dir || path.join(DIR, 'children', ch.id || ch.spec);

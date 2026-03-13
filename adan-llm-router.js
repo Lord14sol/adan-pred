@@ -47,6 +47,12 @@ async function callGemma(prompt, options = {}) {
     });
     const result = await withRetry(() => model.generateContent(prompt), 3, 'Gemma');
     if (!result) return null;
+
+    // Token monitoring
+    const usage = result.response.usageMetadata;
+    const tokens = usage ? usage.promptTokenCount : Math.round(prompt.length / 4);
+    console.log(`[ROUTER] 🧠 Gemma Prompt: ${tokens} tokens${usage ? '' : ' (est)'}`);
+
     quota.consumeGemma();
     return result.response.text();
 }
@@ -60,6 +66,12 @@ async function callGemini(prompt, reason = 'unknown', options = {}) {
     });
     const result = await withRetry(() => model.generateContent(prompt), 3, 'Gemini');
     if (!result) return null;
+
+    // Token monitoring
+    const usage = result.response.usageMetadata;
+    const tokens = usage ? usage.promptTokenCount : Math.round(prompt.length / 4);
+    console.log(`[ROUTER] 🎯 Gemini Prompt: ${tokens} tokens${usage ? '' : ' (est)'}`);
+
     quota.consumeGemini(reason);
     return result.response.text();
 }

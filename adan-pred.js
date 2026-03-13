@@ -1311,31 +1311,31 @@ async function runAllChildScanners(allPrices, allMarkets) {
     }
   }
 
-// ── v4.0: Category children (LLM-informed) — run in parallel with crypto ──
-if (config.onlyCrypto) return results.filter(Boolean); // Skip categories in crypto-only mode
+  // ── v4.0: Category children (LLM-informed) — run in parallel with crypto ──
+  if (config.onlyCrypto) return results.filter(Boolean); // Skip categories in crypto-only mode
 
-const now = Date.now();
-const categoryPromises = CHILD_SPECS_CATEGORY.map(async spec => {
-  const lastScan = _categoryScanTimestamps[spec.id] || 0;
-  if (now - lastScan < spec.scanInterval) return []; // Respect scan interval
-  _categoryScanTimestamps[spec.id] = now;
+  const now = Date.now();
+  const categoryPromises = CHILD_SPECS_CATEGORY.map(async spec => {
+    const lastScan = _categoryScanTimestamps[spec.id] || 0;
+    if (now - lastScan < spec.scanInterval) return []; // Respect scan interval
+    _categoryScanTimestamps[spec.id] = now;
 
-  // Initialize LLM child learning if needed
-  childLearning.initLLMChild(spec.id);
+    // Initialize LLM child learning if needed
+    childLearning.initLLMChild(spec.id);
 
-  return runCategoryChildScanner(spec, allMarkets);
-});
+    return runCategoryChildScanner(spec, allMarkets);
+  });
 
-try {
-  const categoryResults = await Promise.all(categoryPromises);
-  for (const catResult of categoryResults) {
-    if (Array.isArray(catResult)) results.push(...catResult);
+  try {
+    const categoryResults = await Promise.all(categoryPromises);
+    for (const catResult of categoryResults) {
+      if (Array.isArray(catResult)) results.push(...catResult);
+    }
+  } catch (e) {
+    console.error(`[CATEGORY] Error in category scanners: ${e.message}`);
   }
-} catch (e) {
-  console.error(`[CATEGORY] Error in category scanners: ${e.message}`);
-}
 
-return results.filter(Boolean);
+  return results.filter(Boolean);
 }
 
 // Read all intel files and build summary for Claude
@@ -1351,11 +1351,11 @@ function readIntelSummary() {
       if (age > 180) continue; // ignore stale reports (>3min old)
       const sig = intel.signal;
       const bm = intel.bestMarket;
-      reports.push(`[CHILD ${intel.spec.toUpperCase()} @${age}s ago] ` +
-        `${intel.asset.toUpperCase()} ${intel.windowMin}min: ` +
-        `Signal=${sig.dir}(${sig.conf}%) "${sig.reason}" Price=$${intel.price?.toLocaleString() || '?'}` +
-        (bm ? ` | BEST MARKET: "${bm.title.slice(0, 35)}" YES=${(bm.yesPrice * 100).toFixed(0)}% ` +
-          `${bm.suggestedSide} edge≈${(bm.impliedEdge * 100).toFixed(1)}% liq=$${bm.liquidity.toFixed(0)} closes in ${bm.closesIn}min` : ' | no market found'));
+      reports.push(`[${intel.spec.toUpperCase()}] ` +
+        `${intel.asset.toUpperCase()}: ` +
+        `${sig.dir}(${sig.conf}%) "${sig.reason.slice(0, 60)}"` +
+        (bm ? ` | MARKET: "${bm.title.slice(0, 30)}" YES=${(bm.yesPrice * 100).toFixed(0)}% ` +
+          `edge=${(bm.impliedEdge * 100).toFixed(1)}%` : ''));
     } catch { }
   }
   if (!reports.length) return '';
@@ -2081,7 +2081,8 @@ async function think(markets, prices, pnl, openPos, state) {
 
   // Create the questions string for Claude
   const marketQuestion = candidates.map((m, i) => {
-    return `[${i + 1}] "${m.title}" | Market Price: ${(m.yesPrice * 100).toFixed(1)}% | Asset: ${m.asset.toUpperCase()}`;
+    const title = (m.title || '').slice(0, 65);
+    return `[${i + 1}] "${title}" | P:${(m.yesPrice * 100).toFixed(1)}% | ${m.asset.toUpperCase()}`;
   }).join('\n');
 
   let decision;

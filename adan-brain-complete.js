@@ -898,42 +898,52 @@ ${soulRules ?? 'No rules yet.'}`;
         regimeContext = `\n━━━ MARKET REGIMES (60m Rolling) ━━━\n${regimes.join('\n')}\nRegime rules:\n- TRENDING: Price is making clear directional moves. Trend-following signals are stronger.\n- VOLATILE: High noise/chop. Mean-reversion signals may work, breakouts often fail.\n- MEAN_REVERTING: Low volatility range-bound. Trust RSI overbought/oversold.\n`;
     }
 
-    const userPrompt = `MARKET QUESTION: ${marketQuestion}
+    // Token optimization: Compact JSON + Macro recovery (5 candles for 1h)
+    const marketClean = { ...marketData };
+    delete marketClean.closes;
+    delete marketClean.closes5m;
+    delete marketClean.closes15m;
+    delete marketClean.closes1h;
 
-━━━ ORACLE FRONT-RUN INTELLIGENCE ━━━
-${oracleContext || 'No active front-run signals right now.'}
+    const userPrompt = `MARKET: ${marketQuestion}
 
-━━━ APPLE (Context & Narrative) ━━━
-${JSON.stringify(appleSignal, null, 2)}
+━━━ ORACLE ━━━
+${oracleContext || 'None'}
 
-━━━ ATLAS (Hyperliquid Oracle) ━━━
-${JSON.stringify(atlasData, null, 2)}
+━━━ NEWS ━━━
+${JSON.stringify(appleSignal)}
 
-━━━ SNAKE (Order Book Microstructure) ━━━
-${JSON.stringify(snakeAnalysis, null, 2)}
+━━━ WHALES ━━━
+${JSON.stringify(atlasData)}
 
-━━━ BINANCE TECHNICAL DATA ━━━
-${JSON.stringify(marketData, null, 2)}
+━━━ MICRO ━━━
+${JSON.stringify(snakeAnalysis)}
+
+━━━ DATA ━━━
+${JSON.stringify({
+        ...marketClean,
+        klines1h: marketData.klines1h?.slice(-5).map(k => [k.close, k.vol]),
+        klines5m: marketData.klines5m?.slice(-3).map(k => [k.close, k.vol])
+    })}
 ${regimeContext}
-━━━ CHILDREN CONSENSUS ━━━
-${childConsensus >= 0.75 ? `STRONG CONSENSUS: ${(childConsensus * 100).toFixed(0)}% agreement → +3% edge bonus` : `WEAK: ${(childConsensus * 100).toFixed(0)}%`}
+━━━ CHILDREN ━━━
+${childConsensus >= 0.75 ? `STRONG: ${(childConsensus * 100).toFixed(0)}% → +3% edge` : `WEAK: ${(childConsensus * 100).toFixed(0)}%`}
 
-${intelSummary ? `━━━ CHILD INTELLIGENCE REPORTS ━━━\n${intelSummary}` : ''}
+${intelSummary ? `━━━ CHILD REPORTS ━━━\n${intelSummary.slice(0, 1500)}` : ''}
 
-${cascadeSignal ? `━━━ BTC LEAD-LAG CORRELATION ━━━\n${typeof cascadeSignal === 'string' ? cascadeSignal : JSON.stringify(cascadeSignal)}` : ''}
+${cascadeSignal ? `━━━ CORR ━━━\n${typeof cascadeSignal === 'string' ? cascadeSignal : JSON.stringify(cascadeSignal)}` : ''}
 
-${metaCalibCtx ? `━━━ META CALIBRATION ━━━\n${metaCalibCtx}` : ''}
+${metaCalibCtx ? `━━━ CALIB ━━━\n${metaCalibCtx}` : ''}
 
-${episodicAccuracy ? `━━━ EPISODIC ACCURACY ━━━\n${episodicAccuracy}` : ''}
+${episodicAccuracy ? `━━━ ACC ━━━\n${episodicAccuracy}` : ''}
 
-${featureImportanceCtx ? `━━━ FEATURE IMPORTANCE (Point-Biserial) ━━━\n${featureImportanceCtx}` : ''}
+${featureImportanceCtx ? `━━━ FEAT ━━━\n${featureImportanceCtx}` : ''}
 
-${riskOfRuinCtx ? `━━━ RISK OF RUIN ━━━\n${riskOfRuinCtx}` : ''}
+${riskOfRuinCtx ? `━━━ RUIN ━━━\n${riskOfRuinCtx}` : ''}
 ${skillsBlock ? `━━━ ${skillsBlock}` : ''}
 
-Analyze as ${brainName}-ADAN. Apply brain-specific rules and signal weights.
-Output: BET YES / BET NO / SKIP
-Required fields: probability_estimate, market_price, edge_pct, confidence_pct, primary_reason, atlas_risk_note`;
+Analyze as ${brainName}. Output BET YES/NO/SKIP.
+JSON fields: probability_estimate, market_price, edge_pct, confidence_pct, primary_reason, atlas_risk_note`;;
 
     return { systemPrompt, userPrompt };
 }
