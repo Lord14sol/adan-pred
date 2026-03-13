@@ -1,279 +1,10 @@
-import fs from 'fs';
-import path from 'path';
-import http from 'http';
-import {
-  DIR, MAX_POSITIONS, MIN_EDGE, PAPER_BET_SIZE, SYMBOLS, TREE_RULES,
-  G, Y, R, B, C, M, W, D, X, BOLD,
-  cls, loadConfig, loadStrategy, loadPnL, savePnL, loadPositions, loadCalibration,
-  expProgress, levelTitle, getSkills, INTEL_DIR
-} from '../core/config.js';
-import { signalLabel } from '../api/binance.js';
-import { quota } from '../core/quota_manager.js';
-import { polymerase } from '../core/polymerase.js';
-import { childLearning } from '../core/child_learning.js';
-
-// ── Panel — fixed 72 cols, always fits terminal ───────────────────────────
-const PW = 76;
-const sep = (col, ch = '═') => col + '╠' + ch.repeat(PW) + '╣' + X;
-const SEP = (col) => col + '╟' + '─'.repeat(PW) + '╢' + X;
-const TOP = col => col + '╔' + '═'.repeat(PW) + '╗' + X;
-const BOT = col => col + '╚' + '═'.repeat(PW) + '╝' + X;
-function row(txt, col = M) {
-  const clean = txt.replace(/\x1b\[[0-9;]*m/g, '');
-  const pad = Math.max(0, PW - clean.length - 2);
-  return col + '║ ' + X + txt + ' '.repeat(pad) + col + ' ║' + X;
-}
-const TW = 76, DIV = '─'.repeat(TW + 2);
-function trow(txt, col, bdr) {
-  const clean = txt.replace(/\x1b\[[0-9;]*m/g, '');
-  return bdr + '│' + X + col + txt + ' '.repeat(Math.max(0, TW - clean.length)) + X + bdr + '│' + X;
-}
-
-// ── Mini sparkline from candles ─────────────────────────────────────────────
-function sparkline(closes) {
-  if (!closes || closes.length < 2) return D + 'no data' + X;
-  const min = Math.min(...closes), max = Math.max(...closes), range = max - min || 1;
-  const bars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-  const last = closes[closes.length - 1], prev = closes[closes.length - 2];
-  const trend = last > prev ? G : last < prev ? R : D;
-  return closes.slice(-12).map(c => trend + bars[Math.round((c - min) / range * 7)] + X).join('');
-}
-
-// ── Tree panel — ASCII tree showing ADAN + children + intel ─────────────────
-function renderTreePanel(pnl, prices) {
-  const children = pnl.children || [];
-  const xp = expProgress(pnl.exp || 0);
-  const pct = pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0;
-  const wrCol = pct >= 55 ? G : pct >= 40 ? Y : R;
-
-  // Read latest intel for each child
-  function readChildIntel(spec) {
-    try {
-      const slug = spec.replace(/[^a-z0-9]/gi, '-').toLowerCase();
-      const fp = path.join(INTEL_DIR, slug + '.json');
-      if (!fs.existsSync(fp)) return null;
-      const d = JSON.parse(fs.readFileSync(fp, 'utf8'));
-      const age = (Date.now() - new Date(d.ts).getTime()) / 60000;
-      if (age > 10) return null; // stale > 10min
-      return d;
-    } catch { return null; }
-  }
-
-  function sigBadge(sig) {
-    if (!sig) return D + '  ···  ' + X;
-    const col = sig.dir === 'UP' ? G : sig.dir === 'DOWN' ? R : Y;
-    const icon = sig.dir === 'UP' ? '▲' : sig.dir === 'DOWN' ? '▼' : '●';
-    return col + BOLD + icon + ' ' + sig.dir.padEnd(4) + X + D + ' c:' + (sig.conf || '--') + '%' + X;
-  }
-
-  // Gather evolution stats for display
-  const learnData = childLearning.learning || {};
-
-  console.log(sep(B));
-  console.log(row(B + BOLD + '  🌳 DYNASTY TREE' + X + D + '  Gen ' + (pnl.generation || 1) + '  │  ADAN + ' + children.length + ' children' + X +
-    D + '  │  Track: ' + X + C + 'QUANT' + X));
-  console.log(SEP(B));
-
-  // ADAN root node
-  const rootFund = ('$' + (pnl.fund || 0).toFixed(0)).padStart(8);
-  const rootNet = (pnl.net >= 0 ? '+' : '') + '$' + (pnl.net || 0).toFixed(0);
-  const netCol = (pnl.net || 0) >= 0 ? G : R;
-  console.log(row(
-    '  ' + M + BOLD + '◈ ADAN' + X + D + ' [ROOT · GEN1]' + X +
-    '  fund:' + C + BOLD + rootFund + X +
-    '  net:' + netCol + BOLD + rootNet + X +
-    '  WR:' + wrCol + BOLD + pct + '%' + X +
-    '  LVL:' + M + BOLD + xp.level + X
-  ));
-
-  if (children.length === 0) {
-    const sc = TREE_RULES.spawnConditions;
-    const maxCTree = xp.level >= 4 ? TREE_RULES.maxChildrenGen1 : TREE_RULES.maxChildrenAtLvl3;
-    const canSpawn = xp.level >= sc.minLvl && pnl.trades >= sc.minTrades
-      && (pnl.wins / Math.max(pnl.trades, 1)) >= sc.minWinRate && (pnl.treasury || 0) > 0
-      && children.length < maxCTree;
-    if (canSpawn) {
-      console.log(row('  ' + B + '  └── ' + Y + BOLD + '👶 SPAWN READY' + X + D + '  treasury: $' + (pnl.treasury || 0).toFixed(2) + '  conditions met' + X));
-    } else {
-      const need = [];
-      if (xp.level < sc.minLvl) need.push('LVL ' + sc.minLvl);
-      if (pnl.trades < sc.minTrades) need.push((sc.minTrades - pnl.trades) + ' more trades');
-      if ((pnl.wins / Math.max(pnl.trades, 1)) < sc.minWinRate) need.push('50%+ WR');
-      if (!(pnl.treasury > 0)) need.push('treasury > 0');
-      console.log(row('  ' + B + '  └── ' + D + 'no children yet — need: ' + need.join(' · ') + X));
-    }
-  } else {
-    children.forEach((child, idx) => {
-      const isLast = idx === children.length - 1;
-      const connector = isLast ? '└──' : '├──';
-      const intel = readChildIntel(child.spec);
-      const sig = intel ? intel.signal : null;
-      const childPnlPath = path.join(DIR, 'children', child.id || child.spec, 'pnl.json');
-      let childPnl = null;
-      try { if (fs.existsSync(childPnlPath)) childPnl = JSON.parse(fs.readFileSync(childPnlPath, 'utf8')); } catch { }
-
-      const childExp = childPnl?.exp || 0;
-      const childExpNeeded = TREE_RULES.childExpToSpawn;
-      const gcList = (childPnl?.children) || [];
-      const canHaveGC = xp.level >= 4;
-      const gcReady = canHaveGC && childExp >= childExpNeeded && gcList.length < TREE_RULES.maxChildrenGen2;
-      const expBar = childExp >= childExpNeeded ? G + '●' + X : Y + Math.min(childExp, childExpNeeded) + '/' + childExpNeeded + 'xp' + X;
-
-      const nameStr = C + BOLD + (child.name || child.spec).slice(0, 12).padEnd(12) + X;
-      const sigStr = sigBadge(sig);
-      const scoreStr = intel ? (intel.intelScore >= 65 ? G : intel.intelScore >= 45 ? Y : R) + BOLD + '[' + intel.intelScore + ']' + X : D + '[--]' + X;
-      const ageStr = intel ? D + ' ' + Math.round((Date.now() - new Date(intel.ts).getTime()) / 60000) + 'm' + X : '';
-      const gcStr = gcReady ? ' ' + Y + BOLD + '🌱' + X : gcList.length > 0 ? ' ' + B + '(' + gcList.length + 'gc)' + X : '';
-
-      // DNA/evolution info from learning engine
-      const cLearn = learnData[child.id || child.spec];
-      const cGen = cLearn?.dna?.generation || 1;
-      const cResolved = cLearn?.totalResolved || 0;
-      const cAcc = cResolved >= 3 ? Math.round((cLearn?.correct || 0) / cResolved * 100) : null;
-      const accCol = cAcc === null ? D : cAcc >= 55 ? G : cAcc >= 40 ? Y : R;
-      const accStr = cAcc !== null ? accCol + BOLD + cAcc + '%' + X : D + '--' + X;
-      const genStr = D + 'g' + X + Y + cGen + X;
-
-      console.log(row(
-        '  ' + B + '  ' + connector + ' ' + X +
-        nameStr + ' ' + sigStr + ' ' + scoreStr + ageStr +
-        ' ' + genStr + ' ' + D + 'acc:' + X + accStr +
-        D + '(' + cResolved + ')' + X + gcStr
-      ));
-
-      // Grandchildren (if any)
-      gcList.forEach((gc, gi) => {
-        const gcLast = gi === gcList.length - 1;
-        const gcConn = gcLast ? '    └──' : '    ├──';
-        const gcIntel = readChildIntel(gc.spec);
-        const gcSig = gcIntel ? gcIntel.signal : null;
-        const focusStr = gc.focus ? D + ' [' + gc.focus + ']' + X : '';
-        console.log(row(
-          '  ' + B + '  ' + gcConn + ' ' + X +
-          B + (gc.name || gc.spec).padEnd(10) + X + ' ' +
-          D + gc.spec.padEnd(14) + X + focusStr +
-          '  ' + sigBadge(gcSig)
-        ));
-      });
-    });
-  }
-
-  // ── v4.0: Category children (LLM-informed) ──
-  const CATEGORY_ICONS = { crypto: '🪙', politics: '🏛️', sports: '⚽', macro: '📊', events: '🌐' };
-  const CATEGORY_CHILDREN = ['politics-daily', 'sports-daily', 'macro-weekly', 'events-daily'];
-  const categoryIntels = CATEGORY_CHILDREN.map(specId => {
-    // Read all intel files matching this category child
-    try {
-      const files = fs.readdirSync(INTEL_DIR).filter(f => f.startsWith(specId));
-      if (files.length === 0) return null;
-      const latest = files.map(f => {
-        try { return JSON.parse(fs.readFileSync(path.join(INTEL_DIR, f), 'utf8')); } catch { return null; }
-      }).filter(Boolean).sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
-      return latest;
-    } catch { return null; }
-  }).filter(Boolean);
-
-  if (categoryIntels.length > 0 || CATEGORY_CHILDREN.length > 0) {
-    console.log(SEP(B));
-    console.log(row(B + BOLD + '  🌐 CATEGORY DYNASTY' + X + D + '  │  Track: ' + X + M + 'LLM' + X + D + '  │  Multi-Market v4.0' + X));
-    console.log(SEP(B));
-
-    for (const specId of CATEGORY_CHILDREN) {
-      const cat = specId.split('-')[0]; // politics, sports, macro, events
-      const icon = CATEGORY_ICONS[cat] || '🌐';
-      const intel = categoryIntels.find(i => (i.spec || '').startsWith(specId));
-      const cLearn = learnData[specId];
-      const cGen = cLearn?.dna?.generation || 1;
-      const cResolved = cLearn?.totalResolved || 0;
-      const cAcc = cResolved >= 3 ? Math.round((cLearn?.correct || 0) / cResolved * 100) : null;
-      const accCol = cAcc === null ? D : cAcc >= 55 ? G : cAcc >= 40 ? Y : R;
-      const accStr = cAcc !== null ? accCol + BOLD + cAcc + '%' + X : D + '--' + X;
-
-      if (intel) {
-        const sig = intel.signal;
-        const sigCol = sig?.dir === 'UP' ? G : sig?.dir === 'DOWN' ? R : Y;
-        const sigIcon = sig?.dir === 'UP' ? '▲' : sig?.dir === 'DOWN' ? '▼' : '●';
-        const age = Math.round((Date.now() - new Date(intel.ts).getTime()) / 60000);
-        const title = (intel.market?.title || '').slice(0, 32);
-        console.log(row(
-          '  ' + B + '  ├── ' + X + icon + ' ' +
-          C + BOLD + specId.padEnd(15) + X +
-          sigCol + BOLD + sigIcon + ' ' + (sig?.dir || '?').padEnd(4) + X +
-          D + ' c:' + (sig?.conf || '--') + '%' + X +
-          D + ' e:' + (sig?.edge || '--') + '%' + X +
-          ' ' + D + 'g' + X + Y + cGen + X +
-          ' ' + D + 'acc:' + X + accStr + D + '(' + cResolved + ')' + X +
-          D + ' ' + age + 'm' + X
-        ));
-        if (title) {
-          console.log(row('  ' + B + '  │   ' + X + D + '  "' + title + '"' + X));
-        }
-      } else {
-        console.log(row(
-          '  ' + B + '  ├── ' + X + icon + ' ' +
-          C + BOLD + specId.padEnd(15) + X +
-          D + '  ···  waiting for scan' + X +
-          ' ' + D + 'g' + X + Y + cGen + X +
-          ' ' + D + 'acc:' + X + accStr + D + '(' + cResolved + ')' + X
-        ));
-      }
-    }
-  }
-
-  // Signal consensus bar
-  if (children.length > 0) {
-    const signals = children.map(c => readChildIntel(c.spec)?.signal).filter(Boolean);
-    const ups = signals.filter(s => s.dir === 'UP').length;
-    const downs = signals.filter(s => s.dir === 'DOWN').length;
-    const neutral = signals.filter(s => s.dir === 'NEUTRAL').length;
-    if (signals.length > 0) {
-      const consensus = ups > downs + neutral ? G + BOLD + '▲ BULL CONSENSUS' + X
-        : downs > ups + neutral ? R + BOLD + '▼ BEAR CONSENSUS' + X
-          : Y + '● MIXED SIGNALS' + X;
-      console.log(SEP(B));
-      console.log(row(
-        '  ' + B + 'SIGNAL CONSENSUS: ' + X + consensus +
-        D + '  (' + ups + '▲ ' + downs + '▼ ' + neutral + '●)  ' +
-        signals.length + '/' + children.length + ' children reporting' + X
-      ));
-    }
-  }
-  console.log(sep(B));
-}
-
-// ── Web dashboard — localhost:3141 ───────────────────────────────────────────
-let _dashboardState = null;
-let _nextScanAt = null;   // epoch ms of next scheduled scan
-let _resultAt = null;   // epoch ms when last 'result' was set
-const RESULT_SHOW_MS = 22000; // show "DECISION MADE" for 22s then go idle
-
-// ── Terminal braille spinner (thinking mode) ──────────────────────────────────
-let _thinkSpinTimer = null;
-const _SPIN_F = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-let _spinIdx = 0;
-function _startThinkSpin(msg) {
-  if (_thinkSpinTimer) _stopThinkSpin();
-  const label = msg || 'Thinking...';
-  _thinkSpinTimer = setInterval(() => {
-    try { process.stdout.write('\r  ' + _SPIN_F[_spinIdx++ % _SPIN_F.length] + ' ' + label + '               '); } catch { }
-  }, 120);
-}
-function _stopThinkSpin() {
-  if (!_thinkSpinTimer) return;
-  clearInterval(_thinkSpinTimer);
-  _thinkSpinTimer = null;
-  try { process.stdout.write('\r                                                                   \r'); } catch { }
-}
-
-function startDashboard(brainManager) {
-  const PORT = 3141;
-  const HTML = `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ADAN · Web4 Node</title>
-<script>window.ADAN_MODE = '${process.env.ADAN_MODE || 'TRAINING'}';</script>
+<script>window.ADAN_MODE = 'TRAINING';</script>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=JetBrains+Mono:wght@400;600&display=swap');
@@ -705,6 +436,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
 
 <div class="topbar">
   <div class="topbar-left">
+    <div id="adan-pixel-character" style="margin-right:8px;cursor:pointer" onclick="showAdanDetail()"></div>
+
     <div class="win-btns"><div class="win-btn wb-red"></div><div class="win-btn wb-yellow"></div><div class="win-btn wb-green"></div></div>
     <div class="logo">ADAN<span>-PRED</span></div>
     <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2)">
@@ -847,13 +580,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
       <div class="nf-wrap" id="nf-wrap"></div>
       <div class="dynasty-wrap" id="dynasty-wrap">
         <div class="dynasty-tools">
-          <span class="card-title" style="margin:0;border:none;padding:0">\uD83D\uDD25 THE FORGE · Agent Network</span>
+          <span class="card-title" style="margin:0;border:none;padding:0">🔥 THE FORGE · Agent Network</span>
           <div style="display:flex; gap: 6px; align-items: center;">
             <button class="btn-dag" onclick="forgeZoomIn()" title="Zoom In">+</button>
-            <button class="btn-dag" onclick="forgeZoomOut()" title="Zoom Out">\u2212</button>
-            <button class="btn-dag" onclick="forgeFitView()" title="Fit All Nodes">\u25CE FIT</button>
-            <button class="btn-dag" onclick="toggleGoldenPath()" id="btn-gp">\u2B50 GOLDEN PATH</button>
-            <button class="btn-dag" onclick="toggleDagFullscreen()" id="btn-fs">\u26F6 EXPAND</button>
+            <button class="btn-dag" onclick="forgeZoomOut()" title="Zoom Out">−</button>
+            <button class="btn-dag" onclick="forgeFitView()" title="Fit All Nodes">◎ FIT</button>
+            <button class="btn-dag" onclick="toggleGoldenPath()" id="btn-gp">⭐ GOLDEN PATH</button>
+            <button class="btn-dag" onclick="toggleDagFullscreen()" id="btn-fs">⛶ EXPAND</button>
           </div>
         </div>
         <div class="dynasty-panel" id="dynasty-panel"></div>
@@ -1038,20 +771,19 @@ window._renderInElement = function(elementId, d, brainType = null, forceSize = n
   const grid = frames[window._pixelFrame % frames.length];
   const cols = grid[0].length;
   const animClass = (tier === 'god_mode' || (isAth && !brainType)) ? 'av-pixel-bounce-gentle nf-glow' : isThinking ? 'av-pixel-shake' : tier === 'normal' ? 'av-pixel-bounce-gentle' : tier === 'low_compute' ? 'av-pixel-bounce-slow' : 'av-pixel-bounce-gentle';
-  let pxHtml = \'<div class="av-pixel-wrap \' + animClass + \'" style="grid-template-columns:repeat(\' + cols + \', \' + pixelSize + \'px)">\';
-  grid.forEach(row => { row.forEach(cell => { pxHtml += \'<div style="width:\' + pixelSize + \'px;height:\' + pixelSize + \'px;background-color:\' + (palette[cell] || \'transparent\') + \'"></div>\'; }); });
-  pxHtml += \'</div>\';
+  let pxHtml = '<div class="av-pixel-wrap ' + animClass + '" style="grid-template-columns:repeat(' + cols + ', ' + pixelSize + 'px)">';
+  grid.forEach(row => { row.forEach(cell => { pxHtml += '<div style="width:' + pixelSize + 'px;height:' + pixelSize + 'px;background-color:' + (palette[cell] || 'transparent') + '"></div>'; }); });
+  pxHtml += '</div>';
   container.innerHTML = pxHtml;
 };
 if (!window._pixelTimer) {
   window._pixelTimer = setInterval(() => {
     window._pixelFrame++;
     if (window._lastNFData) {
-      if (window._avIdx === 0) {
-        const activeBrain = window._lastBrainData?.activeBrain;
-        const brainType = ['VIRUS', 'MECHA', 'APPLE', 'SNAKE', 'EVA'].includes(activeBrain) ? activeBrain : null;
-        window._renderInElement('av-sprite-wrap', window._lastNFData, brainType, 12);
-      }
+      window._renderInElement('adan-pixel-character', window._lastNFData, null, 7);
+      const activeBrain = window._lastBrainData?.activeBrain;
+      const brainType = ['VIRUS', 'MECHA', 'APPLE', 'SNAKE', 'EVA'].includes(activeBrain) ? activeBrain : null;
+      window._renderInElement('av-sprite-wrap', window._lastNFData, brainType, 12);
     }
   }, 800);
 }
@@ -1244,110 +976,99 @@ const baseHead = '<rect x="4" y="12" width="4" height="24" fill="#1a0e05"/><rect
 const AVATAR_PALETTES = [
   { 
     name: 'DEFAULT', 
-    svg: \`
+    svg: `
       <!-- Hair/Crown: Core Processor --><g fill="#3b82f6"><rect x="16" y="0" width="24" height="4" style="fill:inherit"/><rect x="12" y="4" width="32" height="4" style="fill:inherit"/><rect x="8" y="8" width="40" height="4" fill="#1e3a8a"/></g>
-      \${baseHead}
+      ${baseHead}
       <!-- Eyes: Serious --><rect x="12" y="20" width="32" height="4" fill="#0f172a"/><g fill="#60a5fa"><rect x="14" y="20" width="8" height="4" style="fill:inherit"/><rect x="34" y="20" width="8" height="4" style="fill:inherit"/></g><rect x="16" y="21" width="2" height="2" fill="#eff6ff"/><rect x="36" y="21" width="2" height="2" fill="#eff6ff"/>
       <!-- Suit: Standard Core --><g fill="#1e293b"><rect x="0" y="40" width="56" height="4" style="fill:inherit"/><rect x="0" y="40" width="8" height="4" fill="#3b82f6"/><rect x="48" y="40" width="8" height="4" fill="#3b82f6"/><rect x="4" y="44" width="48" height="30" style="fill:inherit"/><rect x="4" y="44" width="4" height="30" fill="#2563eb"/><rect x="48" y="44" width="4" height="30" fill="#2563eb"/><rect x="16" y="46" width="24" height="12" fill="#0f172a"/><rect x="18" y="48" width="4" height="4" fill="#60a5fa"/><rect x="24" y="48" width="8" height="4" fill="#60a5fa"/><rect x="34" y="48" width="4" height="4" fill="#60a5fa"/><rect x="18" y="52" width="20" height="2" fill="#334155"/></g>
       <!-- Belt --><rect x="8" y="70" width="40" height="4" fill="#0f172a"/><rect x="24" y="70" width="8" height="4" fill="#3b82f6"/><rect x="22" y="71" width="12" height="2" fill="#bfdbfe"/>
-      \${baseLegs}
-    \`
+      ${baseLegs}
+    `
   },
   { 
     name: 'CYBER', 
-    svg: \`
+    svg: `
       <!-- Hair: Spiky --><g fill="#00ff88"><rect x="16" y="0" width="4" height="12" style="fill:inherit"/><rect x="28" y="2" width="4" height="10" style="fill:inherit"/><rect x="40" y="0" width="4" height="12" style="fill:inherit"/><rect x="8" y="8" width="40" height="4" fill="#001a0d"/></g>
-      \${baseHead}
+      ${baseHead}
       <!-- Eyes: Visor --><rect x="8" y="18" width="40" height="8" fill="#001a0d"/><rect x="12" y="20" width="32" height="4" fill="#00ff88"/><rect x="14" y="20" width="8" height="2" fill="#ccffcc"/>
       <!-- Suit: Cyber --><g fill="#001a0d"><rect x="0" y="40" width="56" height="34" style="fill:inherit"/><rect x="0" y="40" width="12" height="8" fill="#00cc66"/><rect x="44" y="40" width="12" height="8" fill="#00cc66"/><rect x="12" y="50" width="32" height="16" fill="#00331a"/><rect x="20" y="54" width="16" height="8" fill="#00ff88"/><rect x="20" y="56" width="16" height="2" fill="#ccffcc"/></g>
-      \${baseLegs}
-    \`
+      ${baseLegs}
+    `
   },
   { 
     name: 'KNIGHT', 
-    svg: \`
+    svg: `
       <!-- Helmet --><rect x="4" y="4" width="48" height="32" fill="#d4d4d8"/><rect x="24" y="0" width="8" height="4" fill="#fbbf24"/><rect x="20" y="2" width="16" height="2" fill="#fbbf24"/><rect x="8" y="16" width="40" height="8" fill="#000"/><rect x="24" y="16" width="8" height="16" fill="#000"/><rect x="26" y="16" width="4" height="12" fill="#fbbf24"/>
       <!-- Suit: Gold Armor --><g fill="#52525b"><rect x="0" y="36" width="56" height="38" style="fill:inherit"/><rect x="0" y="36" width="16" height="12" fill="#fbbf24"/><rect x="40" y="36" width="16" height="12" fill="#fbbf24"/><rect x="16" y="44" width="24" height="24" fill="#fbbf24"/><rect x="24" y="48" width="8" height="16" fill="#fde68a"/></g>
-      \${baseLegs}
-    \`
+      ${baseLegs}
+    `
   },
   { 
     name: 'GHOST', 
-    svg: \`
+    svg: `
       <!-- Hood --><rect x="4" y="4" width="48" height="12" fill="#0f172a"/><rect x="0" y="16" width="56" height="24" fill="#0f172a"/>
       <!-- Face in Shadow --><rect x="12" y="16" width="32" height="20" fill="#000"/>
       <!-- Eyes: Glowing dots --><rect x="16" y="24" width="4" height="4" fill="#e2e8f0"/><rect x="36" y="24" width="4" height="4" fill="#e2e8f0"/><rect x="17" y="25" width="2" height="2" fill="#fff"/><rect x="37" y="25" width="2" height="2" fill="#fff"/>
       <!-- Suit: Stealth cloak --><g fill="#0f172a"><rect x="0" y="40" width="56" height="34" style="fill:inherit"/><rect x="8" y="40" width="4" height="34" fill="#1e293b"/><rect x="44" y="40" width="4" height="34" fill="#1e293b"/><rect x="24" y="52" width="8" height="8" fill="#334155"/></g>
-      \${baseLegs}
-    \`
+      ${baseLegs}
+    `
   },
   { 
     name: 'PLASMA', 
-    svg: \`
+    svg: `
       <!-- Hair: Energy flames --><g fill="#ec4899"><rect x="12" y="-4" width="4" height="16" style="fill:inherit"/><rect x="24" y="-8" width="8" height="20" style="fill:inherit"/><rect x="40" y="-4" width="4" height="16" style="fill:inherit"/><rect x="8" y="8" width="40" height="4" fill="#4c1d95"/></g>
-      \${baseHead}
+      ${baseHead}
       <!-- Eyes: Plasma --><rect x="12" y="20" width="8" height="8" fill="#4c1d95"/><rect x="36" y="20" width="8" height="8" fill="#4c1d95"/><rect x="14" y="22" width="4" height="4" fill="#ec4899"/><rect x="38" y="22" width="4" height="4" fill="#ec4899"/>
       <!-- Suit: Void --><g fill="#2e1065"><rect x="0" y="40" width="56" height="34" style="fill:inherit"/><rect x="20" y="48" width="16" height="16" fill="#a855f7"/><rect x="24" y="52" width="8" height="8" fill="#ec4899"/><rect x="26" y="54" width="4" height="4" fill="#fbcfe8"/></g>
-      \${baseLegs}
-    \`
+      ${baseLegs}
+    `
   },
   { 
     name: 'MECHA', 
-    svg: \`
+    svg: `
       <!-- Mecha Head --><rect x="8" y="8" width="40" height="28" fill="#dc2626"/><rect x="26" y="4" width="4" height="4" fill="#ef4444"/><rect x="12" y="16" width="32" height="12" fill="#000"/><rect x="16" y="18" width="24" height="4" fill="#facc15"/><rect x="24" y="28" width="8" height="8" fill="#991b1b"/>
       <!-- Mecha Body --><g fill="#991b1b"><rect x="0" y="36" width="56" height="38" style="fill:inherit"/><rect x="0" y="36" width="20" height="16" fill="#dc2626"/><rect x="36" y="36" width="20" height="16" fill="#dc2626"/><rect x="16" y="44" width="24" height="16" fill="#7f1d1d"/><rect x="24" y="48" width="8" height="8" fill="#3b82f6"/><rect x="26" y="50" width="4" height="4" fill="#93c5fd"/></g>
-      \${baseLegs}
-    \`
+      ${baseLegs}
+    `
   },
   { 
     name: 'VIRUS', 
-    svg: \`
+    svg: `
       <!-- Glitch Hair --><g fill="#22c55e"><rect x="8" y="0" width="12" height="4" style="fill:inherit"/><rect x="36" y="4" width="16" height="4" style="fill:inherit"/><rect x="16" y="8" width="8" height="4" fill="#14532d"/><rect x="40" y="8" width="8" height="4" fill="#14532d"/></g>
-      \${baseHead}
+      ${baseHead}
       <!-- Eyes: Glitchy/Asymmetric --><rect x="12" y="18" width="12" height="8" fill="#022c22"/><rect x="32" y="22" width="12" height="4" fill="#022c22"/><rect x="14" y="20" width="4" height="4" fill="#22c55e"/><rect x="34" y="22" width="8" height="2" fill="#22c55e"/><rect x="20" y="28" width="8" height="2" fill="#22c55e"/>
       <!-- Suit: Corrupted --><g fill="#022c22"><rect x="0" y="40" width="56" height="34" style="fill:inherit"/><rect x="4" y="40" width="8" height="12" fill="#22c55e"/><rect x="44" y="48" width="12" height="4" fill="#22c55e"/><rect x="12" y="52" width="20" height="8" fill="#14532d"/><rect x="28" y="56" width="16" height="4" fill="#22c55e"/><rect x="16" y="64" width="8" height="4" fill="#22c55e"/></g>
-      \${baseLegs}
-    \`
+      ${baseLegs}
+    `
   },
   { 
     name: 'SENTINEL', 
-    svg: \`
+    svg: `
       <!-- Heavy Helm --><rect x="0" y="0" width="56" height="36" fill="#334155"/><rect x="4" y="4" width="48" height="4" fill="#475569"/><rect x="24" y="-4" width="8" height="8" fill="#f97316"/>
       <!-- Eye Slit --><rect x="4" y="16" width="48" height="8" fill="#000"/><rect x="12" y="18" width="32" height="4" fill="#f97316"/><rect x="24" y="18" width="8" height="4" fill="#fff"/>
       <!-- Suit: Heavy Armor --><g fill="#1e293b"><rect x="-4" y="36" width="64" height="16" style="fill:inherit"/><rect x="-4" y="40" width="12" height="12" fill="#475569"/><rect x="48" y="40" width="12" height="12" fill="#475569"/><rect x="8" y="50" width="40" height="24" style="fill:inherit"/><rect x="20" y="50" width="16" height="24" fill="#475569"/><rect x="24" y="56" width="8" height="8" fill="#f97316"/></g>
-      \${baseLegs}
-    \`
+      ${baseLegs}
+    `
   }
 ];
-window._avIdx = parseInt(localStorage.getItem('adan_av_idx') || '0');
+let _avIdx = parseInt(localStorage.getItem('adan_av_idx') || '0');
 
 function applyAvatar(idx) {
   const p = AVATAR_PALETTES[idx % AVATAR_PALETTES.length];
-  const wrap = document.getElementById('av-sprite-wrap');
-  if (!wrap) return;
-
-  if (idx === 0) {
-    if (window._lastNFData) {
-      const activeBrain = window._lastBrainData?.activeBrain;
-      const brainType = [\'VIRUS\', \'MECHA\', \'APPLE\', \'SNAKE\', \'EVA\'].includes(activeBrain) ? activeBrain : null;
-      window._renderInElement(\'av-sprite-wrap\', window._lastNFData, brainType, 12);
-    }
-  } else {
-    wrap.innerHTML = \`<svg id="av-sprite" class="av-sprite" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 94" width="84" height="141" shape-rendering="crispEdges">\\\${p.svg}</svg>\`;
-  }
-
+  const svg = document.getElementById('av-sprite');
+  if (svg) svg.innerHTML = p.svg;
   const lbl = document.getElementById('av-style-name');
   if (lbl) lbl.textContent = p.name;
 }
 
 function changeAvatar(dir) {
-  window._avIdx = ((window._avIdx + dir) % AVATAR_PALETTES.length + AVATAR_PALETTES.length) % AVATAR_PALETTES.length;
-  localStorage.setItem('adan_av_idx', window._avIdx);
-  applyAvatar(window._avIdx);
+  _avIdx = ((_avIdx + dir) % AVATAR_PALETTES.length + AVATAR_PALETTES.length) % AVATAR_PALETTES.length;
+  localStorage.setItem('adan_av_idx', _avIdx);
+  applyAvatar(_avIdx);
 }
 
 // Apply on load
-document.addEventListener('DOMContentLoaded', () => applyAvatar(window._avIdx));
+document.addEventListener('DOMContentLoaded', () => applyAvatar(_avIdx));
 
 const SKILLS_DEF=[
   {lvl:1,icon:'📡',name:'LIVE FEED'},{lvl:2,icon:'📊',name:'TREND READ'},
@@ -1363,16 +1084,16 @@ const SKILLS_DEF=[
 
 let prevData=null;
 
-function badge2(cls,txt){return \`<span class="badge2 \${cls}">\${txt}</span>\`}
-function col(c,v){return \`<span style="color:var(--\${c})">\${v}</span>\`}
-function mono(v){return \`<span style="font-family:'JetBrains Mono',monospace">\${v}</span>\`}
+function badge2(cls,txt){return `<span class="badge2 ${cls}">${txt}</span>`}
+function col(c,v){return `<span style="color:var(--${c})">${v}</span>`}
+function mono(v){return `<span style="font-family:'JetBrains Mono',monospace">${v}</span>`}
 
 function formatCountdown(closesAt){
   if(!closesAt)return '--';
   const ms=new Date(closesAt)-Date.now();
   if(ms<=0)return col('red','expired');
   const m=Math.floor(ms/60000),s=Math.floor((ms%60000)/1000);
-  const str=m>0?\`\${m}m \${s}s\`:\`\${s}s\`;
+  const str=m>0?`${m}m ${s}s`:`${s}s`;
   return m<3?col('red',str):m<10?col('yellow',str):col('text2',str);
 }
 
@@ -1380,10 +1101,10 @@ function sparkSvg(history){
   if(!history||history.length<2)return '';
   const min=Math.min(...history),max=Math.max(...history),range=max-min||1;
   const W=60,H=20,n=history.length;
-  const pts=history.map((v,i)=>\`\${(i/(n-1))*W},\${H-(v-min)/range*H}\`).join(' ');
+  const pts=history.map((v,i)=>`${(i/(n-1))*W},${H-(v-min)/range*H}`).join(' ');
   const last=history[n-1],prev=history[n-2];
   const c=last>prev?'34d399':last<prev?'f87171':'94a3b8';
-  return \`<svg width="\${W}" height="\${H}" style="vertical-align:middle"><polyline points="\${pts}" fill="none" stroke="#\${c}" stroke-width="1.5" stroke-linejoin="round"/></svg>\`;
+  return `<svg width="${W}" height="${H}" style="vertical-align:middle"><polyline points="${pts}" fill="none" stroke="#${c}" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
 }
 
 // ── ADAN Pixel Brain Detail Modal ──────────────────────────────────────────
@@ -1408,10 +1129,7 @@ function showAdanDetail() {
   const brierScore = d.calibration?.brierScore || 0;
   const brierBg = brierScore < 0.1 ? 'var(--green)' : brierScore < 0.2 ? 'var(--cyan)' : brierScore < 0.3 ? 'var(--yellow)' : 'var(--red)';
 
-  const dna = d.dna || { crossoverFrom: [] };
-  const ch = d; // For lineage consistency in template
-
-  content.innerHTML = \`
+  content.innerHTML = `
     <div class="child-header" style="border-bottom:2px solid var(--purple)">
       <div style="display:flex;align-items:center;gap:12px">
         <div style="font-size:24px; animation: pulse 2s infinite">🧠</div>
@@ -1422,15 +1140,15 @@ function showAdanDetail() {
       </div>
       <div class="child-close" onclick="document.getElementById('child-modal').style.display='none'">X</div>
     </div>
-
+    
     <div class="child-body">
       <!-- LIFETIME VITALS -->
       <div class="child-section">
         <div class="child-sec-title">LIFETIME VITALS</div>
         <div class="child-grid" style="grid-template-columns:1fr 1fr 1fr">
-          <div><span class="lbl">LIFESPAN</span><div class="val" style="color:var(--cyan)">\${lifetimeDays} Days</div></div>
-          <div><span class="lbl">TOTAL TRADES</span><div class="val">\${pnl.trades}</div></div>
-          <div><span class="lbl">NET PROFIT</span><div class="val" style="color:\${pnl.net>=0?'var(--green)':'var(--red)'}">\$\${pnl.net.toFixed(2)}</div></div>
+          <div><span class="lbl">LIFESPAN</span><div class="val" style="color:var(--cyan)">${lifetimeDays} Days</div></div>
+          <div><span class="lbl">TOTAL TRADES</span><div class="val">${pnl.trades}</div></div>
+          <div><span class="lbl">NET PROFIT</span><div class="val" style="color:${pnl.net>=0?'var(--green)':'var(--red)'}">$${pnl.net.toFixed(2)}</div></div>
         </div>
       </div>
 
@@ -1438,10 +1156,10 @@ function showAdanDetail() {
       <div class="child-section">
         <div class="child-sec-title" style="color:var(--purple)">EVOLUTION & GENETICS</div>
         <div class="child-grid" style="grid-template-columns:1fr 1fr">
-          <div><span class="lbl">GENERATION</span><div class="val" style="color:var(--purple)">Gen \${pnl.generation || 1}</div></div>
-          <div><span class="lbl">FACTION PARENT</span><div class="val" style="color:var(--cyan)">\${(ch.faction || 'Adan Direct').toUpperCase()}</div></div>
+          <div><span class="lbl">GENERATION</span><div class="val" style="color:var(--purple)">Gen ${pnl.generation || 1}</div></div>
+          <div><span class="lbl">FACTION PARENT</span><div class="val" style="color:var(--cyan)">${(ch.faction || 'Adan Direct').toUpperCase()}</div></div>
           <div><span class="lbl">ROLE</span><div class="val" style="color:var(--green);font-size:9px">Context & Signal Scanning</div></div>
-          <div><span class="lbl">EATING HISTORY</span><div class="val" style="color:var(--yellow);font-size:9px">\${dna.crossoverFrom && dna.crossoverFrom.length > 0 ? 'Absorbed DNA from: ' + dna.crossoverFrom.join(', ') : 'No absorptions yet.'}</div></div>
+          <div><span class="lbl">EATING HISTORY</span><div class="val" style="color:var(--yellow);font-size:9px">${dna.crossoverFrom && dna.crossoverFrom.length > 0 ? 'Absorbed DNA from: ' + dna.crossoverFrom.join(', ') : 'No absorptions yet.'}</div></div>
         </div>
       </div>
 
@@ -1449,12 +1167,12 @@ function showAdanDetail() {
       <div class="child-section">
         <div class="child-sec-title" style="color:var(--cyan)">NEURAL PIPELINE ORIGINS</div>
         <div style="display:flex;flex-direction:column;gap:8px">
-
+          
           <div style="padding:8px;background:var(--bg4);border-left:3px solid var(--yellow)">
             <div style="font-family:var(--pixel);font-size:10px;color:var(--yellow);margin-bottom:2px">BINANCE HUB</div>
             <div style="font-size:10px;color:var(--text2)">Global Spot & Perp Volume. Processed by APPLE (Trend) & SNAKE (Execution).</div>
           </div>
-
+          
           <div style="padding:8px;background:var(--bg4);border-left:3px solid var(--purple)">
             <div style="font-family:var(--pixel);font-size:10px;color:var(--purple);margin-bottom:2px">HYPERLIQUID ORACLE</div>
             <div style="font-size:10px;color:var(--text2)">Institutional positioning & L2 order book. Processed by ATLAS (Whale Tracking).</div>
@@ -1471,15 +1189,15 @@ function showAdanDetail() {
       <!-- BRIER SCORE (CALIBRATION) -->
       <div class="child-section">
         <div class="child-sec-title">PREDICTION CALIBRATION</div>
-        <div class="child-grid" style="grid-template-columns:1fr 1fr">
-          <div><span class="lbl">BRIER SCORE</span><div class="val" style="color:\${brierBg}">\${brierScore.toFixed(4)}</div></div>
-          <div><span class="lbl">CALIBRATION</span><div class="val">\${brierScore < 0.1 ? 'Excellent' : brierScore < 0.2 ? 'Good' : brierScore < 0.3 ? 'Fair' : 'Poor'}</div></div>
+         <div class="child-grid" style="grid-template-columns:1fr 1fr">
+          <div><span class="lbl">BRIER SCORE</span><div class="val" style="color:${brierBg}">${brierScore.toFixed(4)}</div></div>
+          <div><span class="lbl">CALIBRATION</span><div class="val">${brierScore < 0.1 ? 'Excellent' : brierScore < 0.2 ? 'Good' : brierScore < 0.3 ? 'Fair' : 'Poor'}</div></div>
         </div>
         <div style="font-size:9px;color:var(--grey);margin-top:4px">Lower Brier Score means ADAN's confidence perfectly matches reality.</div>
       </div>
 
     </div>
-  \`;
+  `;
   modal.style.display='block';
 }
 
@@ -1518,39 +1236,39 @@ function showParentDetail(type) {
   });
   const avgWR = hasTrades > 0 ? (totalLineageWR / hasTrades).toFixed(1) : 0;
 
-  content.innerHTML = \`
-    <div class="child-header" style="border-bottom:2px solid \${colors[type]}">
+  content.innerHTML = `
+    <div class="child-header" style="border-bottom:2px solid ${colors[type]}">
       <div style="display:flex;align-items:center;gap:12px">
-        <div style="font-size:24px">\${icons[type]}</div>
+        <div style="font-size:24px">${icons[type]}</div>
         <div>
-          <div class="child-name">\${names[type] || type.toUpperCase()}</div>
+          <div class="child-name">${names[type] || type.toUpperCase()}</div>
           <div style="font-size:10px;color:var(--grey)">Golden Round Table Foundation</div>
         </div>
       </div>
       <div class="child-close" onclick="document.getElementById('child-modal').style.display='none'">X</div>
-    </div>
+    </div >
 
     <div class="child-body">
 
       <div class="child-section">
         <div class="child-sec-title">FOUNDATION LOGIC</div>
-        <div style="font-size:12px;line-height:1.5;color:var(--text2);background:var(--bg);padding:10px;border-left:4px solid \${colors[type]}">
-          \${desc[type] || 'Core structural node in the Neural Pipeline.'}
+        <div style="font-size:12px;line-height:1.5;color:var(--text2);background:var(--bg);padding:10px;border-left:4px solid ${colors[type]}">
+          ${desc[type] || 'Core structural node in the Neural Pipeline.'}
         </div>
       </div>
 
       <div class="child-section">
         <div class="child-sec-title">DYNAMIC SCANNING / LIVE EDGE</div>
         <div class="child-grid" style="grid-template-columns:1fr 1fr">
-          <div><span class="lbl">ACTIVE CHILDREN</span><div class="val" style="color:var(--cyan)">\${activeLineage.length} Nodes</div></div>
-          <div><span class="lbl">PRUNED (DEAD)</span><div class="val" style="color:var(--red)">\${lineageChildren.length - activeLineage.length} Nodes</div></div>
-          <div><span class="lbl">LINEAGE WIN RATE</span><div class="val" style="color:\${avgWR>=50?'var(--green)':'var(--red)'}">\${avgWR}%</div></div>
-          <div><span class="lbl">REAL-TIME EDGE</span><div class="val" style="color:var(--green)">+ \${((pIntel?.signal?.conf || 0) / 10).toFixed(2)}%</div></div>
+          <div><span class="lbl">ACTIVE CHILDREN</span><div class="val" style="color:var(--cyan)">${activeLineage.length} Nodes</div></div>
+          <div><span class="lbl">PRUNED (DEAD)</span><div class="val" style="color:var(--red)">${lineageChildren.length - activeLineage.length} Nodes</div></div>
+          <div><span class="lbl">LINEAGE WIN RATE</span><div class="val" style="color:${avgWR>=50?'var(--green)':'var(--red)'}">${avgWR}%</div></div>
+          <div><span class="lbl">REAL-TIME EDGE</span><div class="val" style="color:var(--green)">+ ${((pIntel?.signal?.conf || 0) / 10).toFixed(2)}%</div></div>
         </div>
       </div>
 
     </div>
-  \`;
+  `;
   modal.style.display='block';
 }
 
@@ -1603,27 +1321,27 @@ function showChildDetail(childIdx) {
     if(scoreHist.length<2) return '';
     const W=200,H=32,n=scoreHist.length;
     const mn=Math.min(...scoreHist),mx=Math.max(...scoreHist),rg=mx-mn||1;
-    const pts=scoreHist.map((v,i)=>\`\${(i/(n-1))*W},\${H-(v-mn)/rg*H}\`).join(' ');
+    const pts=scoreHist.map((v,i)=>`${(i/(n-1))*W},${H-(v-mn)/rg*H}`).join(' ');
     const last=scoreHist[n-1],prev=scoreHist[n-2];
     const c=last>prev?'var(--green)':last<prev?'var(--red)':'var(--grey)';
     // area fill
-    const area=pts+\` \${W},\${H} 0,\${H}\`;
-    return \`<svg width="\${W}" height="\${H}" style="display:block;margin-top:4px">
-      <polygon points="\${area}" fill="\${c}" fill-opacity="0.1"/>
-      <polyline points="\${pts}" fill="none" stroke="\${c}" stroke-width="2" stroke-linejoin="round"/>
-      <circle cx="\${W}" cy="\${H-(scoreHist[n-1]-mn)/rg*H}" r="3" fill="\${c}"/>
-    </svg>\`;
+    const area=pts+` ${W},${H} 0,${H}`;
+    return `<svg width="${W}" height="${H}" style="display:block;margin-top:4px">
+      <polygon points="${area}" fill="${c}" fill-opacity="0.1"/>
+      <polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="${W}" cy="${H-(scoreHist[n-1]-mn)/rg*H}" r="3" fill="${c}"/>
+    </svg>`;
   })();
 
   // Build DNA bar visualization
   function dnaBar(label, value, max, color) {
     const pct = Math.min(100, (value/max)*100);
-    return \`<div style="margin-bottom:4px">
+    return `<div style="margin-bottom:4px">
       <div style="display:flex;justify-content:space-between;margin-bottom:2px">
-        <span class="lbl">\${label}</span><span style="font-family:var(--mono);font-size:11px;color:\${color}">\${typeof value==='number'?value.toFixed(3):value}</span>
+        <span class="lbl">${label}</span><span style="font-family:var(--mono);font-size:11px;color:${color}">${typeof value==='number'?value.toFixed(3):value}</span>
       </div>
-      <div class="child-bar-track"><div class="child-bar-fill" style="width:\${pct}%;background:repeating-linear-gradient(90deg,\${color} 0,\${color} 4px,transparent 4px,transparent 6px)"></div></div>
-    </div>\`;
+      <div class="child-bar-track"><div class="child-bar-fill" style="width:${pct}%;background:repeating-linear-gradient(90deg,${color} 0,${color} 4px,transparent 4px,transparent 6px)"></div></div>
+    </div>`;
   }
 
   // Grandchildren HTML
@@ -1632,37 +1350,37 @@ function showChildDetail(childIdx) {
     const isElite = gc.dna?.isElite || gc.isElite;
     const gcName = (gc.name||gc.spec||'GC').toUpperCase();
     const crossFrom = gc.dna?.crossoverFrom;
-    return \`<div class="gc-card \${isElite?'elite':''}">
+    return `<div class="gc-card ${isElite?'elite':''}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <span style="font-family:var(--pixel);font-size:8px;color:\${isElite?'var(--purple)':'var(--cyan)'};\${isElite?'animation:glowText 2s infinite':''}">\${gcName}</span>
-        <span style="font-family:var(--pixel);font-size:7px;color:var(--grey)">G\${gc.generation||3}</span>
+        <span style="font-family:var(--pixel);font-size:8px;color:${isElite?'var(--purple)':'var(--cyan)'};${isElite?'animation:glowText 2s infinite':''}">${gcName}</span>
+        <span style="font-family:var(--pixel);font-size:7px;color:var(--grey)">G${gc.generation||3}</span>
       </div>
-      \${isElite?'<div style="font-size:9px;color:var(--purple);margin-bottom:3px">ELITE CANDIDATE</div>':''}
-      \${crossFrom?'<div style="font-size:9px;color:var(--grey)">Cross: '+crossFrom.join(' x ')+'</div>':''}
+      ${isElite?'<div style="font-size:9px;color:var(--purple);margin-bottom:3px">ELITE CANDIDATE</div>':''}
+      ${crossFrom?'<div style="font-size:9px;color:var(--grey)">Cross: '+crossFrom.join(' x ')+'</div>':''}
       <div style="font-size:10px;margin-top:3px">
-        <span style="color:var(--grey)">Status:</span> \${gc.status||'?'}
-        <span style="margin-left:8px;color:var(--grey)">Cap:</span> \$\${(gc.capital||0).toFixed(2)}
+        <span style="color:var(--grey)">Status:</span> ${gc.status||'?'}
+        <span style="margin-left:8px;color:var(--grey)">Cap:</span> $${(gc.capital||0).toFixed(2)}
       </div>
       <div style="margin-top:4px">
         <div class="child-bar-track" style="height:8px">
-          <div class="child-bar-fill" style="width:\${gcExp}%;background:repeating-linear-gradient(90deg,\${isElite?'var(--purple)':'var(--cyan)'} 0,\${isElite?'var(--purple)':'var(--cyan)'} 3px,transparent 3px,transparent 5px)"></div>
-          <div class="child-bar-label" style="font-size:6px">\${gcExp}/100 EXP</div>
+          <div class="child-bar-fill" style="width:${gcExp}%;background:repeating-linear-gradient(90deg,${isElite?'var(--purple)':'var(--cyan)'} 0,${isElite?'var(--purple)':'var(--cyan)'} 3px,transparent 3px,transparent 5px)"></div>
+          <div class="child-bar-label" style="font-size:6px">${gcExp}/100 EXP</div>
         </div>
       </div>
-    </div>\`;
+    </div>`;
   }).join('') : '';
 
-  content.innerHTML = \`
+  content.innerHTML = `
     <div class="child-header">
       <div style="display:flex;align-items:center;gap:12px">
-        <div class="alive-dot" style="background:\${statusColor}"></div>
+        <div class="alive-dot" style="background:${statusColor}"></div>
         <div>
-          <div class="child-name">\${(ch.name||'CHILD').toUpperCase()}</div>
-          <div style="font-size:10px;color:var(--grey);font-family:var(--mono);margin-top:2px">\${(ch.faction||'ADAN').toUpperCase()} · \${ch.spec||'?'} · \${cogStyle} · \${ageStr} old</div>
+          <div class="child-name">${(ch.name||'CHILD').toUpperCase()}</div>
+          <div style="font-size:10px;color:var(--grey);font-family:var(--mono);margin-top:2px">${(ch.faction||'ADAN').toUpperCase()} · ${ch.spec||'?'} · ${cogStyle} · ${ageStr} old</div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <span class="child-gen">GEN \${ch.generation||2}</span>
+        <span class="child-gen">GEN ${ch.generation||2}</span>
         <div class="child-close" onclick="document.getElementById('child-modal').style.display='none'">X</div>
       </div>
     </div>
@@ -1673,25 +1391,25 @@ function showChildDetail(childIdx) {
       <div class="child-section">
         <div class="child-sec-title">VITALS</div>
         <div class="child-grid" style="grid-template-columns:1fr 1fr 1fr 1fr">
-          <div><span class="lbl">STATUS</span><div class="val" style="color:\${statusColor}">\${(ch.status||'?').toUpperCase()}</div></div>
-          <div><span class="lbl">CAPITAL</span><div class="val" style="color:var(--cyan)">\$\${(ch.capital||0).toFixed(2)}</div></div>
-          <div><span class="lbl">EXP</span><div class="val">\${exp}/100</div></div>
-          <div><span class="lbl">BORN</span><div class="val">\${ch.born?new Date(ch.born).toLocaleDateString():'---'}</div></div>
-          \${ch.status==='dead' ? \`<div><span class="lbl">DIED</span><div class="val" style="color:var(--red)">\${ch.deathTime?new Date(ch.deathTime).toLocaleDateString():'---'}</div></div>\` : ''}
+          <div><span class="lbl">STATUS</span><div class="val" style="color:${statusColor}">${(ch.status||'?').toUpperCase()}</div></div>
+          <div><span class="lbl">CAPITAL</span><div class="val" style="color:var(--cyan)">$${(ch.capital||0).toFixed(2)}</div></div>
+          <div><span class="lbl">EXP</span><div class="val">${exp}/100</div></div>
+          <div><span class="lbl">BORN</span><div class="val">${ch.born?new Date(ch.born).toLocaleDateString():'---'}</div></div>
+          ${ch.status==='dead' ? `<div><span class="lbl">DIED</span><div class="val" style="color:var(--red)">${ch.deathTime?new Date(ch.deathTime).toLocaleDateString():'---'}</div></div>` : ''}
         </div>
-        \${ch.status==='dead' ? \`<div style="margin-top:6px;font-size:10px;color:var(--red)">Cause: \${ch.deathReason||'Capital Exhausted'}</div>\` : ''}
+        ${ch.status==='dead' ? `<div style="margin-top:6px;font-size:10px;color:var(--red)">Cause: ${ch.deathReason||'Capital Exhausted'}</div>` : ''}
       </div>
 
       <!-- EXPERIENCE BAR -->
       <div class="child-section">
         <div class="child-sec-title">EXPERIENCE</div>
         <div class="child-bar-track" style="height:18px">
-          <div class="child-bar-fill" style="width:\${exp}%;background:repeating-linear-gradient(90deg,var(--purple) 0,var(--purple) 6px,#8b3acd 6px,#8b3acd 8px)"></div>
-          <div class="child-bar-label">\${exp}/100 \${exp>=100?'READY TO SPAWN':'· needs '+(100-exp)+' more'}</div>
+          <div class="child-bar-fill" style="width:${exp}%;background:repeating-linear-gradient(90deg,var(--purple) 0,var(--purple) 6px,#8b3acd 6px,#8b3acd 8px)"></div>
+          <div class="child-bar-label">${exp}/100 ${exp>=100?'READY TO SPAWN':'· needs '+(100-exp)+' more'}</div>
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:3px;font-size:9px;font-family:var(--pixel);color:var(--grey)">
           <span>0</span>
-          <span>\${exp>=100?'CAN BREED':'OBSERVING'}</span>
+          <span>${exp>=100?'CAN BREED':'OBSERVING'}</span>
           <span>100</span>
         </div>
       </div>
@@ -1700,96 +1418,96 @@ function showChildDetail(childIdx) {
       <div class="child-section">
         <div class="child-sec-title">DNA GENOME</div>
         <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">
-          <span class="dna-chip" style="border-color:var(--purple);color:var(--purple)">\${cogStyle}</span>
-          <span class="dna-chip" style="border-color:var(--cyan);color:var(--cyan)">MUT #\${dna.mutation??0}</span>
-          \${dna.crossoverFrom?\`<span class="dna-chip" style="border-color:var(--green);color:var(--green)">CROSSOVER</span>\`:''}
-          \${dna.isElite?\`<span class="dna-chip" style="border-color:var(--red);color:var(--red);animation:glowText 2s infinite">ELITE</span>\`:''}
+          <span class="dna-chip" style="border-color:var(--purple);color:var(--purple)">${cogStyle}</span>
+          <span class="dna-chip" style="border-color:var(--cyan);color:var(--cyan)">MUT #${dna.mutation??0}</span>
+          ${dna.crossoverFrom?`<span class="dna-chip" style="border-color:var(--green);color:var(--green)">CROSSOVER</span>`:''}
+          ${dna.isElite?`<span class="dna-chip" style="border-color:var(--red);color:var(--red);animation:glowText 2s infinite">ELITE</span>`:''}
         </div>
-        \${dnaBar('STAKE', dna.stakePct||0.1, 0.2, 'var(--cyan)')}
-        \${dnaBar('PATIENCE', dna.patience||1, 2, 'var(--purple)')}
-        \${dnaBar('MIN EDGE', dna.minEdge||0.05, 0.15, 'var(--green)')}
-        \${dnaBar('VOL WEIGHT', dna.volWeight||1, 2, 'var(--yellow)')}
-        \${dnaBar('VWAP WEIGHT', dna.vwapWeight||1, 2, 'var(--cyan)')}
-        \${dnaBar('BORED BB', dna.boredBBMin||0.005, 0.015, 'var(--grey)')}
+        ${dnaBar('STAKE', dna.stakePct||0.1, 0.2, 'var(--cyan)')}
+        ${dnaBar('PATIENCE', dna.patience||1, 2, 'var(--purple)')}
+        ${dnaBar('MIN EDGE', dna.minEdge||0.05, 0.15, 'var(--green)')}
+        ${dnaBar('VOL WEIGHT', dna.volWeight||1, 2, 'var(--yellow)')}
+        ${dnaBar('VWAP WEIGHT', dna.vwapWeight||1, 2, 'var(--cyan)')}
+        ${dnaBar('BORED BB', dna.boredBBMin||0.005, 0.015, 'var(--grey)')}
       </div>
 
       <!-- LIVE INTEL -->
       <div class="child-section">
-        <div class="child-sec-title">LIVE INTEL \${sigFresh?'<span class="alive-dot" style="background:var(--green);margin-left:4px"></span>':''}</div>
+        <div class="child-sec-title">LIVE INTEL ${sigFresh?'<span class="alive-dot" style="background:var(--green);margin-left:4px"></span>':''}</div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          \${sig.dir?\`<span class="signal-badge" style="border-color:\${sig.dir==='UP'?'var(--green)':'var(--red)'};color:\${sig.dir==='UP'?'var(--green)':'var(--red)'};background:\${sig.dir==='UP'?'rgba(26,90,26,0.1)':'rgba(138,26,26,0.1)'}">\${sig.dir} \${sig.conf||0}%</span>\`:'<span style="color:var(--grey);font-size:10px">No signal</span>'}
-          \${intel.price?\`<span style="font-family:var(--mono);font-size:13px;color:var(--text)">\$\${Number(intel.price).toLocaleString()}</span>\`:''}
-          \${sigAge!==null?\`<span style="font-size:10px;color:\${sigFresh?'var(--green)':'var(--grey)'}">\${sigAge}s ago</span>\`:''}
+          ${sig.dir?`<span class="signal-badge" style="border-color:${sig.dir==='UP'?'var(--green)':'var(--red)'};color:${sig.dir==='UP'?'var(--green)':'var(--red)'};background:${sig.dir==='UP'?'rgba(26,90,26,0.1)':'rgba(138,26,26,0.1)'}">${sig.dir} ${sig.conf||0}%</span>`:'<span style="color:var(--grey);font-size:10px">No signal</span>'}
+          ${intel.price?`<span style="font-family:var(--mono);font-size:13px;color:var(--text)">$${Number(intel.price).toLocaleString()}</span>`:''}
+          ${sigAge!==null?`<span style="font-size:10px;color:${sigFresh?'var(--green)':'var(--grey)'}">${sigAge}s ago</span>`:''}
         </div>
-        \${sig.reason?\`<div style="font-size:11px;color:var(--text2);padding:6px 8px;background:var(--bg);border-left:3px solid var(--cyan);margin-bottom:6px">\${sig.reason}</div>\`:''}
+        ${sig.reason?`<div style="font-size:11px;color:var(--text2);padding:6px 8px;background:var(--bg);border-left:3px solid var(--cyan);margin-bottom:6px">${sig.reason}</div>`:''}
         <div class="child-grid" style="grid-template-columns:1fr 1fr">
-          <div><span class="lbl">INTEL SCORE</span><div class="val" style="color:\${(intel.intelScore||0)>=65?'var(--green)':(intel.intelScore||0)>=40?'var(--yellow)':'var(--red)'}">\${intel.intelScore||0}/100</div></div>
-          <div><span class="lbl">MARKETS SCANNED</span><div class="val">\${intel.markets||0}</div></div>
+          <div><span class="lbl">INTEL SCORE</span><div class="val" style="color:${(intel.intelScore||0)>=65?'var(--green)':(intel.intelScore||0)>=40?'var(--yellow)':'var(--red)'}">${intel.intelScore||0}/100</div></div>
+          <div><span class="lbl">MARKETS SCANNED</span><div class="val">${intel.markets||0}</div></div>
         </div>
-        \${intel.bestMarket?\`<div style="margin-top:8px;padding:8px;background:var(--bg4);border:2px solid var(--border)">
+        ${intel.bestMarket?`<div style="margin-top:8px;padding:8px;background:var(--bg4);border:2px solid var(--border)">
           <div style="font-family:var(--pixel);font-size:8px;color:var(--cyan);margin-bottom:4px">BEST MARKET FOUND</div>
-          <div style="font-size:12px;font-weight:bold;color:var(--text);margin-bottom:3px">\${intel.bestMarket.title||''}</div>
+          <div style="font-size:12px;font-weight:bold;color:var(--text);margin-bottom:3px">${intel.bestMarket.title||''}</div>
           <div class="child-grid" style="grid-template-columns:1fr 1fr 1fr;font-size:10px">
-            <div><span class="lbl">SIDE</span><div style="color:\${intel.bestMarket.suggestedSide==='YES'?'var(--green)':'var(--red)'}; font-weight:bold">\${intel.bestMarket.suggestedSide||'?'}</div></div>
-            <div><span class="lbl">EDGE</span><div style="color:var(--cyan)">\${((intel.bestMarket.impliedEdge||0)*100).toFixed(1)}%</div></div>
-            <div><span class="lbl">CLOSES IN</span><div>\${intel.bestMarket.closesIn||'?'}min</div></div>
+            <div><span class="lbl">SIDE</span><div style="color:${intel.bestMarket.suggestedSide==='YES'?'var(--green)':'var(--red)'}; font-weight:bold">${intel.bestMarket.suggestedSide||'?'}</div></div>
+            <div><span class="lbl">EDGE</span><div style="color:var(--cyan)">${((intel.bestMarket.impliedEdge||0)*100).toFixed(1)}%</div></div>
+            <div><span class="lbl">CLOSES IN</span><div>${intel.bestMarket.closesIn||'?'}min</div></div>
           </div>
-        </div>\`:''}
+        </div>`:''}
       </div>
 
       <!-- SCORE HISTORY (heatmap) -->
       <div class="child-section">
-        <div class="child-sec-title">SCORE HISTORY (\${scoreHist.length} cycles)</div>
-        <div style="display:flex;flex-wrap:wrap;gap:1px;margin-bottom:4px">\${scoreBlocks}</div>
-        \${scoreSpark}
-        \${scoreHist.length >= 2 ?\`<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--grey);font-family:var(--pixel);margin-top:4px">
-          <span>LOW \${Math.min(...scoreHist)}</span>
-          <span>AVG \${Math.round(scoreHist.reduce((a, b) => a + b, 0) / scoreHist.length)}</span>
-          <span>HIGH \${Math.max(...scoreHist)}</span>
-        </div>\`:''}
+        <div class="child-sec-title">SCORE HISTORY (${scoreHist.length} cycles)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:1px;margin-bottom:4px">${scoreBlocks}</div>
+        ${scoreSpark}
+        ${scoreHist.length >= 2 ?`<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--grey);font-family:var(--pixel);margin-top:4px">
+          <span>LOW ${Math.min(...scoreHist)}</span>
+          <span>AVG ${Math.round(scoreHist.reduce((a, b) => a + b, 0) / scoreHist.length)}</span>
+          <span>HIGH ${Math.max(...scoreHist)}</span>
+        </div>`:''}
       </div>
 
       <!-- TRADE PERFORMANCE -->
       <div class="child-section">
         <div class="child-sec-title">TRADE PERFORMANCE</div>
-        \${cTrades > 0 ?\`
+        ${cTrades > 0 ?`
         <div class="child-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-bottom:8px">
-          <div><span class="lbl">TRADES</span><div class="val">\${cTrades}</div></div>
-          <div><span class="lbl">WINS</span><div class="val" style="color:var(--green)">\${cWins}</div></div>
-          <div><span class="lbl">LOSSES</span><div class="val" style="color:var(--red)">\${cLosses}</div></div>
-          <div><span class="lbl">WIN RATE</span><div class="val" style="color:\${cWR>=55?'var(--green)':cWR>=40?'var(--yellow)':'var(--red)'}">\${cWR}%</div></div>
+          <div><span class="lbl">TRADES</span><div class="val">${cTrades}</div></div>
+          <div><span class="lbl">WINS</span><div class="val" style="color:var(--green)">${cWins}</div></div>
+          <div><span class="lbl">LOSSES</span><div class="val" style="color:var(--red)">${cLosses}</div></div>
+          <div><span class="lbl">WIN RATE</span><div class="val" style="color:${cWR>=55?'var(--green)':cWR>=40?'var(--yellow)':'var(--red)'}">${cWR}%</div></div>
         </div>
         <div class="child-bar-track" style="height:12px;margin-bottom:6px">
-          <div class="child-bar-fill" style="width:\${cWR}%;background:var(--green)"></div>
-          <div style="position:absolute;top:0;right:0;height:100%;width:\${100-cWR}%;background:var(--red);opacity:0.4"></div>
-          <div class="child-bar-label">\${cWR}% WR</div>
+          <div class="child-bar-fill" style="width:${cWR}%;background:var(--green)"></div>
+          <div style="position:absolute;top:0;right:0;height:100%;width:${100-cWR}%;background:var(--red);opacity:0.4"></div>
+          <div class="child-bar-label">${cWR}% WR</div>
         </div>
         <div class="child-grid" style="grid-template-columns:1fr 1fr">
-          <div><span class="lbl">NET P&L</span><div class="val" style="color:\${cNet>=0?'var(--green)':'var(--red)'}">\${cNet >= 0 ? '+' : ''}\$\${cNet.toFixed(2)}</div></div>
-          <div><span class="lbl">FUND</span><div class="val" style="color:var(--cyan)">\$\${(cpnl.fund || 0).toFixed(2)}</div></div>
+          <div><span class="lbl">NET P&L</span><div class="val" style="color:${cNet>=0?'var(--green)':'var(--red)'}">${cNet >= 0 ? '+' : ''}$${cNet.toFixed(2)}</div></div>
+          <div><span class="lbl">FUND</span><div class="val" style="color:var(--cyan)">$${(cpnl.fund || 0).toFixed(2)}</div></div>
         </div>
-        \`:\`
+        `:`
         <div style="text-align:center;padding:12px;color:var(--grey);font-size:11px">
           <div style="font-size:20px;margin-bottom:6px">...</div>
           <div style="font-family:var(--pixel);font-size:8px">NO TRADES YET</div>
           <div style="margin-top:4px">Observing and building intel for ADAN</div>
         </div>
-        \`}
+        `}
       </div>
 
       <!-- GRANDCHILDREN -->
-      \${gcs.length || exp >= 100 ?\`<div class="child-section">
-        <div class="child-sec-title">OFFSPRING (\${gcs.length} grandchildren)</div>
-        \${gcs.length ?\`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\${gcHTML}</div>\`:\`
+      ${gcs.length || exp >= 100 ?`<div class="child-section">
+        <div class="child-sec-title">OFFSPRING (${gcs.length} grandchildren)</div>
+        ${gcs.length ?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${gcHTML}</div>`:`
         <div style="text-align:center;padding:10px;border:2px dashed var(--border2)">
-          <div style="font-family:var(--pixel);font-size:8px;color:var(--purple);margin-bottom:4px">\${exp >= 100 ? 'READY TO BREED' : 'AWAITING 100 EXP'}</div>
-          <div style="font-size:10px;color:var(--grey)">\${exp >= 100 ? 'Will spawn on next ADAN LVL 4+ cycle' : 'Needs ' + (100 - exp) + ' more EXP to unlock breeding'}</div>
+          <div style="font-family:var(--pixel);font-size:8px;color:var(--purple);margin-bottom:4px">${exp >= 100 ? 'READY TO BREED' : 'AWAITING 100 EXP'}</div>
+          <div style="font-size:10px;color:var(--grey)">${exp >= 100 ? 'Will spawn on next ADAN LVL 4+ cycle' : 'Needs ' + (100 - exp) + ' more EXP to unlock breeding'}</div>
         </div>
-        \`}
-      </div>\`:''}
+        `}
+      </div>`:''}
 
     </div>
-  \`;
+  `;
   modal.style.display='block';
 }
 
@@ -1882,14 +1600,14 @@ async function refresh() {
     
     // Fund = total vault (cash + active bets)
     const totalVault = (pnl.fund || 0) + activeStake;
-    document.getElementById('top-fund').textContent = '\\$' + totalVault.toFixed(2);
+    document.getElementById('top-fund').textContent = '\$' + totalVault.toFixed(2);
 
     const netEl = document.getElementById('top-net');
-    netEl.textContent = (pnl.net >= 0 ? '+' : '') + '\\$' + (pnl.net || 0).toFixed(2);
+    netEl.textContent = (pnl.net >= 0 ? '+' : '') + '\$' + (pnl.net || 0).toFixed(2);
     netEl.style.color = pnl.net >= 0 ? 'var(--green)' : 'var(--red)';
     
     if (activeEl) {
-      activeEl.textContent = _topCount > 0 ? _topCount + ' (\\$' + activeStake.toFixed(0) + ')' : '0';
+      activeEl.textContent = _topCount > 0 ? _topCount + ' (\$' + activeStake.toFixed(0) + ')' : '0';
       activeEl.style.color = _topCount > 0 ? 'var(--cyan)' : 'var(--grey)';
     }
     const wrEl = document.getElementById('top-wr');
@@ -1902,10 +1620,10 @@ async function refresh() {
     const tickItems = [['BTC', 'BTCUSDT'], ['ETH', 'ETHUSDT'], ['SOL', 'SOLUSDT'], ['BNB', 'BNBUSDT']];
     document.getElementById('ticker').innerHTML = tickItems.map(([sym, key]) => {
       const p = prices[key];
-      if (!p) return \`<div class="tick"><span class="tick-sym">\${sym}</span><span class="tick-p" style="color:var(--grey)">--</span></div>\`;
+      if (!p) return `<div class="tick"><span class="tick-sym">${sym}</span><span class="tick-p" style="color:var(--grey)">--</span></div>`;
       const c=p.chg>=0?'green':'red';
-      return \`<div class="tick"><span class="tick-sym">\${sym}</span><span class="tick-p" style="color:var(--\${c})">\$\${p.price?.toLocaleString()}</span><span style="color:var(--\${c});font-size:10px">\${p.chg>=0?'+':''}\${p.chg?.toFixed(2)}%</span></div>\`;
-    }).join('')+\`<div class="tick" style="margin-left:auto;color:var(--grey);font-size:10px" id="fg-tick">\${prices._meta?.fearGreed?'F&G: '+prices._meta.fearGreed.value+' ('+prices._meta.fearGreed.label+')':''}</div>\`;
+      return `<div class="tick"><span class="tick-sym">${sym}</span><span class="tick-p" style="color:var(--${c})">$${p.price?.toLocaleString()}</span><span style="color:var(--${c});font-size:10px">${p.chg>=0?'+':''}${p.chg?.toFixed(2)}%</span></div>`;
+    }).join('')+`<div class="tick" style="margin-left:auto;color:var(--grey);font-size:10px" id="fg-tick">${prices._meta?.fearGreed?'F&G: '+prices._meta.fearGreed.value+' ('+prices._meta.fearGreed.label+')':''}</div>`;
 
     // Level
     document.getElementById('lvl-num').textContent='LVL '+xp.level;
@@ -1913,7 +1631,7 @@ async function refresh() {
     document.getElementById('xp-fill').style.width=xp.pct+'%';
     document.getElementById('xp-pct').textContent=xp.pct+'%';
     document.getElementById('xp-exact').textContent=xp.curTotal+' / '+xp.nxtTotal+' EXP';
-    document.getElementById('treasury-box').innerHTML=\`<div style="color:var(--purple);font-size:12px;font-weight:700">\$\${(pnl.treasury||0).toFixed(2)}</div><div style="font-size:9px;color:var(--grey)">TREASURY</div>\`;
+    document.getElementById('treasury-box').innerHTML=`<div style="color:var(--purple);font-size:12px;font-weight:700">$${(pnl.treasury||0).toFixed(2)}</div><div style="font-size:9px;color:var(--grey)">TREASURY</div>`;
 
     // Fund ring
     const fundPct=Math.min(1,(pnl.fund||0)/10000);
@@ -1921,18 +1639,18 @@ async function refresh() {
     const offset=circ*(1-fundPct);
     document.getElementById('fund-arc').style.strokeDashoffset=offset;
     document.getElementById('fund-arc').style.stroke=fundPct>=0.9?'var(--green)':fundPct>=0.7?'var(--cyan)':fundPct>=0.4?'var(--yellow)':'var(--red)';
-    document.getElementById('ring-fund').textContent='\$'+(pnl.fund/1000).toFixed(2)+'k';
+    document.getElementById('ring-fund').textContent='$'+(pnl.fund/1000).toFixed(2)+'k';
     document.getElementById('ring-fund').style.color=fundPct>=0.9?'var(--green)':fundPct>=0.7?'var(--cyan)':fundPct>=0.4?'var(--yellow)':'var(--red)';
 
     // Stats
-    document.getElementById('s-net').innerHTML=\`<span style="color:\${pnl.net>=0?'var(--green)':'var(--red)'}">\${pnl.net>=0?'+':''}\$\${(pnl.net||0).toFixed(2)}</span>\`;
-    document.getElementById('s-wr').innerHTML=\`<span style="color:\${pct>=55?'var(--green)':pct>=40?'var(--yellow)':'var(--red)'}">\${pct}%</span> <span style="color:var(--grey);font-size:10px">(\${pnl.wins}W/\${pnl.losses}L)</span>\`;
+    document.getElementById('s-net').innerHTML=`<span style="color:${pnl.net>=0?'var(--green)':'var(--red)'}">${pnl.net>=0?'+':''}$${(pnl.net||0).toFixed(2)}</span>`;
+    document.getElementById('s-wr').innerHTML=`<span style="color:${pct>=55?'var(--green)':pct>=40?'var(--yellow)':'var(--red)'}">${pct}%</span> <span style="color:var(--grey);font-size:10px">(${pnl.wins}W/${pnl.losses}L)</span>`;
     const bs = pnl.brierScore;
-    document.getElementById('s-brier').innerHTML = bs != null ? \`<span style="color:\${bs < 0.15 ? 'var(--green)' : bs < 0.25 ? 'var(--yellow)' : 'var(--red)'}">\${bs.toFixed(3)}</span>\` : \`<span style="color:var(--grey)">--</span>\`;
+    document.getElementById('s-brier').innerHTML = bs != null ? `<span style="color:${bs < 0.15 ? 'var(--green)' : bs < 0.25 ? 'var(--yellow)' : 'var(--red)'}">${bs.toFixed(3)}</span>` : `<span style="color:var(--grey)">--</span>`;
     document.getElementById('s-trades').textContent=pnl.trades+' total';
     const open=(d.positions?.open||[]).length;
     document.getElementById('s-slots').textContent=(9-open)+'/9 free';
-    document.getElementById('s-treas').textContent='\$'+(pnl.treasury||0).toFixed(2);
+    document.getElementById('s-treas').textContent='$'+(pnl.treasury||0).toFixed(2);
 
     // IV Monitor (v6.5)
     const ivData = st?.ivData;
@@ -1951,49 +1669,49 @@ async function refresh() {
     document.getElementById('calib-row').innerHTML=Object.entries(d.calib||{}).map(([k,v])=>{
       const acc=v.p>=3?Math.round(v.c/v.p*100):null;
       const c=acc===null?'grey':acc>=60?'green':acc>=50?'yellow':'red';
-      return \`<div class="calib-item"><div class="calib-asset">\${k}</div><div class="calib-pct" style="color:var(--\${c})">\${acc===null?'--':acc+'%'}</div><div class="calib-trades">\${v.p} trades</div></div>\`;
+      return `<div class="calib-item"><div class="calib-asset">${k}</div><div class="calib-pct" style="color:var(--${c})">${acc===null?'--':acc+'%'}</div><div class="calib-trades">${v.p} trades</div></div>`;
     }).join('');
 
     // Skills
     document.getElementById('skills-wrap').innerHTML=SKILLS_DEF.map(s=>{
       const on=xp.level>=s.lvl;
-      return \`<div class="skill-chip \${on?'skill-on':'skill-next'}">\${s.icon} \${s.name}</div>\`;
+      return `<div class="skill-chip ${on?'skill-on':'skill-next'}">${s.icon} ${s.name}</div>`;
     }).join('');
 
     // Prices
     const priceSyms=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT']];
     document.getElementById('price-grid').innerHTML=priceSyms.map(([sym,key])=>{
       const p=prices[key];
-      if(!p)return \`<div class="price-card"><div class="sym">\${sym}</div><div class="price" style="color:var(--grey)">No data</div></div>\`;
+      if(!p)return `<div class="price-card"><div class="sym">${sym}</div><div class="price" style="color:var(--grey)">No data</div></div>`;
       const c=p.chg>=0?'green':'red';
       const rsi=p.rsi||50;
       const rsiCls=rsi<35?'ind-bull':rsi>65?'ind-bear':'ind-neu';
       const macdCls=p.macd?.hist>0?'ind-bull':'ind-bear';
       const bbCls=(p.bb?.pct||50)>75?'ind-bear':(p.bb?.pct||50)<25?'ind-bull':'ind-neu';
-      return \`<div class="price-card">
+      return `<div class="price-card">
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <div><div class="sym">\${sym}</div><div class="price" style="color:var(--\${c})">\$\${p.price?.toLocaleString()}</div></div>
-          <div style="text-align:right"><div class="chg" style="color:var(--\${c})">\${p.chg>=0?'+':''}\${p.chg?.toFixed(2)}%</div>
-          \${sparkSvg(p.closes)}</div>
+          <div><div class="sym">${sym}</div><div class="price" style="color:var(--${c})">$${p.price?.toLocaleString()}</div></div>
+          <div style="text-align:right"><div class="chg" style="color:var(--${c})">${p.chg>=0?'+':''}${p.chg?.toFixed(2)}%</div>
+          ${sparkSvg(p.closes)}</div>
         </div>
         <div class="indicators">
-          <span class="ind \${rsiCls}">RSI \${rsi?.toFixed(0)}</span>
-          <span class="ind \${macdCls}">MACD \${p.macd?.hist>0?'▲':'▼'}</span>
-          <span class="ind \${bbCls}">BB \${(p.bb?.pct||0).toFixed(0)}%</span>
-          <span class="ind \${p.intelScore>=65?'ind-bull':p.intelScore>=45?'ind-neu':'ind-bear'}">[score:\${p.intelScore||'--'}]</span>
+          <span class="ind ${rsiCls}">RSI ${rsi?.toFixed(0)}</span>
+          <span class="ind ${macdCls}">MACD ${p.macd?.hist>0?'▲':'▼'}</span>
+          <span class="ind ${bbCls}">BB ${(p.bb?.pct||0).toFixed(0)}%</span>
+          <span class="ind ${p.intelScore>=65?'ind-bull':p.intelScore>=45?'ind-neu':'ind-bear'}">[score:${p.intelScore||'--'}]</span>
         </div>
-      </div>\`;
+      </div>`;
     }).join('');
 
     // Dynasty Tree
     const children=d.children||[];
     const wrClass=pct>=55?'b-wr-good':pct>=40?'b-wr-ok':'b-wr-bad';
-    let treeHtml=\`<div class="tree-root-row">
+    let treeHtml=`<div class="tree-root-row">
       <span style="color:var(--purple);font-weight:700;font-size:14px">◈ ADAN</span>
-      <span class="badge2 b-lvl">LVL \${xp.level}</span>
-      <span class="badge2 \${wrClass}">\${pct}% WR</span>
-      <span style="color:var(--grey);font-size:10px">Gen\${pnl.generation||1} · ROOT</span>
-    </div>\`;
+      <span class="badge2 b-lvl">LVL ${xp.level}</span>
+      <span class="badge2 ${wrClass}">${pct}% WR</span>
+      <span style="color:var(--grey);font-size:10px">Gen${pnl.generation||1} · ROOT</span>
+    </div>`;
     if(children.length===0){
       const sc={minLvl:2,minTrades:10,minWR:0};
       const needs=[];
@@ -2001,7 +1719,7 @@ async function refresh() {
       if(pnl.trades<sc.minTrades)needs.push((sc.minTrades-pnl.trades)+' trades');
       if(pnl.treasury<=0)needs.push('treasury > 0');
       if(!(pnl.treasury>0))needs.push('treasury>0');
-      treeHtml+=\`<div style="padding:8px 28px;color:var(--grey);font-size:11px">└── no children yet\${needs.length?' · need: '+needs.join(', '):' · spawn ready!'}</div>\`;
+      treeHtml+=`<div style="padding:8px 28px;color:var(--grey);font-size:11px">└── no children yet${needs.length?' · need: '+needs.join(', '):' · spawn ready!'}</div>`;
     } else {
       children.forEach((c,i)=>{
         const sig=c.intel?.signal;
@@ -2011,26 +1729,26 @@ async function refresh() {
         const gcReady=xp.level>=4&&(c.childExp||0)>=100&&(c.grandChildren||[]).length<2;
         const scoreColor=c.intel?.intelScore>=65?'green':c.intel?.intelScore>=45?'yellow':'red';
         const isLast=i===children.length-1;
-        treeHtml+=\`<div class="tree-child-row">
-          <span style="color:var(--grey)">\${isLast?'└──':'├──'}</span>
-          <span class="child-name">\${c.name||c.spec}</span>
-          <span class="child-spec">\${c.spec}</span>
-          <span class="signal-badge \${sigCls}">\${sigTxt}</span>
-          \${c.intel?'<span style="color:var(--'+scoreColor+');font-size:10px;font-family:JetBrains Mono,monospace">[\${c.intel.intelScore}]</span>':''}
-          <div class="exp-bar-wrap" title="\${c.childExp||0}/100 exp"><div class="exp-bar-fill" style="width:\${Math.min(100,c.childExp||0)}%"></div></div>
-          <span style="font-size:10px;color:var(--grey)">\${c.childExp||0}/100</span>
-          \${gcReady?'<span style="color:var(--yellow);font-size:10px">🌱</span>':''}
-        </div>\`;
+        treeHtml+=`<div class="tree-child-row">
+          <span style="color:var(--grey)">${isLast?'└──':'├──'}</span>
+          <span class="child-name">${c.name||c.spec}</span>
+          <span class="child-spec">${c.spec}</span>
+          <span class="signal-badge ${sigCls}">${sigTxt}</span>
+          ${c.intel?'<span style="color:var(--'+scoreColor+');font-size:10px;font-family:JetBrains Mono,monospace">[${c.intel.intelScore}]</span>':''}
+          <div class="exp-bar-wrap" title="${c.childExp||0}/100 exp"><div class="exp-bar-fill" style="width:${Math.min(100,c.childExp||0)}%"></div></div>
+          <span style="font-size:10px;color:var(--grey)">${c.childExp||0}/100</span>
+          ${gcReady?'<span style="color:var(--yellow);font-size:10px">🌱</span>':''}
+        </div>`;
         (c.grandChildren||[]).forEach((gc,gi)=>{
           const gcSig=gc.intel?.signal;
           const gcCls=gcSig?.dir==='UP'?'sig-up':gcSig?.dir==='DOWN'?'sig-down':'sig-neu';
           const gcTxt=gcSig?(gcSig.dir==='UP'?'▲':gcSig.dir==='DOWN'?'▼':'●'):'·';
-          treeHtml+=\`<div class="tree-grand-row">
-            <span style="color:var(--grey)">\${gi===(c.grandChildren||[]).length-1?'    └──':'    ├──'}</span>
-            <span style="color:var(--text2)">\${gc.name||gc.spec}</span>
-            \${gc.focus?'<span style="color:var(--grey);font-size:10px">['+gc.focus+']</span>':''}
-            <span class="signal-badge \${gcCls}" style="padding:1px 5px">\${gcTxt}</span>
-          </div>\`;
+          treeHtml+=`<div class="tree-grand-row">
+            <span style="color:var(--grey)">${gi===(c.grandChildren||[]).length-1?'    └──':'    ├──'}</span>
+            <span style="color:var(--text2)">${gc.name||gc.spec}</span>
+            ${gc.focus?'<span style="color:var(--grey);font-size:10px">['+gc.focus+']</span>':''}
+            <span class="signal-badge ${gcCls}" style="padding:1px 5px">${gcTxt}</span>
+          </div>`;
         });
       });
       // Signal consensus
@@ -2042,15 +1760,15 @@ async function refresh() {
         const conTxt=ups>downs?'▲ BULL CONSENSUS':downs>ups?'▼ BEAR CONSENSUS':'● MIXED SIGNALS';
         const conCol=ups>downs?'var(--green)':downs>ups?'var(--red)':'var(--yellow)';
         const p=100/(sigs.length||1);
-        treeHtml+=\`<div class="consensus-bar con-\${con}">
-          <span>\${conTxt}</span>
-          <span style="font-size:10px;color:inherit;opacity:.7">\${ups}▲ \${downs}▼ \${sigs.length-ups-downs}● · \${sigs.length}/\${children.length} reporting</span>
+        treeHtml+=`<div class="consensus-bar con-${con}">
+          <span>${conTxt}</span>
+          <span style="font-size:10px;color:inherit;opacity:.7">${ups}▲ ${downs}▼ ${sigs.length-ups-downs}● · ${sigs.length}/${children.length} reporting</span>
         </div>
         <div class="sig-stack">
-          <div class="sig-stack-up" style="width:\${ups*p}%"></div>
-          <div class="sig-stack-down" style="width:\${downs*p}%"></div>
+          <div class="sig-stack-up" style="width:${ups*p}%"></div>
+          <div class="sig-stack-down" style="width:${downs*p}%"></div>
           <div class="sig-stack-neu"></div>
-        </div>\`;
+        </div>`;
       }
     }
     // ── v4.0: Evolution + Category Dynasty ──
@@ -2127,14 +1845,14 @@ async function refresh() {
       document.getElementById('positions-wrap').innerHTML=openPos.map(p=>{
         const side=p.side==='YES'?'<span style="color:var(--green)">YES ▲</span>':'<span style="color:var(--red)">NO ▼</span>';
         const edge=((p.myProb-p.marketPrice)*100).toFixed(1);
-        return \`<div class="pos-row">
-          <div class="pos-title">\${side} \${(p.marketTitle||'').slice(0,40)}</div>
+        return `<div class="pos-row">
+          <div class="pos-title">${side} ${(p.marketTitle||'').slice(0,40)}</div>
           <div class="pos-meta">
-            <span>edge: <b style="color:\${edge>0?'var(--green)':'var(--red)'}">+\${edge}%</b></span>
-            <span>stake: \$\${p.stake}</span>
-            <span class="countdown">\${formatCountdown(p.closesAt)}</span>
+            <span>edge: <b style="color:${edge>0?'var(--green)':'var(--red)'}">+${edge}%</b></span>
+            <span>stake: $${p.stake}</span>
+            <span class="countdown">${formatCountdown(p.closesAt)}</span>
           </div>
-        </div>\`;
+        </div>`;
       }).join('');
     }
 
@@ -2148,17 +1866,17 @@ async function refresh() {
         mw.innerHTML=mkts.map(m=>{
           const edgeVal=(m.edge||0)*100;
           const eCol=Math.abs(edgeVal)>=5?'green':'grey';
-          return \`<div class="mkt-row" style="background:var(--bg); border: 1px solid var(--border2); padding: 8px;">
+          return `<div class="mkt-row" style="background:var(--bg); border: 1px solid var(--border2); padding: 8px;">
             <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
-               <div class="mkt-asset">\${(m.asset||'?').toUpperCase().slice(0,3)}</div>
-               <div class="mkt-edge" style="color:var(--\${eCol})">\${edgeVal>0?'+':''}\${edgeVal.toFixed(1)}% Edge</div>
+               <div class="mkt-asset">${(m.asset||'?').toUpperCase().slice(0,3)}</div>
+               <div class="mkt-edge" style="color:var(--${eCol})">${edgeVal>0?'+':''}${edgeVal.toFixed(1)}% Edge</div>
             </div>
-            <div class="mkt-title" title="\${m.title||''}" style="font-size:12px; margin-bottom: 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">\${(m.title||'').slice(0,50)}</div>
+            <div class="mkt-title" title="${m.title||''}" style="font-size:12px; margin-bottom: 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${(m.title||'').slice(0,50)}</div>
             <div style="display:flex; justify-content:space-between; font-size: 10px; color: var(--grey);">
-               <div class="mkt-price" style="color:var(--cyan)">Price: \${((m.yesPrice||0)*100).toFixed(0)}¢</div>
-               <div class="mkt-time">Closes: \${formatCountdown(m.closesAt)}</div>
+               <div class="mkt-price" style="color:var(--cyan)">Price: ${((m.yesPrice||0)*100).toFixed(0)}¢</div>
+               <div class="mkt-time">Closes: ${formatCountdown(m.closesAt)}</div>
             </div>
-          </div>\`;
+          </div>`;
         }).join('');
       }
     }
@@ -2169,9 +1887,15 @@ async function refresh() {
     // Avatar
     updateAvatar(d, brainData);
 
-    // ADAN World Conway — pass all children including LLM category
-    updateAdanWorld(d.children || [], d.config || {});
+      // Render Paginated History (Real & Ghost)
+      if(window.renderHistoryPanel) window.renderHistoryPanel();
 
+      // Avatar
+      updateAvatar(d, brainData);
+
+      // ADAN World Conway — pass all children including LLM category
+      updateAdanWorld(d.children || [], d.config || {});
+    }
     updateNeuralFlow(d);
     updateDecisionsLog(d);
     updateHourHeatmap(d);
@@ -2195,7 +1919,7 @@ function updateAvatar(d, brainData) {
   const activeBrain = brainData?.activeBrain || 'DEFAULT';
   window._lastBrainData = brainData; // Capture for the pixel animation loop
   const avContainer = document.getElementById('av-sprite-wrap');
-  if (avContainer && window._renderInElement && window._avIdx === 0) {
+  if (avContainer && window._renderInElement) {
     const brainType = ['VIRUS', 'MECHA', 'APPLE', 'SNAKE', 'EVA'].includes(activeBrain) ? activeBrain : null;
     window._renderInElement('av-sprite-wrap', d, brainType, 12); 
   }
@@ -2291,7 +2015,7 @@ function updateHourHeatmap(d) {
     const bg = wr===null ? '#111118' : wr>=0.6 ? '#0a2010' : wr>=0.4 ? '#1a1400' : '#200a0a';
     const fc = wr===null ? '#374151' : wr>=0.6 ? '#34d399' : wr>=0.4 ? '#fbbf24' : '#f87171';
     const label = wr===null ? h : (wr*100).toFixed(0) + '%';
-    return \`<div class="hour-cell" style="background:\${bg};color:\${fc}" title="Hour \${h} UTC: \${s.wins}W \${s.losses}L">\${label}</div>\`;
+    return `<div class="hour-cell" style="background:${bg};color:${fc}" title="Hour ${h} UTC: ${s.wins}W ${s.losses}L">${label}</div>`;
   }).join('');
 }
 
@@ -2317,15 +2041,15 @@ function updateDecisionsLog(d) {
     const brainName = d.state?.currentBrain || 'ADAN';
     const currentStep = d.state?.status || 'Analyzing market data...';
     
-    html += \`<div class="brain-live-block thinking">
+    html += `<div class="brain-live-block thinking">
       <div class="brain-live-header">
         <span class="brain-live-dot pulse"></span>
-        <span style="color:var(--cyan);font-weight:700;font-size:11px;font-family:var(--mono)">\${frame} \${brainName} ANALYZING — \${aiEngine}</span>
+        <span style="color:var(--cyan);font-weight:700;font-size:11px;font-family:var(--mono)">${frame} ${brainName} ANALYZING — ${aiEngine}</span>
         <span style="color:var(--grey);font-size:9px;margin-left:auto;font-family:var(--mono)">in progress</span>
       </div>
-      <div class="brain-live-body">\${currentStep}</div>
-      \${thought ? \`<div class="brain-stream-text">\${thought}</div>\` : ''}
-    </div>\`;
+      <div class="brain-live-body">${currentStep}</div>
+      ${thought ? `<div class="brain-stream-text">${thought}</div>` : ''}
+    </div>`;
   } else if (hasThought) {
     const isBet  = thought.includes('BET') || thought.includes('MARKET_ID');
     const isSkip = thought.includes('SKIP') || thought.includes('AUTO-SKIP') || thought.includes('Session offline');
@@ -2336,17 +2060,17 @@ function updateDecisionsLog(d) {
     const brainName = d.state?.currentBrain || 'ADAN';
 
     // Extract key lines (skip headers, code fences, separators)
-    const lines = thought.split('\\n')
+    const lines = thought.split('\n')
       .filter(l => l.trim() && !l.startsWith('#') && l.slice(0,3)!=='---' && l.slice(0,3)!=='~~~')
       .slice(0,6);
-    html += \`<div class="brain-live-block \${blockCls}">
+    html += `<div class="brain-live-block ${blockCls}">
       <div class="brain-live-header">
-        <span style="color:\${dotColor};font-weight:700;font-size:11px;font-family:var(--mono)">\${label} [\${brainName}]</span>
-        <span style="color:var(--grey);font-size:9px;margin-left:auto;font-family:var(--mono)">\${d.state?.lastScan||''}</span>
+        <span style="color:${dotColor};font-weight:700;font-size:11px;font-family:var(--mono)">${label} [${brainName}]</span>
+        <span style="color:var(--grey);font-size:9px;margin-left:auto;font-family:var(--mono)">${d.state?.lastScan||''}</span>
       </div>
-      <div class="brain-live-body">\${lines.join('\\n').slice(0,800)}</div>
-      \${thought.length > 200 ? \`<details style="margin-top:8px"><summary style="color:var(--grey);font-size:9px;font-family:var(--pixel);cursor:pointer;user-select:none">▸ FULL REASONING</summary><div class="brain-full-text">\${thought.slice(0,5000)}</div></details>\` : ''}
-    </div>\`;
+      <div class="brain-live-body">${lines.join('\n').slice(0,800)}</div>
+      ${thought.length > 200 ? `<details style="margin-top:8px"><summary style="color:var(--grey);font-size:9px;font-family:var(--pixel);cursor:pointer;user-select:none">▸ FULL REASONING</summary><div class="brain-full-text">${thought.slice(0,5000)}</div></details>` : ''}
+    </div>`;
   }
 
   // ── PAST DECISIONS ────────────────────────────────────────────────────────
@@ -2363,28 +2087,28 @@ function updateDecisionsLog(d) {
       const badgeTxt = isO ? 'OPEN' : (w?'WIN':'LOSS');
       const edge = ((p.edge||0)*100).toFixed(1);
       const side = p.side==='YES' ? '<span style="color:var(--green)">YES ▲</span>' : '<span style="color:var(--red)">NO ▼</span>';
-      const pnlTxt = isO ? '' : \`<span style="color:\${w?'var(--green)':'var(--red)'};font-weight:700">\${w?'+':''}\$\${p.pnl}</span>\`;
+      const pnlTxt = isO ? '' : `<span style="color:${w?'var(--green)':'var(--red)'};font-weight:700">${w?'+':''}$${p.pnl}</span>`;
       const entryThought = p.entryThought || '';
-      const reasonLines  = entryThought.split('\\n').filter(l=>l.trim()&&!l.startsWith('#')).slice(0,3).join('\\n');
+      const reasonLines  = entryThought.split('\n').filter(l=>l.trim()&&!l.startsWith('#')).slice(0,3).join('\n');
       const fullReason   = entryThought.replace(/^#.*$/mg,'').trim();
       const id = 'dec-'+idx;
-      return \`<div class="dec-row">
-        <div class="dec-header" onclick="document.getElementById('\${id}').classList.toggle('open')">
-          <span class="badge2 \${badgeCls}">\${badgeTxt}</span>
-          \${side}
-          <span class="dec-title">\${(p.marketTitle||'').slice(0,45)}</span>
-          \${pnlTxt}
-          <span class="dec-toggle">edge:\${edge>0?'+':''}\${edge}% ▾</span>
+      return `<div class="dec-row">
+        <div class="dec-header" onclick="document.getElementById('${id}').classList.toggle('open')">
+          <span class="badge2 ${badgeCls}">${badgeTxt}</span>
+          ${side}
+          <span class="dec-title">${(p.marketTitle||'').slice(0,45)}</span>
+          ${pnlTxt}
+          <span class="dec-toggle">edge:${edge>0?'+':''}${edge}% ▾</span>
         </div>
         <div class="dec-meta">
-          <span>\${(p.asset||'?').toUpperCase()}</span>
-          <span>conf:\${p.confidence||'--'}%</span>
-          <span>stake:\$\${p.stake||100}</span>
-          <span style="color:var(--grey)">\${(p.entryTime||'').slice(11,16)} UTC</span>
+          <span>${(p.asset||'?').toUpperCase()}</span>
+          <span>conf:${p.confidence||'--'}%</span>
+          <span>stake:$${p.stake||100}</span>
+          <span style="color:var(--grey)">${(p.entryTime||'').slice(11,16)} UTC</span>
         </div>
-        \${reasonLines ? \`<div class="dec-learn">\${reasonLines.slice(0,120)}...</div>\` : ''}
-        \${fullReason ? \`<div class="dec-reason" id="\${id}">\${fullReason.slice(0,800)}</div>\` : ''}
-      </div>\`;
+        ${reasonLines ? `<div class="dec-learn">${reasonLines.slice(0,120)}...</div>` : ''}
+        ${fullReason ? `<div class="dec-reason" id="${id}">${fullReason.slice(0,800)}</div>` : ''}
+      </div>`;
     }).join('');
   }
 
@@ -2439,18 +2163,18 @@ function updateNeuralFlow(d) {
         { id: 'atlas', name: 'ATLAS', icon: '👁️‍🗨️', color: C_PUR, angle: -135, intel: atlasIntel, l1: atlasIntel?.report?.smartMoney || 'scanning...', l2: atlasIntel ? 'Funding:' + (atlasIntel.report?.fundingRate || '--') : 'waiting' }
     ];
 
-    let svg = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${SVG_W} \${SVG_H}" style="width:100%;height:\${SVG_H}px">
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SVG_W} ${SVG_H}" style="width:100%;height:${SVG_H}px">
   <defs>
     <marker id="arh-rad" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-      <path d="M0,0 L0,6 L6,3 z" fill="\${lnColor}"/>
+      <path d="M0,0 L0,6 L6,3 z" fill="${lnColor}"/>
     </marker>
     <radialGradient id="adan-glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="\${C_PUR}" stop-opacity="0.3"/>
-      <stop offset="100%" stop-color="\${C_PUR}" stop-opacity="0"/>
+      <stop offset="0%" stop-color="${C_PUR}" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="${C_PUR}" stop-opacity="0"/>
     </radialGradient>
-  </defs>\`;
+  </defs>`;
 
-    svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ORBIT_R}" fill="none" stroke="\${C_BRD2}" stroke-width="1" stroke-dasharray="4 4" opacity="0.3"/>\`;
+    svg += `<circle cx="${CX}" cy="${CY}" r="${ORBIT_R}" fill="none" stroke="${C_BRD2}" stroke-width="1" stroke-dasharray="4 4" opacity="0.3"/>`;
 
     parentDefs.forEach((p, i) => {
         const rad = p.angle * Math.PI / 180;
@@ -2464,24 +2188,24 @@ function updateNeuralFlow(d) {
         const lineOpacity = Math.max(0.3, Math.min(1, (p.intel?.signal?.conf || 30) / 100));
         const ptDur = isThinking ? '0.5s' : '1.5s';
 
-        svg += \`<path d="M\${x1.toFixed(1)},\${y1.toFixed(1)} L\${x2.toFixed(1)},\${y2.toFixed(1)}" stroke="\${p.color}" stroke-width="1.5" stroke-dasharray="4 3" fill="none" opacity="\${lineOpacity}" marker-end="url(#arh-rad)"/>\`;
+        svg += `<path d="M${x1.toFixed(1)},${y1.toFixed(1)} L${x2.toFixed(1)},${y2.toFixed(1)}" stroke="${p.color}" stroke-width="1.5" stroke-dasharray="4 3" fill="none" opacity="${lineOpacity}" marker-end="url(#arh-rad)"/>`;
         for (let pt = 0; pt < 5; pt++) {
-            svg += \`<circle r="2" fill="\${p.color}" opacity="\${lineOpacity * (1 - pt / 10)}">
-        <animateMotion path="M\${x1.toFixed(1)},\${y1.toFixed(1)} L\${x2.toFixed(1)},\${y2.toFixed(1)}" dur="\${ptDur}" begin="\${pt * 0.3}s" repeatCount="indefinite"/>
-      </circle>\`;
+            svg += `<circle r="2" fill="${p.color}" opacity="${lineOpacity * (1 - pt / 10)}">
+        <animateMotion path="M${x1.toFixed(1)},${y1.toFixed(1)} L${x2.toFixed(1)},${y2.toFixed(1)}" dur="${ptDur}" begin="${pt * 0.3}s" repeatCount="indefinite"/>
+      </circle>`;
         }
     });
 
-    svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 15}" fill="url(#adan-glow)"/>\`;
+    svg += `<circle cx="${CX}" cy="${CY}" r="${ADAN_R + 15}" fill="url(#adan-glow)"/>`;
     if (isThinking) {
-        svg += \`<circle cx="\${CX}" cy="\${CY}" r="\${ADAN_R + 8}" fill="none" stroke="\${C_CYA}" stroke-width="1.5" opacity=".3" class="nf-pulse"/>\`;
+        svg += `<circle cx="${CX}" cy="${CY}" r="${ADAN_R + 8}" fill="none" stroke="${C_CYA}" stroke-width="1.5" opacity=".3" class="nf-pulse"/>`;
     }
 
     const adanBorder = isThinking ? C_CYA : isDone ? C_GRN : C_PUR;
-    svg += \`<rect x="\${CX - ADAN_R}" y="\${CY - ADAN_R}" width="\${ADAN_R * 2}" height="\${ADAN_R * 2}" fill="\${C_CARD}" stroke="\${adanBorder}" stroke-width="2.5" onclick="showAdanDetail()" style="cursor:pointer"/>
-  <text x="\${CX}" y="\${CY - 12}" text-anchor="middle" font-size="7" font-weight="700" fill="\${C_PUR}" font-family="JetBrains Mono,monospace" letter-spacing="1.5">ADAN</text>
-  <text x="\${CX}" y="\${CY + 4}" text-anchor="middle" font-size="18" fill="\${isThinking ? C_CYA : C_PUR}" font-family="JetBrains Mono,monospace" font-weight="700">\${isThinking ? frame : (isDone ? '◉' : '◈')}</text>
-  <text x="\${CX}" y="\${CY + 18}" text-anchor="middle" font-size="8" fill="\${C_DIM}" font-family="JetBrains Mono,monospace">\${isThinking ? 'analyzing' : (isDone ? (d.state?.thought?.includes('BET') ? 'BET' : 'SKIP') : 'idle')}</text>\`;
+    svg += `<rect x="${CX - ADAN_R}" y="${CY - ADAN_R}" width="${ADAN_R * 2}" height="${ADAN_R * 2}" fill="${C_CARD}" stroke="${adanBorder}" stroke-width="2.5" onclick="showAdanDetail()" style="cursor:pointer"/>
+  <text x="${CX}" y="${CY - 12}" text-anchor="middle" font-size="7" font-weight="700" fill="${C_PUR}" font-family="JetBrains Mono,monospace" letter-spacing="1.5">ADAN</text>
+  <text x="${CX}" y="${CY + 4}" text-anchor="middle" font-size="18" fill="${isThinking ? C_CYA : C_PUR}" font-family="JetBrains Mono,monospace" font-weight="700">${isThinking ? frame : (isDone ? '◉' : '◈')}</text>
+  <text x="${CX}" y="${CY + 18}" text-anchor="middle" font-size="8" fill="${C_DIM}" font-family="JetBrains Mono,monospace">${isThinking ? 'analyzing' : (isDone ? (d.state?.thought?.includes('BET') ? 'BET' : 'SKIP') : 'idle')}</text>`;
 
     const tSecGlobal = Date.now() / 1000;
     parentDefs.forEach((p) => {
@@ -2489,35 +2213,35 @@ function updateNeuralFlow(d) {
         const px = CX + ORBIT_R * Math.cos(rad);
         const py = CY + ORBIT_R * Math.sin(rad);
 
-        svg += \`<g onclick="showParentDetail('\${p.id}')" style="cursor:pointer">
-      <rect x="\${px - PARENT_R}" y="\${py - PARENT_R}" width="\${PARENT_R * 2}" height="\${PARENT_R * 2}" fill="\${C_CARD}" stroke="\${p.color}" stroke-width="2"/>
-      <text x="\${px}" y="\${py - 10}" text-anchor="middle" font-size="6.5" font-weight="700" fill="\${p.color}" font-family="JetBrains Mono,monospace">\${p.name}</text>
-      <text x="\${px}" y="\${py + 2}" text-anchor="middle" font-size="12">\${p.icon}</text>
-    </g>\`;
+        svg += `<g onclick="showParentDetail('${p.id}')" style="cursor:pointer">
+      <rect x="${px - PARENT_R}" y="${py - PARENT_R}" width="${PARENT_R * 2}" height="${PARENT_R * 2}" fill="${C_CARD}" stroke="${p.color}" stroke-width="2"/>
+      <text x="${px}" y="${py - 10}" text-anchor="middle" font-size="6.5" font-weight="700" fill="${p.color}" font-family="JetBrains Mono,monospace">${p.name}</text>
+      <text x="${px}" y="${py + 2}" text-anchor="middle" font-size="12">${p.icon}</text>
+    </g>`;
 
         const pChildren = children.filter(c => c.status !== 'dead' && (c.faction?.toLowerCase() === p.id || (c.name && c.name.toLowerCase().startsWith(p.id.charAt(0)))));
         const childOrbitR = PARENT_R + 35;
         if (pChildren.length > 0) {
-            svg += \`<circle cx="\${px}" cy="\${py}" r="\${childOrbitR}" fill="none" stroke="\${p.color}" stroke-width="0.5" stroke-dasharray="2 4" opacity="0.3"/>\`;
+            svg += `<circle cx="${px}" cy="${py}" r="${childOrbitR}" fill="none" stroke="${p.color}" stroke-width="0.5" stroke-dasharray="2 4" opacity="0.3"/>`;
         }
 
         pChildren.forEach((child, ci) => {
             const globalIdx = children.indexOf(child);
             const startAngle = (tSecGlobal % 16) / 16 * 360 + (ci / pChildren.length) * 360;
-            svg += \`<g transform="translate(\${px}, \${py})">
+            svg += `<g transform="translate(${px}, ${py})">
         <g>
-          <animateTransform attributeName="transform" type="rotate" from="\${startAngle} 0 0" to="\${startAngle + 360} 0 0" dur="16s" repeatCount="indefinite" />
-          <g transform="translate(\${childOrbitR}, 0)">
+          <animateTransform attributeName="transform" type="rotate" from="${startAngle} 0 0" to="${startAngle + 360} 0 0" dur="16s" repeatCount="indefinite" />
+          <g transform="translate(${childOrbitR}, 0)">
             <g>
-              <animateTransform attributeName="transform" type="rotate" from="\${-startAngle} 0 0" to="\${-(startAngle + 360)} 0 0" dur="16s" repeatCount="indefinite" />
-              <g onclick="showChildDetail(\${globalIdx})" style="cursor:pointer;">
-                <circle cx="0" cy="0" r="8" fill="\${C_CARD3}" stroke="\${C_CYA}" stroke-width="1.5" />
-                <text x="0" y="2" text-anchor="middle" font-size="5" fill="\${C_TXT}" font-family="JetBrains Mono,monospace">\${(child.name || child.spec).slice(0, 3).toUpperCase()}</text>
+              <animateTransform attributeName="transform" type="rotate" from="${-startAngle} 0 0" to="${-(startAngle + 360)} 0 0" dur="16s" repeatCount="indefinite" />
+              <g onclick="showChildDetail(${globalIdx})" style="cursor:pointer;">
+                <circle cx="0" cy="0" r="8" fill="${C_CARD3}" stroke="${C_CYA}" stroke-width="1.5" />
+                <text x="0" y="2" text-anchor="middle" font-size="5" fill="${C_TXT}" font-family="JetBrains Mono,monospace">${(child.name || child.spec).slice(0, 3).toUpperCase()}</text>
               </g>
             </g>
           </g>
         </g>
-      </g>\`;
+      </g>`;
         });
     });
 
@@ -2529,7 +2253,7 @@ function updateNeuralFlow(d) {
     const aiEngine = (window.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B' : 'Gemini-2.5-Flash';
     if (dot) dot.className = 'cmd-live-dot' + (isThinking ? ' thinking' : (btc ? '' : ' idle'));
     if (txt) {
-        txt.textContent = isThinking ? \`THINKING — \${aiEngine} analyzing\` : isDone ? 'DECISION MADE' : (btc ? 'MONITORING · live prices' : 'INITIALIZING');
+        txt.textContent = isThinking ? `THINKING — ${aiEngine} analyzing` : isDone ? 'DECISION MADE' : (btc ? 'MONITORING · live prices' : 'INITIALIZING');
         txt.style.color = isThinking ? 'var(--cyan)' : isDone ? 'var(--green)' : 'var(--text2)';
     }
 }
@@ -2581,11 +2305,11 @@ function toggleDagFullscreen() {
   const btn = document.getElementById('btn-fs');
   if (wrap.classList.contains('fullscreen')) {
     wrap.classList.remove('fullscreen');
-    btn.textContent = '\u26F6 EXPAND';
+    btn.textContent = '⛶ EXPAND';
     setTimeout(forgeFitView, 300);
   } else {
     wrap.classList.add('fullscreen');
-    btn.textContent = '\u2716 MINIMIZE';
+    btn.textContent = '✖ MINIMIZE';
     setTimeout(forgeFitView, 300);
   }
 }
@@ -2617,7 +2341,7 @@ function updateDynastyPanel(d) {
   const newLinks = [];
   
   // 1. Core Node
-  newNodes.push({ id: 'ADAN', group: 0, label: '\uD83D\uDD25 ADAN', sub: 'Core · Gen1', color: 'var(--purple)', edgeVolume: 5, fx: 0, fy: 0,
+  newNodes.push({ id: 'ADAN', group: 0, label: '🔥 ADAN', sub: 'Core · Gen1', color: 'var(--purple)', edgeVolume: 5, fx: 0, fy: 0,
     pulseColor: (d.state?.mode && d.state.mode !== 'idle') ? 'var(--cyan)' : null
   });
 
@@ -3244,7 +2968,7 @@ function drawAdanWorld() {
   // ── Draw agents ──
   ctx.font = "7px 'Press Start 2P', monospace";
   ctx.textAlign = 'center';
-  const labels = { adan: '\u25C8', apple: 'A', snake: 'S', eva: 'E' };
+  const labels = { adan: '◈', apple: 'A', snake: 'S', eva: 'E' };
   const catLabels = { 'politics-daily': 'P', 'sports-daily': 'S', 'macro-weekly': 'M', 'events-daily': 'E' };
 
   (cw_agents || []).forEach(a => {
@@ -3343,7 +3067,7 @@ function drawAdanWorld() {
       : 0;
     const gen = window._lastNFData?.pnl?.generation || 1;
     const agents = (cw_agents || []).length;
-    titleEl.textContent = 'COLONY \u00B7 ' + aliveCount + ' cells \u00B7 ' + agents + ' agents \u00B7 WR ' + wr + '% \u00B7 Gen ' + gen;
+    titleEl.textContent = 'COLONY · ' + aliveCount + ' cells · ' + agents + ' agents · WR ' + wr + '% · Gen ' + gen;
   }
 }
 
@@ -3351,781 +3075,4 @@ setInterval(stepAdanWorld, 200);
 
 </script>
 </body>
-</html>`;
-
-  const srv = http.createServer((req, res) => {
-    if (req.url === '/api/brains') {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify(brainManager.getDashboardPayload()));
-      return;
-    }
-
-    if (req.url === '/api/web4') {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      import('./adan-web4-identity.js').then(module => {
-        module.getWeb4DashboardPayload(module.initAdanKeypair ? null : null).then(payload => {
-          res.end(JSON.stringify(payload));
-        }).catch(err => res.end(JSON.stringify({ error: err.message })));
-      }).catch(err => {
-        console.error("Web4 module missing, ignoring:", err.message);
-        res.end(JSON.stringify({ registered: false, error: 'Module missing run `npm install 8004-solana`' }));
-      });
-      return;
-    }
-
-    if (req.url === '/api/crossover' && req.method === 'POST') {
-      let body = '';
-      req.on('data', chunk => body += chunk.toString());
-      req.on('end', () => {
-        try {
-          const { childIdA, childIdB } = JSON.parse(body);
-          const pnl = loadPnL();
-          const children = pnl.children || [];
-
-          const idxA = children.findIndex(c => c.spec === childIdA || c.id === childIdA);
-          const idxB = children.findIndex(c => c.spec === childIdB || c.id === childIdB);
-          if (idxA === -1 || idxB === -1) throw new Error("Parent nodes not found");
-
-          const childA = children[idxA];
-          const childB = children[idxB];
-
-          let dnaA = childA.dna || { minEdge: 0.05, maxRiskIdx: 4, stakePct: 0.15, patience: 1.0, volWeight: 1.0, vwapWeight: 1.0 };
-          let dnaB = childB.dna || { minEdge: 0.05, maxRiskIdx: 4, stakePct: 0.15, patience: 1.0, volWeight: 1.0, vwapWeight: 1.0 };
-
-          // Fused DNA
-          const fusedDna = {
-            minEdge: parseFloat(((dnaA.minEdge + dnaB.minEdge) / 2).toFixed(3)),
-            maxRiskIdx: Math.round((dnaA.maxRiskIdx + dnaB.maxRiskIdx) / 2),
-            stakePct: parseFloat(((dnaA.stakePct + dnaB.stakePct) / 2).toFixed(3)),
-            patience: parseFloat(((dnaA.patience + dnaB.patience) / 2).toFixed(2)),
-            volWeight: parseFloat(((dnaA.volWeight + dnaB.volWeight) / 2).toFixed(2)),
-            vwapWeight: parseFloat(((dnaA.vwapWeight + dnaB.vwapWeight) / 2).toFixed(2))
-          };
-
-          // Execute the weakest parent (Brier-score approximate)
-          const wrA = (childA.childPnl?.wins || 0) / Math.max(1, childA.childPnl?.trades || 1);
-          const wrB = (childB.childPnl?.wins || 0) / Math.max(1, childB.childPnl?.trades || 1);
-          if (wrA >= wrB) childB.status = 'dead'; else childA.status = 'dead';
-
-          // Spawn Gen3
-          const genId = 'GEN3-' + Date.now().toString().slice(-6);
-          const gen3 = {
-            name: genId,
-            spec: genId,
-            faction: childA.faction,
-            status: 'observing',
-            generation: 3,
-            dna: fusedDna,
-            fusedFrom: [childIdA, childIdB],
-            fusedAt: new Date().toISOString()
-          };
-
-          children.push(gen3);
-          pnl.children = children;
-          savePnL(pnl);
-
-          appendToSoul(`\n### GEN3 CROSSOVER — ${new Date().toISOString()}:\nNodes [${childIdA}] and [${childIdB}] fused to create ${genId}.\nFused DNA: ${JSON.stringify(fusedDna)}\nWeakest parent executed.\n`);
-
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, gen3 }));
-        } catch (e) {
-          res.writeHead(400); res.end(JSON.stringify({ error: e.message }));
-        }
-      });
-      return;
-    }
-
-    if (req.url === '/api/state') {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' });
-      const pnl = loadPnL();
-      const pos = loadPositions();
-      const calib = loadCalibration();
-      const xp = expProgress(pnl.exp || 0);
-
-      // Read intel for each child
-      const childrenWithIntel = (pnl.children || []).map(child => {
-        let intel = null;
-        try {
-          const slug = child.spec.replace(/[^a-z0-9]/gi, '-').toLowerCase();
-          const fp = path.join(INTEL_DIR, slug + '.json');
-          if (fs.existsSync(fp)) {
-            const d = JSON.parse(fs.readFileSync(fp, 'utf8'));
-            const age = (Date.now() - new Date(d.ts).getTime()) / 60000;
-            if (age <= 10) intel = { signal: d.signal, intelScore: d.intelScore, ts: d.ts, price: d.price, bestMarket: d.bestMarket, scoreHistory: d.scoreHistory };
-          }
-        } catch { }
-        // grandchildren + child EXP
-        let grandChildren = [], childExp = 0, childSignals = 0;
-        try {
-          const childDir = path.join(DIR, 'children', child.id || child.spec);
-          const gcPnlPath = path.join(childDir, 'pnl.json');
-          if (fs.existsSync(gcPnlPath)) {
-            const cp = JSON.parse(fs.readFileSync(gcPnlPath, 'utf8'));
-            childExp = cp.exp || 0;
-            childSignals = cp.signals || 0;
-            grandChildren = (cp.children || []).map(gc => {
-              let gcIntel = null;
-              try {
-                const gslug = gc.spec.replace(/[^a-z0-9]/gi, '-').toLowerCase();
-                const gfp = path.join(INTEL_DIR, gslug + '.json');
-                if (fs.existsSync(gfp)) {
-                  const gd = JSON.parse(fs.readFileSync(gfp, 'utf8'));
-                  if ((Date.now() - new Date(gd.ts).getTime()) / 60000 <= 10) gcIntel = { signal: gd.signal, ts: gd.ts, focus: gd.focus };
-                }
-              } catch { }
-              return { ...gc, intel: gcIntel };
-            });
-          }
-        } catch { }
-        // Read child DNA + PnL
-        let dna = child.dna || null;
-        let childPnl = {};
-        try {
-          const specSlug = (child.spec || '').replace(/[^a-zA-Z0-9-]/g, '-');
-          const childDir = path.join(DIR, 'children', specSlug);
-          const cpPath = path.join(childDir, 'pnl.json');
-          if (fs.existsSync(cpPath)) {
-            const cp = JSON.parse(fs.readFileSync(cpPath, 'utf8'));
-            childPnl = { trades: cp.trades || 0, wins: cp.wins || 0, losses: cp.losses || 0, net: cp.net || 0, fund: cp.fund || 0 };
-            if (!dna && cp.dna) dna = cp.dna;  // read DNA from child's pnl.json
-          }
-        } catch { }
-        return { ...child, intel, grandChildren, childExp, childSignals, dna, childPnl };
-      });
-
-      // ── v4.1: Category Children (LLM track) ──
-      const CATEGORY_SPECS = [
-        { id: 'politics-daily', category: 'politics' },
-        { id: 'sports-daily', category: 'sports' },
-        { id: 'macro-weekly', category: 'macro' },
-        { id: 'events-daily', category: 'events' },
-      ];
-      const categoryChildEntries = [];
-      for (const spec of CATEGORY_SPECS) {
-        let signal = null, market = null;
-        try {
-          const files = fs.readdirSync(INTEL_DIR).filter(f => f.startsWith(spec.id));
-          if (files.length > 0) {
-            const latest = files.map(f => {
-              try { return JSON.parse(fs.readFileSync(path.join(INTEL_DIR, f), 'utf8')); } catch { return null; }
-            }).filter(Boolean).sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
-            if (latest && (Date.now() - new Date(latest.ts).getTime()) / 60000 <= 30) {
-              signal = latest.signal || null;
-              market = latest.market || null;
-            }
-          }
-        } catch { }
-        const stats = childLearning.getChildStats ? childLearning.getChildStats(spec.id) : null;
-        const learn = (childLearning.learning || {})[spec.id];
-        categoryChildEntries.push({
-          spec: spec.id,
-          name: spec.id,
-          isCategory: true,
-          track: 'llm',
-          category: spec.category,
-          signal,
-          market,
-          accuracy: stats?.accuracy ?? (learn?.totalResolved > 0 ? Math.round((learn.correct || 0) / learn.totalResolved * 100) : null),
-          generation: learn?.dna?.generation || 1,
-          totalResolved: learn?.totalResolved || 0,
-          correct: learn?.correct || 0,
-        });
-      }
-
-      // Auto-reset result → idle after RESULT_SHOW_MS so the flow goes back to monitoring
-      if (_dashboardState?.mode === 'result' && _resultAt && (Date.now() - _resultAt) > RESULT_SHOW_MS) {
-        _dashboardState = { ..._dashboardState, mode: null };
-      }
-      // Enrich state with live nextScanAt for client-side countdown
-      const enrichedState = _dashboardState
-        ? { ..._dashboardState, nextScanAt: _nextScanAt || null }
-        : null;
-
-      // Include Golden Round Table parent intel in children array
-      const config = loadConfig();
-      const parentIntelEntries = [];
-      if (config?.mesaRedonda?.parents) {
-        for (const parent of config.mesaRedonda.parents) {
-          try {
-            const fp = path.join(INTEL_DIR, parent.id + '.json');
-            if (fs.existsSync(fp)) {
-              const d = JSON.parse(fs.readFileSync(fp, 'utf8'));
-              const age = (Date.now() - new Date(d.ts).getTime()) / 1000;
-              if (age <= 1800) { // 30 min limit for API serving
-                parentIntelEntries.push({
-                  spec: parent.id,
-                  name: parent.name,
-                  role: parent.role,
-                  intel: { signal: d.signal, intelScore: d.intelScore, ts: d.ts },
-                  report: d.report || null,
-                  signal: d.signal,
-                  isParent: true
-                });
-              }
-            }
-          } catch { }
-        }
-      }
-
-      let soulRulesLite = [];
-      try {
-        const rulesPath = path.join(process.env.HOME, '.adan-pred', 'soul_rules.json');
-        soulRulesLite = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));
-      } catch { }
-
-      // Child learning evolution data
-      const learningEntries = Object.entries(childLearning.learning || {});
-      const evolutionData = {
-        globalResolved: childLearning.globalResolved || 0,
-        lastEvolution: childLearning.lastEvolution || 0,
-        nextEvolutionIn: 10 - ((childLearning.globalResolved || 0) - (childLearning.lastEvolution || 0)),
-        pendingShadows: (childLearning.shadows || []).filter(s => !s.resolved).length,
-        children: Object.fromEntries(learningEntries.filter(([, v]) => typeof v === 'object').map(([id, v]) => [id, {
-          track: v.track || 'quant',
-          generation: v.dna?.generation || 1,
-          totalResolved: v.totalResolved || 0,
-          correct: v.correct || 0,
-          accuracy: v.totalResolved > 0 ? Math.round((v.correct || 0) / v.totalResolved * 100) : null,
-        }])),
-      };
-
-      // ── Child Learning Shadows (Dynasty Bets) ──
-      let dynastyShadows = [];
-      try {
-        const csPath = path.join(process.env.HOME, '.adan-pred', 'child_shadows.jsonl');
-        if (fs.existsSync(csPath)) {
-          const lines = fs.readFileSync(csPath, 'utf8').split('\n').filter(Boolean);
-          dynastyShadows = lines.slice(-80).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).reverse();
-        }
-      } catch { }
-
-      res.end(JSON.stringify({
-        ts: new Date().toISOString(),
-        pnl, calib, positions: pos,
-        xp: { ...xp, title: levelTitle(xp.level) },
-        children: [...parentIntelEntries, ...childrenWithIntel, ...categoryChildEntries],
-        state: {
-          ...enrichedState,
-          currentBrain: brainManager.currentBrain,
-          brainStats: brainManager.brainStats
-        },
-        quota: quota.status(),
-        shadowStats: polymerase.getStats(),
-        evolution: evolutionData,
-        dynastyShadows,
-        soulRules: soulRulesLite,
-        config
-      }));
-    } else if (req.url === '/api/training-metrics') {
-      // ── Training Metrics API ───────────────────────────────────────────
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      try {
-        const ADAN_DIR = path.join(process.env.HOME, '.adan-pred');
-
-        // 1. Brier Score from calibration.jsonl
-        let brierData = { score: null, n: 0, status: 'INSUFFICIENT_DATA', trend: [] };
-        try {
-          const calLines = fs.readFileSync(path.join(ADAN_DIR, 'calibration.jsonl'), 'utf8').split('\n').filter(Boolean);
-          const resolved = calLines.map(l => { try { return JSON.parse(l); } catch { return null; } })
-            .filter(l => l && l.resolved && l.outcome !== null).slice(-500);
-          if (resolved.length >= 10) {
-            const score = resolved.reduce((s, p) => s + Math.pow(p.pHat - p.outcome, 2), 0) / resolved.length;
-            const status = score < 0.10 ? 'EXCELLENT' : score < 0.15 ? 'GOOD' : score < 0.20 ? 'FAIR' : score < 0.25 ? 'POOR' : 'RANDOM';
-            const trend = [];
-            const perWeek = Math.floor(resolved.length / 5);
-            for (let i = 0; i < 5; i++) {
-              const chunk = resolved.slice(i * perWeek, (i + 1) * perWeek);
-              if (chunk.length > 0) trend.push(parseFloat((chunk.reduce((a, p) => a + Math.pow(p.pHat - p.outcome, 2), 0) / chunk.length).toFixed(4)));
-            }
-            brierData = { score: parseFloat(score.toFixed(4)), n: resolved.length, status, trend };
-          }
-        } catch { }
-
-        // 2. LMSR edge stats
-        let lmsrStats = { totalDetections: 0, avgEdge: 0, betRate: 0, skipRate: 0, strongBets: 0 };
-        try {
-          const edgeLines = fs.readFileSync(path.join(ADAN_DIR, 'edge_detections.jsonl'), 'utf8').split('\n').filter(Boolean);
-          const edges = edgeLines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).slice(-200);
-          if (edges.length > 0) {
-            const bets = edges.filter(e => e.hasSufficientEdge).length;
-            lmsrStats = {
-              totalDetections: edges.length,
-              avgEdge: parseFloat((edges.reduce((s, e) => s + Math.abs(e.edge || 0), 0) / edges.length * 100).toFixed(2)),
-              betRate: parseFloat((bets / edges.length * 100).toFixed(1)),
-              skipRate: parseFloat(((edges.length - bets) / edges.length * 100).toFixed(1)),
-              strongBets: edges.filter(e => (e.edge || 0) >= 0.10).length
-            };
-          }
-        } catch { }
-
-        // 3. Polymerase blocks
-        let polymeraseStats = { totalBlocks: 0, reasons: {} };
-        let evBlocksCount = 0;
-        try {
-          const polyLines = fs.readFileSync(path.join(ADAN_DIR, 'polymerase_blocks.jsonl'), 'utf8').split('\n').filter(Boolean);
-          const blocks = polyLines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).slice(-200);
-          const reasons = {};
-          blocks.forEach(b => { reasons[b.reason] = (reasons[b.reason] || 0) + 1; });
-          polymeraseStats = { totalBlocks: blocks.length, reasons };
-
-          if (fs.existsSync(path.join(ADAN_DIR, 'ev_blocks.jsonl'))) {
-            evBlocksCount = fs.readFileSync(path.join(ADAN_DIR, 'ev_blocks.jsonl'), 'utf8').split('\n').filter(Boolean).length;
-          }
-        } catch { }
-
-        // 4. Human event states
-        let humanStats = { stateBreakdown: {} };
-        try {
-          const humanLines = fs.readFileSync(path.join(ADAN_DIR, 'human_events.jsonl'), 'utf8').split('\n').filter(Boolean);
-          const events = humanLines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).slice(-500);
-          const states = {};
-          events.forEach(e => { states[e.state] = (states[e.state] || 0) + 1; });
-          humanStats.stateBreakdown = states;
-        } catch { }
-
-        // 5. PnL stats & Positions
-        const pnl = loadPnL();
-        const pos = loadPositions();
-        const total = (pnl.wins || 0) + (pnl.losses || 0);
-        const xp = expProgress(pnl.exp || 0);
-        const pnlStats = {
-          wr: total > 0 ? parseFloat(((pnl.wins / total) * 100).toFixed(2)) : 0,
-          level: xp.level || 0,
-          balance: pnl.fund || 0,
-          wins: pnl.wins || 0,
-          losses: pnl.losses || 0,
-          net: pnl.net || 0
-        };
-
-        // 6. Soul rules
-        let soulStats = { totalRules: 0 };
-        try {
-          const soul = fs.readFileSync(path.join(ADAN_DIR, 'SOUL.md'), 'utf8');
-          soulStats.totalRules = (soul.match(/^##\s/gm) || []).length;
-        } catch { }
-
-        // 7. Certification score
-        const checks = [
-          { id: 'WR_60', label: 'Win Rate ≥ 60%', description: '4 consecutive weeks above 60%', value: pnlStats.wr, target: 60, unit: '%', passed: pnlStats.wr >= 60, critical: true, weight: 25 },
-          { id: 'BRIER_15', label: 'Brier Score < 0.15', description: 'Institutional-level calibration', value: brierData.score, target: 0.15, unit: '', passed: brierData.score !== null && brierData.score < 0.15, critical: true, weight: 25 },
-          { id: 'TRADES_500', label: '500+ Resolved Trades', description: 'Statistically significant sample', value: brierData.n, target: 500, unit: ' trades', passed: brierData.n >= 500, critical: true, weight: 20 },
-          { id: 'SOUL_100', label: '100+ Soul Rules', description: 'Learned from experience', value: soulStats.totalRules, target: 100, unit: ' rules', passed: soulStats.totalRules >= 100, critical: false, weight: 10 },
-          { id: 'LEVEL_12', label: 'Level ≥ 12', description: 'Anti-Hypnosis unlocked', value: pnlStats.level, target: 12, unit: '', passed: pnlStats.level >= 12, critical: false, weight: 10 },
-          { id: 'LMSR_EDGE', label: 'Avg LMSR Edge > 6%', description: 'Mathematical edge detected', value: lmsrStats.avgEdge, target: 6, unit: '%', passed: lmsrStats.avgEdge >= 6, critical: false, weight: 10 }
-        ];
-        const totalWeight = checks.reduce((s, c) => s + c.weight, 0);
-        const earnedWeight = checks.filter(c => c.passed).reduce((s, c) => s + c.weight, 0);
-        const certScore = parseFloat((earnedWeight / totalWeight * 100).toFixed(1));
-        const criticalPassed = checks.filter(c => c.critical).every(c => c.passed);
-        const certStatus = certScore >= 100 && criticalPassed ? 'CERTIFIED_FOR_LIVE'
-          : certScore >= 75 ? 'ALMOST_READY' : certScore >= 50 ? 'TRAINING_WELL'
-            : certScore >= 25 ? 'EARLY_TRAINING' : 'JUST_STARTED';
-
-        res.end(JSON.stringify({
-          timestamp: new Date().toISOString(),
-          heartbeat: true,
-          brier: brierData,
-          lmsr: lmsrStats,
-          polymerase: {
-            ...polymeraseStats,
-            shadowStats: polymerase.getStats()
-          },
-          human: humanStats,
-          pnl: pnlStats,
-          soul: soulStats,
-          positions: pos,
-          quant: {
-            evBlocks: evBlocksCount,
-            regime: _dashboardState?.prices?._meta?.regime || 'UNKNOWN',
-            regimeEfficiency: _dashboardState?.prices?._meta?.regimeEfficiency || 0
-          },
-          certification: { score: certScore, status: certStatus, checks, criticalPassed }
-        }));
-      } catch (err) {
-        res.end(JSON.stringify({ error: err.message }));
-      }
-      return;
-
-    } else if (req.url === '/api/logs') {
-      // ── Log Feed API ───────────────────────────────────────────────────
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      try {
-        const logPath = path.join(process.env.HOME, '.adan-pred', 'adan.log');
-        const content = fs.readFileSync(logPath, 'utf8');
-        const lines = content.split('\n').filter(Boolean).slice(-100);
-        res.end(JSON.stringify({ lines }));
-      } catch {
-        res.end(JSON.stringify({ lines: ['Log file not available — ADAN writes to stdout'] }));
-      }
-      return;
-
-    } else if (req.url === '/training') {
-      // ── Training Dashboard ─────────────────────────────────────────────
-      try {
-        const htmlPath = path.join(process.cwd(), 'src', 'ui', 'training-dashboard.html');
-        const trainingHtml = fs.readFileSync(htmlPath, 'utf8');
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(trainingHtml);
-      } catch (err) {
-        res.writeHead(500);
-        res.end('Training dashboard not found: ' + err.message);
-      }
-      return;
-
-    } else {
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(HTML);
-    }
-  });
-
-  srv.listen(PORT, '127.0.0.1', () => {
-    // silently started
-  });
-  srv.on('error', () => { }); // ignore port conflicts
-  return srv;
-}
-
-// ── Render ───────────────────────────────────────────────────────────────────
-function render(s) {
-  _dashboardState = s; // expose to web dashboard
-  if (s.mode === 'result') {
-    _resultAt = Date.now();
-    _nextScanAt = Date.now() + (s.nextScanIn || 5) * 60 * 1000;
-  }
-  if (s.mode !== 'thinking') _stopThinkSpin();
-  cls();
-  const pnl = s.pnl;
-  const pct = pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0;
-  const winColor = pct >= 55 ? G : pct >= 40 ? Y : R;
-  const xp = expProgress(pnl.exp || 0);
-  const lvlColor = xp.level >= 60 ? M : xp.level >= 40 ? M : xp.level >= 20 ? C : xp.level >= 10 ? Y : G;
-  const fund = pnl.fund ?? 100;
-  const openPos = s.positions?.open || [];
-  const slots = Math.max(0, MAX_POSITIONS - openPos.length);
-  const net = pnl.net || 0;
-  const treasury = pnl.treasury || 0;
-  const calib = loadCalibration();
-  const prices = s.prices || {};
-
-  // ── HEADER ──
-  const bannerEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B' : 'Gemini-2.5-Flash';
-  const childCount = (pnl.children || []).length;
-  const qStat = quota.status();
-  const catStat = qStat.categories || {};
-  const totalPreds = Object.values(childLearning.learning || {}).reduce((s, l) => s + (l.totalResolved || 0), 0);
-  const maxGen = Object.values(childLearning.learning || {}).reduce((mx, l) => Math.max(mx, l.dna?.generation || 1), 1);
-
-  console.log('\n' + M + BOLD +
-    '  ╔══════════════════════════════════════════════════════════════════════════╗\n' +
-    '  ║' + X + C + BOLD +
-    '     █████╗ ██████╗  █████╗ ███╗   ██╗      ██╗   ██╗██╗  ██╗    ██████╗  ' + M + BOLD + '║\n' +
-    '  ║' + X + C + BOLD +
-    '    ██╔══██╗██╔══██╗██╔══██╗████╗  ██║      ██║   ██║██║  ██║   ██╔═████╗ ' + M + BOLD + '║\n' +
-    '  ║' + X + C + BOLD +
-    '    ███████║██║  ██║███████║██╔██╗ ██║█████╗██║   ██║███████║   ██║██╔██║ ' + M + BOLD + '║\n' +
-    '  ║' + X + C + BOLD +
-    '    ██╔══██║██║  ██║██╔══██║██║╚██╗██║╚════╝╚██╗ ██╔╝╚════██║   ████╔╝██║ ' + M + BOLD + '║\n' +
-    '  ║' + X + C + BOLD +
-    '    ██║  ██║██████╔╝██║  ██║██║ ╚████║       ╚████╔╝      ██║██╗╚██████╔╝ ' + M + BOLD + '║\n' +
-    '  ║' + X + C + BOLD +
-    '    ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝        ╚═══╝       ╚═╝╚═╝ ╚═════╝  ' + M + BOLD + '║\n' +
-    '  ╠══════════════════════════════════════════════════════════════════════════╣\n' +
-    '  ║' + X + D + '  Dynasty Multi-Market Autonomaton' + X +
-    D + '  ·  ' + X + W + bannerEngine + X +
-    D + '  ·  ' + X + M + 'by Lord' + X + '       ' + M + BOLD + '║\n' +
-    '  ║' + X + D + '  Polymarket · Binance · ' + X +
-    C + BOLD + 'http://localhost:3141' + X +
-    D + '  ·  Gen ' + X + Y + BOLD + maxGen + X +
-    D + '  ·  ' + X + G + childCount + ' children' + X + '   ' + M + BOLD + '║\n' +
-    '  ╚══════════════════════════════════════════════════════════════════════════╝' + X + '\n');
-
-  const timeStr = new Date().toLocaleTimeString();
-  const scanStatus = s.mode === 'thinking' ? Y + BOLD + '⬤ THINKING' + X
-    : s.mode === 'result' ? G + BOLD + '⬤ READY' + X : C + '⬤ ' + s.status + X;
-  const nextStr = s.lastScan ? D + '  scan: ' + s.lastScan + '  next: ~' + s.nextScanIn + 'min  $' + (s.apiCost || 0).toFixed(4) + X : '';
-
-  console.log(TOP(M));
-  console.log(row('  ' + BOLD + M + 'ADAN' + X + '  ' + D + timeStr + X + '  ' + scanStatus + nextStr));
-  console.log(sep(M));
-
-  // ── BRAIN ENGINE ──
-  const quotaUsed = qStat.used || 0;
-  const quotaMax = qStat.dailyLimit || 15000;
-  const quotaPct = Math.round(quotaUsed / quotaMax * 100);
-  const qCol = quotaPct < 50 ? G : quotaPct < 80 ? Y : R;
-  const qBar = qCol + '█'.repeat(Math.round(quotaPct / 10)) + D + '░'.repeat(10 - Math.round(quotaPct / 10)) + X;
-
-  console.log(row(
-    '  ' + W + BOLD + 'ENGINE' + X + ' ' + C + bannerEngine + X +
-    '  ' + D + '│' + X + '  ' + W + 'QUOTA' + X + ' ' + qBar + ' ' + qCol + quotaPct + '%' + X +
-    D + ' (' + quotaUsed + '/' + quotaMax + ')' + X
-  ));
-
-  // Category quota mini-bars
-  const catNames = ['crypto', 'politics', 'sports', 'macro', 'events'];
-  const catIcons = { crypto: '🪙', politics: '🏛️', sports: '⚽', macro: '📊', events: '🌐' };
-  let catLine = '  ';
-  for (const cn of catNames) {
-    const cs = catStat[cn];
-    if (!cs) continue;
-    const cPct = cs.limit > 0 ? Math.round(cs.used / cs.limit * 100) : 0;
-    const cCol = cPct < 50 ? G : cPct < 80 ? Y : R;
-    catLine += catIcons[cn] + cCol + (cn.slice(0, 4).toUpperCase()) + X + D + ':' + cs.used + '/' + cs.limit + ' ' + X;
-  }
-  if (Object.keys(catStat).length > 0) {
-    console.log(row(catLine));
-  }
-
-  // Evolution stats
-  const learnEntries = Object.entries(childLearning.learning || {});
-  const aliveCount = learnEntries.filter(([, l]) => l.status !== 'dead').length;
-  const deadCount = learnEntries.filter(([, l]) => l.status === 'dead').length;
-  const bestChild = learnEntries.reduce((best, [id, l]) => {
-    const acc = l.totalResolved > 0 ? l.correct / l.totalResolved : 0;
-    return acc > (best.acc || 0) ? { id, acc, resolved: l.totalResolved } : best;
-  }, { id: '--', acc: 0, resolved: 0 });
-  const bestAcc = bestChild.resolved >= 5 ? (bestChild.acc * 100).toFixed(0) + '%' : '--';
-  const bestCol = bestChild.acc >= 0.55 ? G : bestChild.acc >= 0.40 ? Y : R;
-
-  console.log(row(
-    '  ' + W + BOLD + 'EVOLUTION' + X +
-    D + '  gen:' + X + Y + BOLD + maxGen + X +
-    D + '  preds:' + X + W + totalPreds + X +
-    D + '  alive:' + X + G + aliveCount + X +
-    D + '  dead:' + X + R + deadCount + X +
-    D + '  best:' + X + bestCol + BOLD + (bestChild.id || '--').slice(0, 10) + ' ' + bestAcc + X +
-    D + '(' + bestChild.resolved + ')' + X
-  ));
-  console.log(sep(M));
-
-  // ── MARKET SENTIMENT ──
-  const fg = prices._meta?.fearGreed;
-  const fundRates = prices._meta?.fundingRates || {};
-  if (fg) {
-    const fgCol = fg.value >= 60 ? G : fg.value >= 40 ? Y : R;
-    const fgBar = fgCol + '█'.repeat(Math.round(fg.value / 10)) + '░'.repeat(10 - Math.round(fg.value / 10)) + X;
-    const fgDir = fg.direction > 0 ? ' ' + G + '↑' + X : fg.direction < 0 ? ' ' + R + '↓' + X : '';
-    console.log(row('  SENTIMENT  ' + fgBar + '  ' + fgCol + BOLD + fg.value + '/100  ' + fg.label.toUpperCase() + X + fgDir));
-  }
-  console.log(sep(M));
-
-  // ── PRICE TICKER — clean fixed columns ──
-  console.log(row(D + '  ASSET    PRICE          CHG      TREND(1m/5m)    SIGNAL       SCORE' + X));
-  console.log(SEP(M));
-
-  for (const sym of SYMBOLS) {
-    const d = prices[sym];
-    const name = sym.replace('USDT', '');
-    if (!d) { console.log(row(D + '  ' + name.padEnd(5) + '  no data' + X)); continue; }
-
-    const chgCol = d.chg >= 0 ? G : R;
-    const score = d.intelScore ?? 50;
-    const sCol = score >= 65 ? G : score >= 45 ? Y : R;
-    const spark = sparkline(d.closes || []);
-    const t1Col = d.trend1m >= 0 ? G : R;
-    const t5Col = d.trend5m >= 0 ? G : R;
-    const sig = signalLabel(score);
-
-    // Row 1 — price line (use plain strings for padding, then colorize)
-    const priceStr = ('$' + d.price.toLocaleString()).padEnd(14);
-    const chgStr = ((d.chg >= 0 ? '+' : '') + d.chg.toFixed(2) + '%').padEnd(8);
-    const t1Str = (d.trend1m >= 0 ? '+' : '') + d.trend1m.toFixed(2) + '%';
-    const t5Str = (d.trend5m >= 0 ? '+' : '') + d.trend5m.toFixed(2) + '%';
-    console.log(row(
-      '  ' + W + BOLD + name.padEnd(5) + X
-      + C + BOLD + priceStr + X
-      + chgCol + BOLD + chgStr + X
-      + D + '1m:' + X + t1Col + t1Str + X
-      + D + ' 5m:' + X + t5Col + t5Str + '  ' + X
-      + sig + '  ' + sCol + BOLD + '[' + score + ']' + X
-    ));
-    // Row 2 — indicators line
-    const rsiCol = d.rsi > 70 ? G : d.rsi < 30 ? R : Y;
-    const mCol = d.macd?.hist > 0 ? G : R;
-    const bbCol = d.bb?.pct > 75 ? G : d.bb?.pct < 25 ? R : Y;
-    const vCol = d.vol?.trend === 'rising' ? G : d.vol?.trend === 'falling' ? R : D;
-    const funding = d.funding || fundRates[sym];
-    const fCol = funding?.signal === 'bearish' ? R : funding?.signal === 'bullish' ? G : D;
-    console.log(row(
-      D + '       RSI ' + X + rsiCol + BOLD + d.rsi.toFixed(0).padEnd(4) + X
-      + D + 'MACD ' + X + mCol + BOLD + (d.macd?.hist > 0 ? '▲' : ' ▼') + '  ' + X
-      + D + 'BB% ' + X + bbCol + (d.bb?.pct || 0).toFixed(0).padStart(3) + '%  ' + X
-      + D + 'VOL ' + X + vCol + (d.vol?.trend || '--').padEnd(8) + X
-      + (funding ? D + 'FUND ' + X + fCol + (funding.rate || 0).toFixed(3) + '%  ' + X : '')
-      + D + 'VOLAT ' + X + (d.volatility > 0.12 ? R : d.volatility > 0.06 ? Y : G) + d.volatility.toFixed(3) + '%' + X
-      + '  ' + spark
-    ));
-    console.log(SEP(M));
-  }
-  console.log(sep(M));
-
-  // ── LEVEL + PORTFOLIO ──
-  const skills = getSkills(xp.level);
-  const unlocked = skills.filter(s => s.unlocked).map(s => s.icon + s.name).join(' ');
-  const nextSkill = skills.find(s => !s.unlocked);
-  const roiCol = fund >= 100 ? G : fund >= 80 ? Y : R;
-  const sc = TREE_RULES.spawnConditions;
-  const maxChildren = xp.level >= 4 ? TREE_RULES.maxChildrenGen1 : 1;
-  const canSpawn = xp.level >= sc.minLvl
-    && pnl.trades >= sc.minTrades
-    && (pnl.wins / Math.max(pnl.trades, 1)) >= sc.minWinRate
-    && childCount < maxChildren
-    && treasury > 0;
-  const strat = loadStrategy();
-
-  console.log(row('  ' + lvlColor + BOLD + 'LVL ' + xp.level + '  ' + levelTitle(xp.level) + X
-    + '  ' + D + xp.bar + ' ' + xp.pct + '%' + X
-    + (nextSkill ? D + '  → ' + nextSkill.icon + nextSkill.name + ' @LVL' + nextSkill.lvl + X : '')));
-  console.log(row('  ' + D + 'Skills: ' + X + M + unlocked + X
-    + ((pnl.streak || 0) >= 3 ? '  ' + Y + BOLD + '🔥 STREAK ' + (pnl.streak || 0) + 'W' + X : '')));
-  console.log(SEP(M));
-  console.log(row(
-    '  FUND  ' + roiCol + BOLD + '$' + fund.toFixed(2) + X + D + '/$' + PAPER_BET_SIZE * 100 + '  ' + X +
-    '  NET  ' + (net >= 0 ? G : R) + BOLD + (net >= 0 ? '+' : '') + net.toFixed(2) + X +
-    '  TRADES  ' + W + pnl.trades + X +
-    '  W/L  ' + G + pnl.wins + X + D + '/' + X + R + pnl.losses + X +
-    '  WR  ' + winColor + BOLD + pct + '%' + X + D + '  (goal 55%)' + X
-  ));
-  const kellyOn = xp.level >= 4;
-  console.log(row(
-    '  SLOTS  ' + (slots > 0 ? G : R) + BOLD + slots + '/' + MAX_POSITIONS + X + D + ' free  ' + X +
-    '  MIN EDGE  ' + Y + BOLD + (strat.minEdge * 100).toFixed(0) + '%' + X +
-    '  BET  ' + D + (kellyOn ? '📐KELLY' : '$' + PAPER_BET_SIZE + ' flat') + X +
-    (treasury > 0 ? '  ' + M + '💰 $' + treasury.toFixed(2) + (canSpawn ? ' 👶SPAWN!' : '') + X : '')
-  ));
-  console.log(sep(M));
-  // ── DYNASTY TREE ──
-  renderTreePanel(pnl, prices);
-
-  // ── CALIBRATION ──
-  const calibLine = Object.entries(calib).map(([asset, d]) => {
-    const acc = d.p >= 3 ? Math.round(d.c / d.p * 100) : null;
-    const col = acc === null ? D : acc >= 60 ? G : acc >= 50 ? Y : R;
-    return W + asset.toUpperCase() + X + D + ':' + X + (acc === null ? D + '--' : col + BOLD + acc + '%') + X + D + '(' + d.p + ')' + X;
-  }).join('   ');
-  console.log(row('  CALIBRATION  ' + calibLine));
-  console.log(SEP(M));
-
-  // ── IV MONITOR (TUI) ──
-  const ivData = s.ivData;
-  if (ivData) {
-    const ivCol = ivData.signal === 'SELL_VOL' ? G : ivData.signal === 'BUY_VOL' ? R : Y;
-    console.log(row(
-      Y + BOLD + '  IV MONITOR  ' + X +
-      D + '  IV:' + X + BOLD + ivData.iv + '%' + X +
-      D + '  RV:' + X + BOLD + ivData.rv + '%' + X +
-      D + '  SPREAD:' + X + (parseFloat(ivData.spread) >= 0 ? G : R) + ivData.spread + '%' + X +
-      D + '  SKEW:' + X + M + ivData.skew + '%' + X +
-      '  ' + ivCol + BOLD + '[' + ivData.signal + ']' + X
-    ));
-    console.log(sep(M));
-  }
-
-  // ── OPEN POSITIONS ──
-  if (openPos.length > 0) {
-    console.log(row(Y + BOLD + '  OPEN BETS (' + openPos.length + ')' + X + D + '  — monitoring for resolution' + X));
-    console.log(row(D + '  MARKET                              SIDE  MY_P  MKT_P  EDGE   STAKE  CLOSES' + X));
-    openPos.forEach(p => {
-      const title = (p.marketTitle || '???').slice(0, 30).padEnd(30);
-      const side = (p.side || 'YES').padEnd(5);
-      const myP = ((p.myProb || 0) * 100).toFixed(0).padStart(4) + '%';
-      const mktP = ((p.marketPrice || 0) * 100).toFixed(0).padStart(5) + '%';
-      const edge = (((p.myProb || 0) - (p.marketPrice || 0)) * 100).toFixed(1).padStart(5) + '%';
-      const eCol = parseFloat(edge) >= MIN_EDGE * 100 ? G : Y;
-      const stake = ('$' + p.stake).padStart(5);
-      const closes = p.closesAt ? new Date(p.closesAt).toLocaleTimeString() : '   n/a';
-      console.log(row('  ' + W + title + X + side + Y + myP + X + mktP + eCol + BOLD + edge + X + stake + '  ' + D + closes + X));
-    });
-    console.log(sep(M));
-  } else {
-    console.log(row(D + '  No open bets — ADAN will enter on next scan' + X));
-    console.log(sep(M));
-  }
-
-  // ── HISTORY ──
-  const allClosed = s.positions?.closed || [];
-  const shown = allClosed.slice(-4).reverse();
-  if (shown.length > 0 || pnl.trades > 0) {
-    const bsPart = pnl.brierScore != null ? D + ' | ' + X + Y + 'Brier: ' + pnl.brierScore.toFixed(3) + X : '';
-    console.log(row(B + BOLD + '  HISTORY' + X + D + '  ' + pnl.trades + ' trades  (' + G + pnl.wins + 'W' + X + '/' + R + pnl.losses + 'L' + X + ')' + bsPart + X));
-    shown.forEach(c => {
-      const isWin = c.result === 'WIN';
-      const rCol = isWin ? G : R;
-      const sym = (c.marketTitle || '???').slice(0, 32).padEnd(32);
-      const edge = c.edge != null ? (c.edge >= 0 ? '+' : '') + ((c.edge || 0) * 100).toFixed(1) + '%' : '?';
-      const pnlStr = rCol + (isWin ? '+' : '') + c.pnl + X;
-      const dt = (c.entryTime || '').slice(11, 16);
-      console.log(row('  ' + rCol + BOLD + (isWin ? '✓ WIN' : '✗ LOSS') + X + ' ' + W + sym + X + D + ' edge:' + X + Y + edge + X + ' P&L: ' + pnlStr + D + ' ' + dt + X));
-    });
-    console.log(sep(M));
-  }
-
-  // ── LIVE MARKETS — separados por 5M / 15M / 1H ──
-  const allMkts = s.markets || [];
-  const mkts5 = allMkts.filter(m => m.windowMin === 5);
-  const mkts15 = allMkts.filter(m => m.windowMin === 15);
-  const mkts1h = allMkts.filter(m => m.windowMin === 60 || m.windowMin === 240);
-  const sessionOn = allMkts.length > 0;
-
-  function mktRow(m) {
-    const asst = (m.asset || '???').toUpperCase().slice(0, 3).padEnd(4);
-    const price = ((m.yesPrice || 0) * 100).toFixed(0).padStart(4) + '%';
-    const edge = m.edge != null ? ((m.edge >= 0 ? '+' : '') + (m.edge * 100).toFixed(1) + '%').padStart(6) : '    --';
-    const eCol = Math.abs(m.edge || 0) >= MIN_EDGE ? G : D;
-    const liq = ('$' + (m.liquidity || 0).toFixed(0)).padStart(7);
-    const endMs = m.closesAt ? new Date(m.closesAt).getTime() : 0;
-    const hoursL = endMs ? (endMs - Date.now()) / 3600000 : null;
-    const closes = hoursL != null ? (hoursL < 1 ? R + BOLD + (hoursL * 60).toFixed(0) + 'min' + X : hoursL < 4 ? Y + BOLD + hoursL.toFixed(1) + 'h' + X : D + hoursL.toFixed(0) + 'h' + X) : D + '--' + X;
-    return '  ' + W + asst + X + C + price + X + eCol + edge + X + D + liq + ' ' + X + closes;
-  }
-
-  if (sessionOn) {
-    console.log(row(G + BOLD + '  ▸ 5MIN' + X + D + '  BTC · ETH · SOL  (closes in minutes)' + X));
-    if (mkts5.length > 0) {
-      console.log(row(D + '  ASSET  UP%   EDGE     LIQ       CLOSES' + X));
-      mkts5.slice(0, 3).forEach(m => console.log(row(mktRow(m))));
-    } else { console.log(row(D + '  — no 5M active right now —' + X)); }
-    console.log(SEP(M));
-
-    console.log(row(Y + BOLD + '  ▸ 15MIN' + X + D + '  BTC · ETH · SOL  (closes in 15 min windows)' + X));
-    if (mkts15.length > 0) {
-      mkts15.slice(0, 3).forEach(m => console.log(row(mktRow(m))));
-    } else { console.log(row(D + '  — no 15M active right now —' + X)); }
-    console.log(SEP(M));
-
-    console.log(row(C + BOLD + '  ▸ 1H / 4H' + X + D + '  BTC · ETH · SOL  (hourly/4h windows)' + X));
-    if (mkts1h.length > 0) {
-      mkts1h.slice(0, 3).forEach(m => console.log(row(mktRow(m))));
-    } else { console.log(row(D + '  — no 1H active right now —' + X)); }
-  } else {
-    console.log(row(D + '  Session offline. 5M/15M/1H markets open ~3PM-10PM ET daily.' + X));
-    console.log(row(D + '  Checking resolutions every 5min. New markets scan every 20min.' + X));
-  }
-  console.log(BOT(M));
-
-  // ── THOUGHT PANEL ──
-  if (s.mode === 'thinking') {
-    const sp = _SPIN_F[Math.floor(Date.now() / 150) % _SPIN_F.length];
-    console.log('\n' + Y + '┌' + DIV + '┐' + X);
-    const thinkEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B' : 'Gemini-2.5-Flash';
-    console.log(trow('  ' + sp + ' ADAN THINKING  —  Binance loaded · ' + thinkEngine + ' analyzing...', BOLD + Y, Y));
-    console.log(trow('  Flow: Candles ' + sp + ' Trend ' + sp + ' Polymarket odds ' + sp + ' Edge calc ' + sp + ' BET or SKIP', D, Y));
-    console.log(Y + '└' + DIV + '┘' + X + '\n');
-    _startThinkSpin();
-  } else if (s.mode === 'result' && s.thought) {
-    console.log('\n' + M + '┌' + DIV + '┐' + X);
-    console.log(trow('  ◉ ADAN DECISION', BOLD + M, M));
-    console.log(M + '├' + DIV + '┤' + X);
-    s.thought.split('\n').filter(Boolean).forEach(l => {
-      (l.match(new RegExp('.{1,' + (TW - 2) + '}', 'g')) || [l]).forEach(chunk => {
-        console.log(M + '│' + X + W + '  ' + chunk + ' '.repeat(Math.max(0, TW - chunk.length - 2)) + X + M + ' │' + X);
-      });
-    });
-    console.log(M + '└' + DIV + '┘' + X + '\n');
-  }
-}
-
-export {
-  TOP, BOT, row, sep, trow, sparkline, renderTreePanel, startDashboard, render,
-  _startThinkSpin, _stopThinkSpin, _dashboardState
-};
+</html>

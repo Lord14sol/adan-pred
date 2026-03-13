@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "node --loader tsx server.ts",
-    "dev": "node --watch --loader tsx server.ts"
+    "start": "node --import tsx server.ts",
+    "dev": "node --watch --import tsx server.ts"
   },
   "dependencies": {
     "hono": "^4.7.0",
