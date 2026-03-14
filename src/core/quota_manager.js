@@ -57,7 +57,9 @@ export class QuotaManager {
         if (this._saving) return;
         this._saving = true;
         try {
-            fs.writeFileSync(QUOTA_FILE, JSON.stringify(this.q, null, 2));
+            const tmp = QUOTA_FILE + '.tmp.' + process.pid;
+            fs.writeFileSync(tmp, JSON.stringify(this.q, null, 2));
+            fs.renameSync(tmp, QUOTA_FILE);
         } finally {
             this._saving = false;
         }

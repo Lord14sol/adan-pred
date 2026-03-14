@@ -10,6 +10,7 @@ const HOME = process.env.HOME || process.env.USERPROFILE || '/tmp';
 const DIR = process.env.ADAN_DIR || path.join(HOME, '.adan-pred');
 const LEARNING_PATH = path.join(DIR, 'child_learning.json');
 const SHADOWS_PATH = path.join(DIR, 'child_shadows.jsonl');
+const CHILDREN_DIR = path.join(DIR, 'children');
 
 const MAX_CHILDREN_PER_PARENT = 3;
 const MIN_PREDICTIONS_FOR_WEIGHT = 3;    // TRAINING: 3 preds to start weighting
@@ -155,15 +156,14 @@ class ChildLearningEngine {
                 const currentPrice = prices?.[sym]?.price;
                 if (!currentPrice) continue;
 
-                let actualDirection;
-                if (s.entryPrice && s.entryPrice > 0) {
-                    const pctChange = (currentPrice - s.entryPrice) / s.entryPrice;
-                    actualDirection = pctChange > 0.001 ? 'UP' : pctChange < -0.001 ? 'DOWN' : 'NEUTRAL';
-                } else {
-                    const priceData = prices[sym];
-                    actualDirection = priceData && priceData.trend5m > 0.05 ? 'UP' :
-                        priceData && priceData.trend5m < -0.05 ? 'DOWN' : 'NEUTRAL';
-                }
+                if (!s.entryPrice || s.entryPrice <= 0) continue; // No valid entryPrice — skip
+
+                const pctChange = (currentPrice - s.entryPrice) / s.entryPrice;
+                const actualDirection = pctChange > 0.001 ? 'UP' : pctChange < -0.001 ? 'DOWN' : 'NEUTRAL';
+
+                // Dead zone: price moved <0.1% — treat as no-contest, skip resolution
+                // Children never predict NEUTRAL, so counting it as wrong is unfair
+                if (actualDirection === 'NEUTRAL') continue;
 
                 const correct = (s.direction === actualDirection);
 
@@ -601,6 +601,9 @@ class ChildLearningEngine {
         }
         stats.accuracy = parseFloat((stats.correct / stats.totalResolved * 100).toFixed(1));
 
+        // ═══ GENETIC FIX: Sync resolution to child pnl.json for absorbEliteGenome ═══
+        this._syncChildPnl(id, shadow.correct);
+
         // Regime-specific tracking
         const regime = shadow.regime || 'UNKNOWN';
         if (regime !== 'UNKNOWN') {
@@ -620,6 +623,46 @@ class ChildLearningEngine {
                 (stats.perSignal[key].correct / stats.perSignal[key].total * 100).toFixed(1)
             );
         }
+    }
+
+    /**
+     * Sync a child's shadow resolution to its pnl.json (trades/wins/losses counter)
+     * This connects childLearning stats → child pnl.json → absorbEliteGenome
+     */
+    _syncChildPnl(childId, correct) {
+        try {
+            // Map childId to directory name (e.g., 'btc-5min' → 'BTC-5min')
+            const dirName = this._childIdToDir(childId);
+            const childDir = path.join(CHILDREN_DIR, dirName);
+            const pnlPath = path.join(childDir, 'pnl.json');
+            if (!fs.existsSync(pnlPath)) return;
+
+            const cp = JSON.parse(fs.readFileSync(pnlPath, 'utf8'));
+            cp.trades = (cp.trades || 0) + 1;
+            if (correct) {
+                cp.wins = (cp.wins || 0) + 1;
+            } else {
+                cp.losses = (cp.losses || 0) + 1;
+            }
+            // Write atomically via tmp + rename
+            const tmp = pnlPath + '.tmp';
+            fs.writeFileSync(tmp, JSON.stringify(cp, null, 2));
+            fs.renameSync(tmp, pnlPath);
+        } catch (e) { /* skip — child dir may not exist yet */ }
+    }
+
+    /**
+     * Map childId (e.g., 'btc-5min') to child directory name (e.g., 'BTC-5min')
+     */
+    _childIdToDir(childId) {
+        // CHILD_SPECS use lowercase ids like 'btc-5min', dirs are uppercase like 'BTC-5min'
+        const parts = childId.split('-');
+        if (parts.length >= 2) {
+            const asset = parts[0].toUpperCase();
+            const rest = parts.slice(1).join('-');
+            return `${asset}-${rest}`;
+        }
+        return childId;
     }
 
     _normalizeReason(reason) {
@@ -647,7 +690,7 @@ class ChildLearningEngine {
     }
 
     _assetToSymbol(asset) {
-        const map = { btc: 'BTCUSDT', eth: 'ETHUSDT', sol: 'SOLUSDT', bnb: 'BNBUSDT' };
+        const map = { btc: 'BTCUSDT', eth: 'ETHUSDT', sol: 'SOLUSDT', xrp: 'XRPUSDT' };
         return map[asset?.toLowerCase()] || asset;
     }
 
@@ -709,6 +752,14 @@ class ChildLearningEngine {
                 lastEvolution: this.lastEvolution,
                 savedAt: new Date().toISOString(),
             }, null, 2));
+        } catch (e) { /* skip */ }
+
+        // ═══ GENETIC FIX: Persist shadow status to prevent re-resolution storm on restart ═══
+        try {
+            const unresolved = this.shadows.filter(s => !s.resolved);
+            const tmp = SHADOWS_PATH + '.tmp';
+            fs.writeFileSync(tmp, unresolved.map(s => JSON.stringify(s)).join('\n') + (unresolved.length ? '\n' : ''));
+            fs.renameSync(tmp, SHADOWS_PATH);
         } catch (e) { /* skip */ }
     }
 }

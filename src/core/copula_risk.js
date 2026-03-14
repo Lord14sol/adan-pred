@@ -12,7 +12,7 @@ const RETURNS_PATH = path.join(DIR, 'log_returns.json');
 // Default correlations (used as fallback)
 const DEFAULT_CORRELATIONS = {
     'BTC-ETH': 0.85, 'BTC-SOL': 0.75, 'ETH-SOL': 0.80,
-    'BTC-BNB': 0.70, 'ETH-BNB': 0.72,
+    'BTC-XRP': 0.65, 'ETH-XRP': 0.68,
     'BTC-BTC': 1.0, 'ETH-ETH': 1.0, 'SOL-SOL': 1.0
 };
 
@@ -202,7 +202,7 @@ export class CopulaRisk {
         if (t.includes('BITCOIN') || t.includes('BTC')) return 'BTC';
         if (t.includes('ETHEREUM') || t.includes('ETH')) return 'ETH';
         if (t.includes('SOLANA') || t.includes('SOL')) return 'SOL';
-        if (t.includes('BINANCE') || t.includes('BNB')) return 'BNB';
+        if (t.includes('XRP') || t.includes('RIPPLE')) return 'XRP';
         return null;
     }
 }

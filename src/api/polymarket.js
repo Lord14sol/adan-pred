@@ -10,11 +10,11 @@ async function polyFetch(endpoint) {
 }
 
 // Keywords that identify crypto price markets
-const CRYPTO_RE = /bitcoin|ethereum|solana|btc|eth|sol|crypto|above|below|matic|avax|doge|shib|binance|bnb|ada|dot|link|uni|atom|near/i;
+const CRYPTO_RE = /bitcoin|ethereum|solana|btc|eth|sol|crypto|above|below|matic|avax|doge|shib|xrp|ripple|ada|dot|link|uni|atom|near/i;
 
 // ── Multi-Category Classification (ADAN v4.0) ──────────────────────────────
 const CATEGORY_PATTERNS = {
-  crypto:   /bitcoin|ethereum|solana|\bbtc\b|\beth\b|\bsol\b|\bbnb\b|crypto|doge|shib|\babove\b|\bbelow\b/i,
+  crypto:   /bitcoin|ethereum|solana|\bbtc\b|\beth\b|\bsol\b|\bxrp\b|ripple|crypto|doge|shib|\babove\b|\bbelow\b/i,
   politics: /president|election|trump|biden|congress|senate|governor|democrat|republican|vote|poll|tariff|impeach|supreme court/i,
   sports:   /\bnfl\b|\bnba\b|\bmlb\b|\bnhl\b|soccer|football|tennis|\bmma\b|\bufc\b|boxing|championship|playoffs|super bowl|world cup/i,
   macro:    /fed|interest rate|cpi|inflation|gdp|unemployment|fomc|powell|recession|jobs report/i,
@@ -115,8 +115,6 @@ async function fetchPolymarkets(strat) {
   }
 
   return mixed;
-
-  return all;
 }
 
 // ── Particle Filter for Price Smoothing (Real-time updating SMC) ──────────────
@@ -231,7 +229,7 @@ function normalizePolymarket(raw, prices = {}) {
   if (/btc|bitcoin/.test(text)) asset = 'btc';
   else if (/eth|ethereum/.test(text)) asset = 'eth';
   else if (/sol|solana/.test(text)) asset = 'sol';
-  else if (/bnb|binance/.test(text)) asset = 'bnb';
+  else if (/xrp|ripple/.test(text)) asset = 'xrp';
 
   // Detect window length from title (5min, 15min, 1h, 4h)
   let windowMin = null;
@@ -252,7 +250,7 @@ function normalizePolymarket(raw, prices = {}) {
   const targetPrice = targetMatch ? parseFloat(targetMatch[1].replace(/,/g, '')) : null;
 
   // Current price data for this asset
-  const symMap = { btc: 'BTCUSDT', eth: 'ETHUSDT', sol: 'SOLUSDT', bnb: 'BNBUSDT' };
+  const symMap = { btc: 'BTCUSDT', eth: 'ETHUSDT', sol: 'SOLUSDT', xrp: 'XRPUSDT' };
   const sym = symMap[asset];
   const priceData = sym ? prices[sym] : null;
 
@@ -268,7 +266,14 @@ function normalizePolymarket(raw, prices = {}) {
   }
 
   const _category = raw._category || classifyMarket(title);
-  return { id, title, yesPrice, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false, _category };
+  // Preserve clobTokenIds for WebSocket subscription
+  let clobTokenIds = null;
+  try {
+    if (raw.clobTokenIds) {
+      clobTokenIds = typeof raw.clobTokenIds === 'string' ? JSON.parse(raw.clobTokenIds) : raw.clobTokenIds;
+    }
+  } catch {}
+  return { id, title, yesPrice, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false, _category, clobTokenIds };
 }
 
 // ── Check market resolution via Polymarket API (for long-horizon non-crypto) ──

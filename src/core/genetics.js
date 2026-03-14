@@ -12,8 +12,8 @@ import { childLearning } from './child_learning.js';
 const CHILD_NAMES = {
   'BTC-5min': 'HERMES', 'ETH-5min': 'ATHENA', 'SOL-5min': 'HELIOS',
   'BTC-15min': 'KRONOS', 'ETH-15min': 'DAEDALUS', 'SOL-15min': 'APOLLO',
-  'BNB-5min': 'ARES', 'BNB-15min': 'PROTEUS',
-  'BTC-1hr': 'TITAN', 'ETH-1hr': 'ZEUS', 'SOL-1hr': 'POSEIDON', 'BNB-1hr': 'HADES',
+  'XRP-5min': 'ARES', 'XRP-15min': 'PROTEUS',
+  'BTC-1hr': 'TITAN', 'ETH-1hr': 'ZEUS', 'SOL-1hr': 'POSEIDON', 'XRP-1hr': 'HADES',
   'ALT-coins': 'PROTEUS', '1H-windows': 'TITAN', 'BTC/ETH/SOL-15min': 'ARES'
 };
 async function nameChild(spec, signal) {
@@ -41,9 +41,9 @@ async function spawnChild(pnl, specialization) {
   if ((pnl.treasury || 0) <= 0) return null;
 
   const SPECS = [
-    'BTC-5min', 'ETH-5min', 'SOL-5min', 'BNB-5min',
-    'BTC-15min', 'ETH-15min', 'SOL-15min', 'BNB-15min',
-    'BTC-1hr', 'ETH-1hr', 'SOL-1hr', 'BNB-1hr'
+    'BTC-5min', 'ETH-5min', 'SOL-5min', 'XRP-5min',
+    'BTC-15min', 'ETH-15min', 'SOL-15min', 'XRP-15min',
+    'BTC-1hr', 'ETH-1hr', 'SOL-1hr', 'XRP-1hr'
   ];
   const taken = children.map(c => c.spec);
   const nextSpec = specialization || SPECS.find(s => !taken.includes(s)) || 'BTC-5min';
@@ -173,7 +173,7 @@ function absorbEliteGenome(pnl) {
     try { cp = JSON.parse(fs.readFileSync(cpPath, 'utf8')); } catch { continue; }
 
     if (!cp.dna) continue;                          // child without mutation = not applicable
-    if ((cp.trades || 0) < 10) continue;            // statistical minimum
+    if ((cp.trades || 0) < 5) continue;             // GENETIC FIX: lowered from 10→5 for bootstrap
     const childWR = cp.trades > 0 ? (cp.wins || 0) / cp.trades : 0;
 
     // Compare against absolute winning threshold (50%) instead of lifetime lifetime average
@@ -189,17 +189,33 @@ function absorbEliteGenome(pnl) {
 
   if (!bestChild) return; // nobody outperforms the winning threshold yet
 
-  const dna = bestChild.cp.dna;
+  // FIX: Read EVOLVED DNA from childLearning (the DNA that actually changes via evolution)
+  // genetics.js DNA (pnl.json) is static — childLearning DNA is what evolves via _evolvePool
+  const specId = (bestChild.spec || '').replace(/[A-Z]+-/, m => m.toLowerCase());
+  const evolvedDna = childLearning.getChildDNA(specId);
+  const spawnDna = bestChild.cp.dna || {};
+
   const curr = loadDynWeights();
   const parentWR = pnl.trades > 0 ? pnl.wins / pnl.trades : 0.40;
 
   // Gradual absorption (20% delta per cycle — no total absorption at once)
-  // This prevents a lucky child from distorting the parent's genome in one cycle.
   const lerp = (a, b, t) => parseFloat((a + (b - a) * t).toFixed(4));
   const T = 0.20; // absorption rate: 20% of the way to child genome
+
+  // Absorb BOTH DNA systems: spawn DNA (volWeight/vwapWeight) + evolved DNA (signal params)
   const absorbed = {
-    volumeWeight: lerp(curr.volumeWeight, dna.volWeight || 1.0, T),
-    vwapWeight: lerp(curr.vwapWeight, dna.vwapWeight || 1.0, T),
+    volumeWeight: lerp(curr.volumeWeight, spawnDna.volWeight || 1.0, T),
+    vwapWeight: lerp(curr.vwapWeight, spawnDna.vwapWeight || 1.0, T),
+    trendWeight: lerp(curr.trendWeight || 1.0, (evolvedDna.trendMinPct || 0.3) / 0.3, T),
+    // Store the evolved signal DNA so ADAN's children inherit winning params
+    _evolvedDNA: {
+      rsiOversold: evolvedDna.rsiOversold,
+      rsiOverbought: evolvedDna.rsiOverbought,
+      macdWeight: evolvedDna.macdWeight,
+      trendMinPct: evolvedDna.trendMinPct,
+      volSpikeThreshold: evolvedDna.volSpikeThreshold,
+      minConfidence: evolvedDna.minConfidence,
+    },
     _lastAbsorbed: new Date().toISOString(),
     _absorbedFrom: bestChild.name || bestChild.spec,
     _childWR: Math.round(bestChild.cp.wins / bestChild.cp.trades * 100) + '%',
@@ -209,7 +225,8 @@ function absorbEliteGenome(pnl) {
 
   // Only write if real change
   const changed = Math.abs(absorbed.volumeWeight - curr.volumeWeight) > 0.001
-    || Math.abs(absorbed.vwapWeight - curr.vwapWeight) > 0.001;
+    || Math.abs(absorbed.vwapWeight - curr.vwapWeight) > 0.001
+    || Math.abs(absorbed.trendWeight - (curr.trendWeight || 1.0)) > 0.001;
   if (!changed) return;
 
   fs.writeFileSync(DYN_WEIGHTS_PATH, JSON.stringify({ ...curr, ...absorbed }, null, 2));
@@ -218,9 +235,10 @@ function absorbEliteGenome(pnl) {
   pnl.genomesAbsorbed = (pnl.genomesAbsorbed || 0) + 1;
   savePnL(pnl);
 
-  const msg = `\n### GENETIC ABSORPTION (FIX 1) — ${new Date().toISOString()}:\n`
+  const msg = `\n### GENETIC ABSORPTION — ${new Date().toISOString()}:\n`
     + `Elite child: ${bestChild.name || bestChild.spec} | WR: ${absorbed._childWR} (parent: ${absorbed._parentWR})\n`
-    + `DNA absorbed: volWeight=${dna.volWeight} → ${absorbed.volumeWeight}, vwapWeight=${dna.vwapWeight} → ${absorbed.vwapWeight}\n`
+    + `DNA absorbed: volW=${absorbed.volumeWeight}, vwapW=${absorbed.vwapWeight}, trendW=${absorbed.trendWeight}\n`
+    + `Evolved signal DNA: RSI(${evolvedDna.rsiOversold}/${evolvedDna.rsiOverbought}), MACD×${evolvedDna.macdWeight}, trend>${evolvedDna.trendMinPct}%\n`
     + `Absorption rate: 20% delta. ADAN evolves gradually toward winning genome.\n`;
   appendToSoul(msg);
 

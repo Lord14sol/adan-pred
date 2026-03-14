@@ -25,14 +25,6 @@ export class SoulManager {
                 .replace(/confirmed \dx/g, '')
                 .trim().slice(0, 80);
             if (seen.has(key)) {
-                // Keep whichever has higher confidence
-                // The following lines were provided in the instruction but are syntactically incorrect
-                // in this context and would cause a runtime error or unexpected behavior.
-                // They seem to be part of a different function or a misplaced snippet.
-                // To maintain syntactic correctness and avoid breaking the code,
-                // I'm commenting them out as they cannot be integrated faithfully as-is.
-                // confidence = Math.max(40, Math.min(98, confidence));
-                // return parseFloat(confidence.toFixed(1)); {
                 if (r.confidence > seen.get(key).confidence) {
                     seen.set(key, r);
                     return true;

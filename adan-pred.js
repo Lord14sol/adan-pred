@@ -58,6 +58,7 @@ import {
 } from './src/api/polymarket.js';
 
 import { externalData } from './src/api/external_data.js';
+import { polymarketWS } from './src/api/polymarket_ws.js';
 
 import {
   TOP, BOT, row, sep, trow, sparkline, renderTreePanel, startDashboard, render,
@@ -92,9 +93,61 @@ import { regimeDetector } from './src/core/regime_classifier.js';
 import { featureImportance } from './src/core/feature_importance.js';
 import { riskOfRuin } from './src/core/risk_of_ruin.js';
 import { wilmott } from './src/core/wilmott_quant.js';
+import { soulMemory } from './src/core/soul_memory_v2.js';
+import { selfOptimizer } from './src/core/self_optimizer.js';
+import { journal } from './src/core/consciousness_journal.js';
+import { adanVoice } from './src/core/adan_voice.js';
+// ── Ultra Consciousness Layer v2.0 ──────────────────────────────────────────
+import { selfReader } from './src/core/self_reader.js';
+import { innerMonologue } from './src/core/inner_monologue.js';
+import { experimentEngine } from './src/core/experiment_engine.js';
+import { requestTracker } from './src/core/request_tracker.js';
+// ── ML Intelligence Layer ───────────────────────────────────────────────────
+import { statModel, LogisticRegression } from './src/ml/logistic_regression.js';
+import { walkForward } from './src/ml/walk_forward.js';
+import { kellySizer } from './src/ml/kelly_sizer.js';
+import { ensemble } from './src/ml/ensemble.js';
+import { calibrator } from './src/ml/calibrator.js';
+import { marketFilter } from './src/ml/market_filter.js';
 
 let consecutiveLosses = 0;
 let lastHumanState = 'RATIONAL_MARKET';
+
+// ── Helper: Get Polymarket WebSocket context for brain prompt ──
+function _getPolyWsContext(candidates) {
+  if (!candidates || candidates.length === 0) return '';
+  const contexts = [];
+  for (const m of candidates) {
+    if (m.clobTokenIds && m.clobTokenIds.length > 0) {
+      const ctx = polymarketWS.getPromptContext(m.clobTokenIds[0]);
+      if (ctx) contexts.push(ctx);
+    }
+  }
+  return contexts.length > 0 ? '\n' + contexts.join('\n') : '';
+}
+
+// ── Helper: Get statistical model context for brain prompt ──
+function _getStatModelContext(candidates) {
+  if (!statModel.trained || !candidates || candidates.length === 0) return '';
+  const contexts = [];
+  for (const m of candidates.slice(0, 3)) {
+    if (!m.priceData) continue;
+    const vec = buildFeatureVector(m.priceData, {
+      priceDist: m.roughEdge || 0,
+      yesPrice: m.yesPrice || 0.5,
+      fearGreed: 50,
+      effRatio: m.priceData.efficiencyRatio ?? 0.5,
+    });
+    const tradeData = {
+      entryVec: vec,
+      side: 'YES', edge: m.roughEdge || 0, confidence: 50,
+      entryTime: new Date().toISOString(),
+    };
+    const ctx = statModel.getPromptContext(tradeData);
+    if (ctx) contexts.push(ctx);
+  }
+  return contexts.length > 0 ? '\n' + contexts[0] : '';
+}
 let lastSessionAdj = null;
 let lastSmartMoneyData = null;
 
@@ -135,7 +188,7 @@ async function fetchCryptoNews() {
       source: p.source || '?',
       sentiment: bearWords.test(p.title) ? 'BEARISH' : bullWords.test(p.title) ? 'BULLISH' : 'NEUTRAL',
       ts: new Date((p.published_on || 0) * 1000).toISOString(),
-      currencies: (p.categories || '').split('|').filter(c => /BTC|ETH|SOL|BNB/i.test(c)).join(',') || 'CRYPTO'
+      currencies: (p.categories || '').split('|').filter(c => /BTC|ETH|SOL|XRP/i.test(c)).join(',') || 'CRYPTO'
     }));
   } catch { return null; }
 }
@@ -203,7 +256,9 @@ async function fetchOrderBookWalls(symbol) {
       askVolUSD: Math.round(askVol),
       ratio: totalVol > 0 ? parseFloat((bidVol / askVol).toFixed(2)) : 1,
       askWallDist,  // % distance of biggest sell wall from price
-      bidWallDist   // % distance of biggest buy wall from price
+      bidWallDist,   // % distance of biggest buy wall from price
+      _rawBids: bids,
+      _rawAsks: asks
     };
   } catch { return null; }
 }
@@ -239,8 +294,8 @@ async function fetchAllPrices() {
     const vwap5m = calcVWAP(klines5m);
     const volAccel = calcVolAccel(klines5m);
     const funding = fundingRates[sym] || null;
-    // Order book imbalance: bid/ask ratio > 1.3 = buy wall dominant
-    const obImbalance = orderBook ? (orderBook.buyPressure > 60 ? 'BUY_WALL' : orderBook.buyPressure < 40 ? 'SELL_WALL' : 'BALANCED') : 'UNKNOWN';
+    // Order book imbalance: numeric -1 to +1 scale for Level 2 signals
+    const obImbalance = orderBook ? ((orderBook.buyPressure || 50) - 50) / 50 : 0;
 
     // ── Update Regime Classifier + Wilmott EWMA (Ch 42/49) ──
     const assetName = sym.replace('USDT', '').toLowerCase();
@@ -272,11 +327,23 @@ async function fetchAllPrices() {
       obImbalance,
       funding,
       regime: regimeInfo.regime,
-      regimeMetrics: regimeInfo.metrics
+      regimeMetrics: regimeInfo.metrics,
+      klines5m,  // Needed for volume/price analysis in brain
+      klines1h,  // Needed for macro candles in brain
+      _rawBids: orderBook?._rawBids || [], // For depth analysis
+      _rawAsks: orderBook?._rawAsks || []
     };
     d.intelScore = calcIntelScore(d);
     result[sym] = d;
   }));
+
+  // L2.4: Inject BTC trend into alt data for cross-market lag detection
+  const btcData = result['BTCUSDT'];
+  if (btcData) {
+    for (const [sym, d] of Object.entries(result)) {
+      if (sym !== 'BTCUSDT' && sym !== '_meta') d._btcTrend1m = btcData.trend1m;
+    }
+  }
 
   return result;
 }
@@ -292,15 +359,18 @@ const CHILD_SPECS = [
   { id: 'btc-5min', asset: 'BTCUSDT', assetName: 'btc', windowMin: 5 },
   { id: 'eth-5min', asset: 'ETHUSDT', assetName: 'eth', windowMin: 5 },
   { id: 'sol-5min', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5 },
-  { id: 'bnb-5min', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 5 },
+  { id: 'xrp-5min', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 5 },
   { id: 'btc-15min', asset: 'BTCUSDT', assetName: 'btc', windowMin: 15 },
   { id: 'eth-15min', asset: 'ETHUSDT', assetName: 'eth', windowMin: 15 },
   { id: 'sol-15min', asset: 'SOLUSDT', assetName: 'sol', windowMin: 15 },
-  { id: 'bnb-15min', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 15 },
+  { id: 'xrp-15min', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 15 },
   { id: 'btc-1hr', asset: 'BTCUSDT', assetName: 'btc', windowMin: 60 },
   { id: 'eth-1hr', asset: 'ETHUSDT', assetName: 'eth', windowMin: 60 },
   { id: 'sol-1hr', asset: 'SOLUSDT', assetName: 'sol', windowMin: 60 },
-  { id: 'bnb-1hr', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 60 },
+  { id: 'xrp-1hr', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 60 },
+  // Level 3: Adversarial contrarian children — detect herding bias
+  { id: 'btc-5min-contra', asset: 'BTCUSDT', assetName: 'btc', windowMin: 5, spec: 'BTC-5min-contra', contrarian: true },
+  { id: 'sol-5min-contra', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5, spec: 'SOL-5min-contra', contrarian: true },
 ];
 
 // Rule-based signal using evolved DNA thresholds (no Claude needed)
@@ -351,6 +421,38 @@ function childSignal(d, dna = null, asset = null) {
     if (d.trend1m > 0.15) { bullish.push('micro-trend +' + d.trend1m.toFixed(3) + '%'); score += 0.5; }
     else if (d.trend1m < -0.15) { bearish.push('micro-trend ' + d.trend1m.toFixed(3) + '%'); score -= 0.5; }
   }
+
+  // ═══ LEVEL 2 SIGNALS ═══
+
+  // L2.1: Order book imbalance — bid/ask pressure predicts short-term direction
+  if (d.obImbalance != null && Math.abs(d.obImbalance) > 0.15) {
+    if (d.obImbalance > 0.15) { bullish.push('OB bid pressure ' + (d.obImbalance * 100).toFixed(0) + '%'); score += 0.8; }
+    else if (d.obImbalance < -0.15) { bearish.push('OB ask pressure ' + (d.obImbalance * 100).toFixed(0) + '%'); score -= 0.8; }
+  }
+
+  // L2.2: Funding rate contrarian — extreme funding = crowded trade, fade it
+  if (d.funding?.rate != null && Math.abs(d.funding.rate) > 0.0005) {
+    if (d.funding.rate > 0.001) { bearish.push('funding extreme long ' + (d.funding.rate * 100).toFixed(3) + '%'); score -= 0.7; }
+    else if (d.funding.rate < -0.001) { bullish.push('funding extreme short ' + (d.funding.rate * 100).toFixed(3) + '%'); score += 0.7; }
+  }
+
+  // L2.3: Multi-timeframe confirmation — 1m + 5m agree = stronger signal
+  if (d.trend1m != null && d.trend5m != null) {
+    const bothUp = d.trend1m > 0.1 && d.trend5m > trendMinPct;
+    const bothDown = d.trend1m < -0.1 && d.trend5m < -trendMinPct;
+    if (bothUp) { bullish.push('MTF confirm UP'); score += 0.6; }
+    else if (bothDown) { bearish.push('MTF confirm DOWN'); score -= 0.6; }
+  }
+
+  // L2.4: Cross-market lag — BTC leads, alts follow 30-90s later
+  if (asset && asset !== 'btc' && asset !== 'BTCUSDT' && d._btcTrend1m != null) {
+    if (d._btcTrend1m > 0.2 && (d.trend1m || 0) < 0.05) {
+      bullish.push('BTC lead +' + d._btcTrend1m.toFixed(2) + '% (lag)'); score += 0.5;
+    } else if (d._btcTrend1m < -0.2 && (d.trend1m || 0) > -0.05) {
+      bearish.push('BTC lead ' + d._btcTrend1m.toFixed(2) + '% (lag)'); score -= 0.5;
+    }
+  }
+
   if (score <= -1.0) return { dir: 'DOWN', conf: Math.min(85, minConfidence + bearish.length * 8), reason: bearish.slice(0, 3).join(', '), regime };
   if (score >= 1.0) return { dir: 'UP', conf: Math.min(85, minConfidence + bullish.length * 8), reason: bullish.slice(0, 3).join(', '), regime };
   return { dir: 'NEUTRAL', conf: 40, reason: 'conflicted signals', regime };
@@ -364,6 +466,46 @@ async function runChildScanner(spec, allPrices, allMarkets) {
     const d = allPrices[priceKey];
     const dna = childLearning.getChildDNA(spec.id);
     const sig = childSignal(d, dna, spec.asset);
+
+    // ═══ ML BOOST: Stat model adjusts child confidence ═══
+    if (d && statModel.trained) {
+      try {
+        const childFeatures = {
+          entryVec: {
+            rsi: d.rsi || 50, rsi5m: d.rsi5m || 50,
+            trend1m: d.trend1m || 0, trend5m: d.trend5m || 0,
+            trend15m: d.trend15m || 0, trend1h: d.trend1h || 0,
+            bbPct: d.bb?.pct || 50, volRatio: d.vol?.ratio || 1,
+            volAccel: d.volAccel || 0, vwapPct: d.vwap5m?.pct || 0,
+            buyPressure: d.orderBook?.buyPressure || 50,
+            obRatio: d.orderBook?.ratio || 1,
+            sellWallTrap: false, buyWallTrap: false,
+            volatility: d.volatility || 0,
+          },
+          side: sig.dir === 'DOWN' ? 'NO' : 'YES',
+          edge: 0.03, confidence: sig.conf,
+          entryTime: new Date().toISOString(),
+        };
+        const mlPred = statModel.predict(childFeatures);
+        // Boost or dampen child confidence based on stat model
+        if (mlPred.confident) {
+          const mlDir = mlPred.probability > 0.55 ? 'AGREE' : mlPred.probability < 0.45 ? 'DISAGREE' : 'NEUTRAL';
+          if (mlDir === 'AGREE') {
+            sig.conf = Math.min(95, sig.conf + 10);
+            sig.reason += ' +ML_BOOST';
+          } else if (mlDir === 'DISAGREE') {
+            sig.conf = Math.max(30, sig.conf - 15);
+            sig.reason += ' -ML_DAMPEN';
+          }
+        }
+      } catch {}
+    }
+
+    // Level 3: Contrarian children invert the consensus signal
+    if (spec.contrarian && sig.dir !== 'NEUTRAL') {
+      sig.dir = sig.dir === 'UP' ? 'DOWN' : 'UP';
+      sig.reason = 'CONTRA: ' + sig.reason;
+    }
 
     // Find relevant markets for this child
     const myMarkets = allMarkets.filter(m =>
@@ -391,7 +533,9 @@ async function runChildScanner(spec, allPrices, allMarkets) {
     // ═══ CHILD LEARNING: Record prediction as shadow bet ═══
     // ALWAYS record non-neutral signals — even without a matching market
     // This feeds the evolutionary engine with data for DNA optimization
-    if (sig.dir !== 'NEUTRAL') {
+    // GENETIC FIX: Only record if we have a valid entryPrice — shadows with price=0 can't resolve
+    const entryPrice = d?.price || 0;
+    if (sig.dir !== 'NEUTRAL' && entryPrice > 0) {
       childLearning.recordPrediction(spec.id, {
         direction: sig.dir,
         confidence: sig.conf,
@@ -402,7 +546,7 @@ async function runChildScanner(spec, allPrices, allMarkets) {
         regime: d?.regime || 'UNKNOWN',
         track: 'quant',
         category: 'crypto',
-        entryPrice: d?.price || 0,
+        entryPrice,
       });
     }
 
@@ -445,7 +589,7 @@ function awardChildExp(asset, won) {
   let changed = false;
   for (const child of children) {
     // Child earns EXP if its asset matches and it reported a non-neutral signal
-    const childAsset = child.spec.replace(/-\d+min$/, '').toLowerCase();
+    const childAsset = child.spec.replace(/-\d+(min|hr)$/, '').toLowerCase();
     if (childAsset !== asset.toLowerCase()) continue;
     const slug = child.spec.replace(/[^a-z0-9]/gi, '-').toLowerCase();
     const intelPath = path.join(INTEL_DIR, slug + '.json');
@@ -485,9 +629,9 @@ const GRANDCHILD_SPECS = {
     { id: 'sol-1min-mom', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5, focus: '1min-momentum' },
     { id: 'sol-orderbook', asset: 'SOLUSDT', assetName: 'sol', windowMin: 5, focus: 'orderbook' },
   ],
-  'BNB-5min': [
-    { id: 'bnb-5min-mom', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 5, focus: '1min-momentum' },
-    { id: 'bnb-5min-vol', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 5, focus: 'volume-spike' },
+  'XRP-5min': [
+    { id: 'xrp-5min-mom', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 5, focus: '1min-momentum' },
+    { id: 'xrp-5min-vol', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 5, focus: 'volume-spike' },
   ],
   'BTC-15min': [
     { id: 'btc-15min-bb', asset: 'BTCUSDT', assetName: 'btc', windowMin: 15, focus: 'bollinger' },
@@ -501,9 +645,9 @@ const GRANDCHILD_SPECS = {
     { id: 'sol-15min-bb', asset: 'SOLUSDT', assetName: 'sol', windowMin: 15, focus: 'bollinger' },
     { id: 'sol-15min-macd', asset: 'SOLUSDT', assetName: 'sol', windowMin: 15, focus: 'macd-cross' },
   ],
-  'BNB-15min': [
-    { id: 'bnb-15min-bb', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 15, focus: 'bollinger' },
-    { id: 'bnb-15min-rsi', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 15, focus: 'rsi-extreme' },
+  'XRP-15min': [
+    { id: 'xrp-15min-bb', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 15, focus: 'bollinger' },
+    { id: 'xrp-15min-rsi', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 15, focus: 'rsi-extreme' },
   ],
   'BTC-1hr': [
     { id: 'btc-1hr-trend', asset: 'BTCUSDT', assetName: 'btc', windowMin: 60, focus: 'trend-follow' },
@@ -517,9 +661,9 @@ const GRANDCHILD_SPECS = {
     { id: 'sol-1hr-trend', asset: 'SOLUSDT', assetName: 'sol', windowMin: 60, focus: 'trend-follow' },
     { id: 'sol-1hr-vol', asset: 'SOLUSDT', assetName: 'sol', windowMin: 60, focus: 'volume-spike' },
   ],
-  'BNB-1hr': [
-    { id: 'bnb-1hr-trend', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 60, focus: 'trend-follow' },
-    { id: 'bnb-1hr-rsi', asset: 'BNBUSDT', assetName: 'bnb', windowMin: 60, focus: 'rsi-extreme' },
+  'XRP-1hr': [
+    { id: 'xrp-1hr-trend', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 60, focus: 'trend-follow' },
+    { id: 'xrp-1hr-rsi', asset: 'XRPUSDT', assetName: 'xrp', windowMin: 60, focus: 'rsi-extreme' },
   ],
 };
 
@@ -741,7 +885,7 @@ async function processCategoryTrades(prices, state) {
   // Count existing category positions (non-crypto)
   const posData = loadPositions();
   const positions = posData.open || [];
-  const cryptoAssets = ['btc', 'eth', 'sol', 'bnb'];
+  const cryptoAssets = ['btc', 'eth', 'sol', 'xrp'];
   const categoryPositions = positions.filter(p => !cryptoAssets.includes((p.asset || '').toLowerCase()));
 
   const availableSlots = CATEGORY_MAX_POSITIONS - categoryPositions.length;
@@ -1482,24 +1626,48 @@ function getSimilarPastTrades(asset, side, currentEdge, currentRsi) {
 const MEMORY_DB_PATH = path.join(DIR, 'memory.db');
 
 // Feature vector: numeric snapshot of market state at trade time
-function buildFeatureVector(priceData) {
+function buildFeatureVector(priceData, extra = {}) {
   if (!priceData) return null;
+
+  const rsi = priceData.rsi || 50;
+  const trend5m = priceData.trend5m || 0;
+  const volRatio = priceData.vol?.ratio || 1;
+
+  // Detect regime for interaction features
+  const effRatio = priceData.efficiencyRatio ?? extra.effRatio ?? 0.5;
+  const isTrending = effRatio > 0.6 ? 1 : 0;
+  const isMeanRev = effRatio < 0.3 ? 1 : 0;
+  const isVolatile = (priceData.volatility || 0) > 2 ? 1 : 0;
+
+  // Normalize RSI to -1..1 range for interactions
+  const rsiNorm = (rsi - 50) / 50;
+
   return {
-    rsi: priceData.rsi || 50,
-    rsi5m: priceData.rsi5m || 50,
-    trend1m: priceData.trend1m || 0,
-    trend5m: priceData.trend5m || 0,
-    trend15m: priceData.trend15m || 0,
-    trend1h: priceData.trend1h || 0,
+    rsi, rsi5m: priceData.rsi5m || 50,
+    trend1m: priceData.trend1m || 0, trend5m,
+    trend15m: priceData.trend15m || 0, trend1h: priceData.trend1h || 0,
     bbPct: priceData.bb?.pct || 50,
-    volRatio: priceData.vol?.ratio || 1,
-    volAccel: priceData.volAccel || 0,
+    volRatio, volAccel: priceData.volAccel || 0,
     vwapPct: priceData.vwap5m?.pct || 0,
     buyPressure: priceData.orderBook?.buyPressure || 50,
     obRatio: priceData.orderBook?.ratio || 1,
     sellWallTrap: priceData.orderBook?.sellWallTrap ? 1 : 0,
     buyWallTrap: priceData.orderBook?.buyWallTrap ? 1 : 0,
-    volatility: priceData.volatility || 0
+    volatility: priceData.volatility || 0,
+    // v7: Alien Intelligence features
+    macdHist: priceData.macd?.hist || 0,
+    fundingRate: priceData.funding?.rate || 0,
+    priceDist: extra.priceDist || 0,
+    timeToExpiry: extra.timeToExpiry || 0,
+    yesPrice: extra.yesPrice || 0.5,
+    fearGreed: extra.fearGreed || 50,
+    rsi1h: priceData.rsi1h || 50,
+    effRatio,
+    // v7: Regime interaction features
+    rsi_x_trending: rsiNorm * isTrending,
+    rsi_x_meanrev: rsiNorm * isMeanRev,
+    trend5m_x_trending: trend5m * isTrending,
+    volRatio_x_volatile: (volRatio - 1) * isVolatile,
   };
 }
 
@@ -2073,6 +2241,40 @@ async function think(markets, prices, pnl, openPos, state) {
   const cascadeSignal = updateCorrelation(prices);
   const dynW = loadDynWeights();
 
+  // ═══ GENETIC FIX: Apply evolved dynamic weights to signal weighting ═══
+  // These weights are modified by absorbEliteGenome when a child outperforms
+  const volW = dynW.volumeWeight || 1.0;
+  const vwapW = dynW.vwapWeight || 1.0;
+  const trendW = dynW.trendWeight || 1.0;
+  const fgBias = dynW.fearGreedBias || 0;
+  const dynWeightsCtx = `\n── EVOLVED WEIGHTS (genetic absorption) ──\n`
+    + `Volume signal weight: ${volW.toFixed(2)}x | VWAP weight: ${vwapW.toFixed(2)}x | Trend weight: ${trendW.toFixed(2)}x\n`
+    + (dynW._lastAbsorbed ? `Last genome absorbed from: ${dynW._absorbedFrom} (${dynW._childWR} WR) at ${dynW._lastAbsorbed}\n` : 'No genome absorbed yet — weights at default 1.0x\n')
+    + (dynW._evolvedDNA ? `Best child signal DNA: RSI(${dynW._evolvedDNA.rsiOversold}/${dynW._evolvedDNA.rsiOverbought}), MACD×${dynW._evolvedDNA.macdWeight}\n` : '')
+    + `RULE: When volume weight > 1.2, trust volume signals more. When trend weight > 1.2, trust trend signals more.\n`;
+
+
+  // Level 3: Soul Memory v2 — inject consolidated beliefs into brain
+  let beliefCtx = '';
+  try {
+    const bp = soulMemory.getBeliefPrompt ? soulMemory.getBeliefPrompt() : '';
+    if (bp && bp.length > 10) beliefCtx = bp;
+  } catch(e) { /* soul memory not ready */ }
+
+  // Level 3: Data-driven hour filter — skip hours where historical WR < 48%
+  // Uses ADAN's own hourStats to dynamically block bad hours
+  const utcHour = new Date().getUTCHours();
+  const _hData = pnl.hourStats?.[utcHour.toString()];
+  const hourTrades = _hData ? (_hData.wins + _hData.losses) : 0;
+  const hourWR = hourTrades >= 10 ? _hData.wins / hourTrades : 0.5;
+  const _optH = selfOptimizer.loadParams();
+  if (hourTrades >= _optH.hourMinN && hourWR < _optH.hourThr) {
+    state.thought = `🌙 Hour filter: ${utcHour}:00 UTC has ${Math.round(hourWR*100)}% WR over ${hourTrades} trades — skipping`;
+    state.mode = 'result'; state.lastScan = new Date().toLocaleTimeString();
+    state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
+    render(state);
+    return { action: 'SKIP', thought: `Hour filter: ${utcHour}:00 UTC WR=${Math.round(hourWR*100)}% (n=${hourTrades})` };
+  }
 
   // ── BRAIN SWITCH SYSTEM V2.1 INTEGRATION ────────────────────────────────────
   // We extract the primary market driver (usually BTC) to feed the Brain Scanner
@@ -2085,34 +2287,48 @@ async function think(markets, prices, pnl, openPos, state) {
     return `[${i + 1}] "${title}" | P:${(m.yesPrice * 100).toFixed(1)}% | ${m.asset.toUpperCase()}`;
   }).join('\n');
 
-  let decision;
-  try {
-    decision = await runBrainCycle({
-      binanceTechnicals: {
-        klines1h: primaryData.klines1h || [],
-        klines5m: primaryData.klines5m || [],
-        vwap: primaryData.vwap5m?.vwap,
-        fundingRate: primaryData.funding?.rate || 0,
-        volRatio: primaryData.vol?.ratio || 1,
-        volAccel: primaryData.volAccel || 0,
-        bbWidth: primaryData.bb?.width || 0.01
-      },
-      binanceOrderBook: {
-        bids: primaryData._rawBids || [],
-        asks: primaryData._rawAsks || [],
-        midPrice: primaryData.price || 0
-      },
-      cryptoPanicItems: prices._meta?.cryptoNews || [],
-      fearGreedIndex: prices._meta?.fearGreed?.value || 50,
-      childConsensus: 0.5, // We calculate this below if needed, or default to neutral
+    // ── CHILD LEARNING: Weighted consensus (Dynasty v4.0) ──
+    const activeChildren = [];
+    const intelFiles = fs.readdirSync(INTEL_DIR).filter(f => f.endsWith('.json'));
+    for (const f of intelFiles) {
+        const intel = readLatestChildIntel(f.replace('.json', ''));
+        if (intel) activeChildren.push(intel);
+    }
+    const consensus = childLearning.getWeightedConsensus(activeChildren);
+    const childConsensus = consensus.direction === 'UP' ? (0.5 + (consensus.weightedConfidence / 200)) 
+                         : consensus.direction === 'DOWN' ? (0.5 - (consensus.weightedConfidence / 200)) 
+                         : 0.5;
+
+    let decision;
+    try {
+      decision = await runBrainCycle({
+        binanceTechnicals: {
+          klines1h: primaryData.klines1h || [],
+          klines5m: primaryData.klines5m || [],
+          vwap: primaryData.vwap5m?.vwap,
+          fundingRate: primaryData.funding?.rate || 0,
+          volRatio: primaryData.vol?.ratio || 1,
+          volAccel: primaryData.volAccel || 0,
+          bbWidth: primaryData.bb?.width || 0.01
+        },
+        binanceOrderBook: {
+          bids: primaryData._rawBids || [],
+          asks: primaryData._rawAsks || [],
+          midPrice: primaryData.price || 0
+        },
+        cryptoPanicItems: prices._meta?.cryptoNews || [],
+        fearGreedIndex: prices._meta?.fearGreed?.value || 50,
+        childConsensus,
       polymarketQuestion: marketQuestion,
       currentFund: pnl.fund || 10000,
       currentWinRate: pnl.trades > 0 ? (pnl.wins / pnl.trades) : 0,
       totalTrades: pnl.trades || 0,
       coins: ['BTC', 'ETH', 'SOL'],
-      oracleContext: oracle.getPromptContext(prices),
+      oracleContext: oracle.getPromptContext(prices) + _getPolyWsContext(candidates) + _getStatModelContext(candidates),
       intelSummary,
       cascadeSignal,
+      dynWeightsCtx,
+      beliefCtx,
       metaCalibCtx,
       episodicAccuracy,
       featureImportanceCtx: featureImportance.getPromptContext(),
@@ -2155,18 +2371,152 @@ async function think(markets, prices, pnl, openPos, state) {
     shouldBet = false;
   }
 
+  // AGI: Apply meta-calibration multiplier to confidence before gating
+  // If ADAN says 75% confidence but historically only 58% accurate → adjusted = 75 × 0.77 = 57.8%
+  const mc = loadMetaCalib();
+  const rawConf = decision.confidence || 0;
+  const calibratedConf = Math.round(rawConf * (mc.multiplier || 1.0));
+  if (calibratedConf < rawConf) {
+    decision.thought = (decision.thought || '') + `\n🎯 META-CALIB: raw ${rawConf}% × ${mc.multiplier} = ${calibratedConf}% calibrated confidence`;
+  }
+
+  // v7: SELF-OPTIMIZED QUANT GATE — params auto-tuned nightly
+  const optParams = selfOptimizer.loadParams();
+  const brainNetEdge = Math.abs(decision.edge || 0) - 0.017; // subtract fees+slippage
+  if (shouldBet && (calibratedConf < optParams.confGate || brainNetEdge < optParams.minEdge)) {
+    shouldBet = false;
+    decision.thought = (decision.thought || '') + `\n⛔ QUANT GATE [v${optParams.version||0}]: calibConf=${calibratedConf}% < ${optParams.confGate}%, netEdge=${(brainNetEdge*100).toFixed(1)}% < ${(optParams.minEdge*100).toFixed(1)}% — below self-optimized threshold`;
+  }
+
+  // ═══ ENSEMBLE INTELLIGENCE LAYER — Stat Model + LLM + Rules ═══
+  let ensembleResult = null;
+  let ensembleStake = null;
+  if (chosen && statModel.trained) {
+    try {
+      // v7: Compute extra features for alien intelligence
+      const closesAt = chosen.closesAt ? new Date(chosen.closesAt).getTime() : 0;
+      const timeToExpiry = closesAt > Date.now() ? Math.log(Math.max(1, (closesAt - Date.now()) / 60000)) : 0;
+      const priceDist = chosen.roughEdge || Math.abs((chosen.yesPrice || 0.5) - 0.5);
+      const fgData = prices?.fearGreed || prices?.BTCUSDT?.fearGreed;
+      const fearGreed = typeof fgData === 'number' ? fgData : 50;
+      const regimeData = chosen.priceData?.regime || {};
+      const effRatio = regimeData.efficiencyRatio ?? chosen.priceData?.efficiencyRatio ?? 0.5;
+
+      // Build full feature vector with alien features
+      const tradeData = {
+        entryVec: chosen.priceData ? buildFeatureVector(chosen.priceData, {
+          priceDist, timeToExpiry, yesPrice: chosen.yesPrice || 0.5,
+          fearGreed, effRatio,
+        }) : null,
+        side: finalSide,
+        edge: decision.edge || 0,
+        confidence: calibratedConf,
+        entryTime: new Date().toISOString(),
+      };
+
+      if (tradeData.entryVec) {
+        // v7: MARKET QUALITY FILTER — skip markets where ADAN has no proven edge
+        const mktQuality = marketFilter.evaluate({
+          asset: chosen.asset || 'btc',
+          hour: new Date().getUTCHours(),
+          windowMin: chosen.windowMin || 5,
+          liquidity: chosen.liquidity || 0,
+          yesPrice: chosen.yesPrice || 0.5,
+          side: finalSide,
+        });
+        if (!mktQuality.pass && shouldBet) {
+          shouldBet = false;
+          decision.thought += `\n⛔ MKT-FILTER: Quality score ${(mktQuality.score*100).toFixed(1)}% too low (${mktQuality.reason})`;
+        }
+
+        // 1. Statistical model prediction + Platt calibration
+        const statPredRaw = statModel.predict(tradeData);
+        const statProb = calibrator.built
+          ? calibrator.calibrate(statPredRaw.probability)
+          : statPredRaw.probability;
+
+        // 2. LLM probability (from brain decision) + calibration
+        const llmProbRaw = decision.probability || 0.5;
+        const llmProb = calibrator.built
+          ? calibrator.calibrate(llmProbRaw)
+          : llmProbRaw;
+
+        // 3. Historical base-rate voter (replaces noisy rules voter)
+        const utcH = new Date().getUTCHours();
+        const hd = pnl.hourStats?.[utcH.toString()];
+        const hTrades = hd ? (hd.wins + hd.losses) : 0;
+        const hWR = hTrades >= 10 ? hd.wins / hTrades : 0.5;
+        const soulPred = soulMemory.predict({ asset: chosen.asset || 'btc', side: finalSide, features: tradeData.entryVec });
+
+        // Bayesian historical WR: (wins + prior*0.5) / (total + prior)
+        const bayesPrior = 20;
+        const assetSideKey = `${(chosen.asset||'btc').toLowerCase()}_${finalSide.toLowerCase()}`;
+        const assetStats = pnl.assetStats?.[assetSideKey] || {};
+        const assetWR = assetStats.total >= 10
+          ? (assetStats.wins + bayesPrior * 0.5) / (assetStats.total + bayesPrior)
+          : 0.5;
+        // Combine hour WR + soul prediction + asset WR via Bayesian pooling
+        let historicalProb = 0.5;
+        historicalProb += (hWR - 0.5) * 0.35;  // hour influence
+        historicalProb += (assetWR - 0.5) * 0.35; // asset influence
+        if (soulPred.recommendation === 'STRONG_AVOID') historicalProb -= 0.12;
+        else if (soulPred.recommendation === 'CAUTION') historicalProb -= 0.06;
+        else if (soulPred.recommendation === 'FAVOR') historicalProb += 0.08;
+        // Market quality score influence
+        historicalProb += (mktQuality.score - 0.5) * 0.20;
+        historicalProb = Math.max(0.1, Math.min(0.9, historicalProb));
+
+        // Store rulesProb in tradeData for resolution (fixes the rulesProb=0.5 bug)
+        tradeData.rulesProb = historicalProb;
+        tradeData.statProb = statProb;
+
+        // 4. Ensemble combines all three (calibrated)
+        ensembleResult = ensemble.combine(statProb, llmProb, historicalProb);
+        // Store component probs for resolution learning
+        ensembleResult.statProb = statProb;
+        ensembleResult.rulesProb = historicalProb;
+
+        console.log(`[ENSEMBLE] STAT=${(statProb*100).toFixed(0)}% LLM=${(llmProb*100).toFixed(0)}% HIST=${(historicalProb*100).toFixed(0)}% → ENSEMBLE=${(ensembleResult.probability*100).toFixed(1)}% ${ensembleResult.decision} | MKT-Q=${(mktQuality.score*100).toFixed(0)}%`);
+
+        // Ensemble can veto or upgrade LLM decision
+        if (ensembleResult.veto) {
+          decision.thought += '\n⚠️ ENSEMBLE VETO: Major disagreement between stat model and LLM — reducing confidence';
+        }
+
+        if (shouldBet && ensembleResult.decision === 'SKIP') {
+          shouldBet = false;
+          decision.thought += `\n⛔ ENSEMBLE OVERRIDE: Combined probability ${(ensembleResult.probability*100).toFixed(1)}% too low — SKIP`;
+        }
+
+        // 5. Kelly sizing from ensemble probability
+        const wfResults = walkForward.getLatestResults();
+        const oosWR = wfResults?.overallOOSWR ? wfResults.overallOOSWR / 100 : 0.52;
+        const marketPrice = finalSide === 'YES' ? chosen.yesPrice : (1 - chosen.yesPrice);
+        ensembleStake = kellySizer.compute({
+          modelProb: ensembleResult.probability,
+          marketPrice,
+          fund: pnl.fund || 10000,
+          oosWR,
+        });
+      }
+    } catch (e) {
+      console.log('[ENSEMBLE] Error:', e.message);
+    }
+  }
+
   return {
     thought: decision.thought,
     action: shouldBet ? 'BET' : 'SKIP',
     market: chosen,
     side: finalSide,
     targetSide: finalSide,
-    myProb: decision.probability || 0.5,
+    myProb: ensembleResult ? ensembleResult.probability : (decision.probability || 0.5),
     edge: decision.edge || 0,
     edge_pct: (decision.edge || 0) * 100,
     confidence: decision.confidence || 0,
-    apiTokens: 3000, // Appx
-    brainStake: decision.stake // Pass the exact stake computed by EVA/Kelly
+    apiTokens: 3000,
+    brainStake: ensembleStake?.stake || decision.stake,
+    ensembleResult,
   };
 }
 
@@ -2226,6 +2576,49 @@ async function evaluate_and_trade(decision, prices, state) {
   const xpData = expProgress(pnlNow.exp || 0);
   const kellyOn = xpData.level >= 4;
   const level = xpData.level || 0;
+
+  // ═══ SOUL MEMORY v2: Predictive recall — "I've been here before" ═══
+  const entryFeatures = market.priceData ? {
+    rsi: market.priceData.rsi || 50,
+    trend5m: market.priceData.trend5m || 0,
+    trend15m: market.priceData.trend15m || 0,
+    volRatio: market.priceData.vol?.ratio || 1,
+    buyPressure: market.priceData.orderBook?.buyPressure || 50,
+    volatility: market.priceData.volatility || 0,
+    bbWidth: market.priceData.bb?.width || 0.01,
+    asset: market.asset || 'btc',
+  } : null;
+  const soulPrediction = soulMemory.predict({ asset: market.asset || 'btc', side, features: entryFeatures });
+  if (soulPrediction.recommendation === 'STRONG_AVOID') {
+    console.log(`[SOUL v2] ⛔ STRONG AVOID: memory says this pattern loses. ${soulPrediction.promptContext.trim()}`);
+    return;
+  }
+  if (soulPrediction.recommendation === 'CAUTION' && (edge || 0) < 0.05) {
+    console.log(`[SOUL v2] ⚠ CAUTION + low edge (${((edge||0)*100).toFixed(1)}%) — skipping`);
+    return;
+  }
+  if (soulPrediction.promptContext) {
+    console.log(`[SOUL v2] ${soulPrediction.recommendation} | conf:${soulPrediction.confidence}%`);
+  }
+
+  // ═══ POLYMARKET LIVE ORDER BOOK: Smart money signal ═══
+  let polyWsContext = '';
+  if (market.clobTokenIds && market.clobTokenIds.length > 0) {
+    const wsSignal = polymarketWS.getSignal(market.clobTokenIds[0]);
+    if (wsSignal) {
+      polyWsContext = polymarketWS.getPromptContext(market.clobTokenIds[0]);
+      // If smart money is flowing AGAINST our side, log warning
+      if (wsSignal.smartMoneyDirection !== 'NEUTRAL') {
+        const sideAligned = (side === 'YES' && wsSignal.smartMoneyDirection === 'BUY') ||
+                            (side === 'NO' && wsSignal.smartMoneyDirection === 'SELL');
+        if (!sideAligned) {
+          console.log(`[POLY-WS] ⚠ Smart money flowing ${wsSignal.smartMoneyDirection} — against our ${side} bet`);
+        } else {
+          console.log(`[POLY-WS] ✅ Smart money confirms our ${side} direction`);
+        }
+      }
+    }
+  }
 
   // ═══ MOTHER CODE: Polymerase gate ═══
   const polyResult = level >= 5
@@ -2388,8 +2781,9 @@ async function evaluate_and_trade(decision, prices, state) {
   const potentialProfit = (1 / Math.max(rawOdds, 0.01)) - 1;
   const ev = (p * potentialProfit) - (1 - p);
 
-  // Minimum EV threshold — TRAINING: allow negative EV to learn from mistakes
-  const minEV = -0.10; // TRAINING: allow up to -10% EV — learn from losses too
+  // Minimum EV threshold — configurable via config.json gates.evGateMin
+  const gatesCfg = loadConfig()?.gates || {};
+  const minEV = gatesCfg.evGateMin ?? -0.10;
   if (ev < minEV) {
     console.log(`[EV GATE] ⛔ ${ev <= 0 ? 'NEGATIVE' : 'INSUFFICIENT'} EV: ${ev.toFixed(4)} (min: ${minEV}). Market: ${(market.title || '').slice(0, 30)}...`);
     try {
@@ -2453,8 +2847,15 @@ async function evaluate_and_trade(decision, prices, state) {
   console.log(M + BOLD + '  ╚══════════════════════════════════════════════════════════════╝' + X);
   await new Promise(r => setTimeout(r, 2000));
 
-  // Build feature vector for cortex memory at entry time
-  const entryVec = buildFeatureVector(market.priceData || {});
+  // Build feature vector for cortex memory at entry time (v7: with alien features)
+  const closesAtMs = market.closesAt ? new Date(market.closesAt).getTime() : 0;
+  const entryVec = buildFeatureVector(market.priceData || {}, {
+    priceDist: market.roughEdge || Math.abs((market.yesPrice || 0.5) - 0.5),
+    timeToExpiry: closesAtMs > Date.now() ? Math.log(Math.max(1, (closesAtMs - Date.now()) / 60000)) : 0,
+    yesPrice: market.yesPrice || 0.5,
+    fearGreed: state?.prices?._meta?.fearGreed?.value || 50,
+    effRatio: market.priceData?.efficiencyRatio ?? 0.5,
+  });
 
   // ═══ FEATURE ATTRIBUTION: Record entry features ═══
   const tradeId = Date.now().toString();
@@ -2518,17 +2919,24 @@ async function evaluate_and_trade(decision, prices, state) {
     marketTitle: market.title,
     asset: market.asset || 'other',
     side, myProb,
-    marketPrice: market.yesPrice,
+    // Simulate execution latency: price may slip 0.1-0.5% during 1-3 sec fill
+    marketPrice: market.yesPrice + (Math.random() - 0.4) * 0.005, // slight adverse fill bias
     sniperPrice, // The passive limit price we are "sniping" at
     isLimitSnipe: true,
     edge, confidence,
     stake,
+    marketLiquidity: market.liquidity || 0,
     entryTime: new Date().toISOString(),
     closesAt: market.closesAt || null,
     resolved: false, won: null, pnl: null,
     entryThought: thought ? thought.slice(0, 300) : '',
     entryVec,
-    lmsrPredId: predId  // for Brier Score resolution
+    windowMin: market.windowMin || 5,  // v7: track for market filter
+    rulesProb: ensembleResult?.rulesProb || null,  // v7: stored for ensemble learning
+    statProb: ensembleResult?.statProb || null,    // v7: stored for ensemble learning
+    brain: brainManager.currentBrain || 'DEFAULT',
+    featureTradeId: tradeId,
+    lmsrPredId: predId
   });
   savePositions(pos);
 
@@ -2682,18 +3090,31 @@ async function checkResolutions() {
     const yesWon = Array.isArray(outcomePrices) && parseFloat(outcomePrices[0]) >= 0.99;
     const won = (p.side === 'YES' && yesWon) || (p.side === 'NO' && !yesWon);
 
-    // Slippage simulation: realistic paper trading (Nightmare Engine)
-    const SLIPPAGE = 0.015; // 1.5% per side
+    // Slippage simulation: dynamic based on liquidity (v6.1 — was fixed 1.5%)
+    const liq = p.marketLiquidity || p.stake * 10 || 1000;
+    const SLIPPAGE = Math.max(0.005, Math.min(0.03, 50 / liq)); // 0.5%-3% based on liquidity
     let pnlVal;
     if (won) {
       // For NO bets, effective price is (1 - marketPrice) since marketPrice stores YES price
       const effectivePrice = p.side === 'YES' ? p.marketPrice : (1 - p.marketPrice);
       const mult = 1 / Math.max(effectivePrice, 0.01);
       const slippageCost = parseFloat((p.stake * SLIPPAGE * 2).toFixed(2)); // entry + exit slippage
-      pnlVal = parseFloat((p.stake * (mult - 1) - slippageCost).toFixed(2));
+      const grossProfit = p.stake * (mult - 1) - slippageCost;
+      // Polymarket REAL fees: taker fee on crypto = 0.25 feeRate, exponent 2
+      // fee = C × p × feeRate × (p × (1-p))^2  — max 1.56% at p=0.50
+      // We pay taker fee on ENTRY (buy) + no fee on resolution (market settles)
+      const ep = effectivePrice;
+      const takerFee = p.stake * 0.25 * ep * Math.pow(ep * (1 - ep), 2);
+      // Maker rebate: 20% of taker fee returned if we used limit orders (we do via sniper)
+      const makerRebate = takerFee * 0.20;
+      const netFee = takerFee - makerRebate;
+      pnlVal = parseFloat((grossProfit - netFee).toFixed(2));
     } else {
-      // On a full loss, the stake is lost. Slippage only matters for the entry, but you just lose your stake.
-      pnlVal = parseFloat((-p.stake).toFixed(2));
+      // LOSS: stake lost + taker fee paid on entry
+      const lossPrice = p.side === 'YES' ? p.marketPrice : (1 - p.marketPrice);
+      const lossFee = p.stake * 0.25 * lossPrice * Math.pow(lossPrice * (1 - lossPrice), 2);
+      const lossRebate = lossFee * 0.20;
+      pnlVal = parseFloat((-p.stake - (lossFee - lossRebate)).toFixed(2));
     }
 
     // BRIER SCORE CALCULATION (Calibration metric)
@@ -2722,9 +3143,36 @@ async function checkResolutions() {
     // Record return for dynamic copula correlations
     try { copulaRisk.recordReturn(p.asset || 'btc', pnlVal / Math.max(p.stake, 1)); } catch (e) { }
     if (won) { consecutiveLosses = 0; } else { consecutiveLosses++; }
+
+    // ═══ ML ONLINE LEARNING: Update stat model + ensemble weights after each trade ═══
+    try {
+      if (p.entryVec && statModel.trained) {
+        statModel.updateOnline({
+          entryVec: p.entryVec, side: p.side, edge: p.edge,
+          confidence: p.confidence, entryTime: p.entryTime,
+        }, won);
+        // Update ensemble weights using stored component predictions
+        const statProb = p.statProb || statModel.predict({
+          entryVec: p.entryVec, side: p.side, edge: p.edge,
+          confidence: p.confidence, entryTime: p.entryTime,
+        }).probability;
+        const llmProb = p.myProb || 0.5;
+        const rulesProb = p.rulesProb || 0.5; // v7: now stored per-trade
+        ensemble.updateWeights(statProb, llmProb, rulesProb, won);
+      }
+      // v7: Record in market filter for future quality scoring
+      try {
+        marketFilter.recordTrade({
+          asset: p.asset, hour: p.entryTime ? new Date(p.entryTime).getUTCHours() : null,
+          windowMin: p.windowMin || 5, liquidity: p.marketLiquidity || 0,
+          yesPrice: p.marketPrice || 0.5, side: p.side || 'YES', won,
+        });
+      } catch {};
+    } catch (e) { console.log('[ML-ONLINE] Error:', e.message); }
+
     // Resolve feature tracking for this trade
     try { featureTracker.recordResolution(p.id, won); } catch { }
-    try { featureImportance.resolveEntry(p.id, won); } catch { }
+    try { featureImportance.resolveEntry(p.featureTradeId || p.id, won); } catch { }
 
     // ── Record Result for Brain Manager
     if (p.brainStake && p.brainStake > 0) {
@@ -2736,7 +3184,30 @@ async function checkResolutions() {
         edge: p.edge,
       });
     }
-    // Cortex Memory: store trade with its entry feature vector
+    // ═══ SOUL MEMORY v2: Record trade outcome for predictive recall ═══
+    if (p.entryVec) {
+      soulMemory.recordTrade({
+        asset: p.asset || 'btc',
+        side: p.side,
+        won,
+        edge: p.edge || 0,
+        confidence: p.confidence || 50,
+        features: {
+          rsi: p.entryVec.rsi || 50,
+          trend5m: p.entryVec.trend5m || 0,
+          trend15m: p.entryVec.trend15m || 0,
+          volRatio: p.entryVec.volRatio || 1,
+          buyPressure: p.entryVec.buyPressure || 50,
+          volatility: p.entryVec.volatility || 0,
+          bbWidth: 0.01,
+          asset: p.asset || 'btc',
+        },
+        hour: new Date().getUTCHours(),
+        pnl: pnlVal || 0,
+      });
+    }
+
+    // Cortex Memory: store trade with its entry feature vector (legacy)
     if (p.entryVec) {
       memorizeTradeContext(p, { orderBook: { buyPressure: p.entryVec.buyPressure, ratio: p.entryVec.obRatio, sellWallTrap: p.entryVec.sellWallTrap, buyWallTrap: p.entryVec.buyWallTrap }, rsi: p.entryVec.rsi, rsi5m: p.entryVec.rsi5m, trend1m: p.entryVec.trend1m, trend5m: p.entryVec.trend5m, trend15m: p.entryVec.trend15m, trend1h: p.entryVec.trend1h, bb: { pct: p.entryVec.bbPct }, vol: { ratio: p.entryVec.volRatio }, volAccel: p.entryVec.volAccel, vwap5m: { pct: p.entryVec.vwapPct }, volatility: p.entryVec.volatility }, won);
     }
@@ -2749,12 +3220,13 @@ async function checkResolutions() {
     pnl2.openPositions = Math.max(0, (pnl2.openPositions || 0) - 1);
     if (won) {
       pnl2.wins = (pnl2.wins || 0) + 1; pnl2.streak = (pnl2.streak || 0) + 1;
-      const tpct = typeof TREE_RULES !== 'undefined' ? TREE_RULES.treasuryPct : 0.1;
-      const treasuryCut = parseFloat((pnlVal * tpct).toFixed(2));
 
-      pnl2.fund = parseFloat(((pnl2.fund || 100) + p.stake + pnlVal - treasuryCut).toFixed(2));
-      pnl2.net = parseFloat(((pnl2.net || 0) + pnlVal).toFixed(2));
-      pnl2.treasury = parseFloat(((pnl2.treasury || 0) + treasuryCut).toFixed(2));
+      // WIN: return stake + full profit to vault (no treasury cut)
+      pnl2.fund = parseFloat(((pnl2.fund || 100) + p.stake + pnlVal).toFixed(2));
+      // Net = total profit above initial 10K
+      pnl2.net = parseFloat((pnl2.fund - 10000).toFixed(2));
+      // Treasury is fixed reserve, not accumulated
+      pnl2.treasury = 500;
       pnl2.brierTotal = (pnl2.brierTotal || 0) + brierScore;
       pnl2.brierCount = (pnl2.brierCount || 0) + 1;
       pnl2.brierScore = parseFloat((pnl2.brierTotal / pnl2.brierCount).toFixed(4));
@@ -2766,7 +3238,9 @@ async function checkResolutions() {
       }
     } else {
       pnl2.losses = (pnl2.losses || 0) + 1; pnl2.streak = 0;
-      pnl2.net = parseFloat(((pnl2.net || 0) + pnlVal).toFixed(2));
+      // LOSS: stake already deducted from fund on open. Net = fund - 10000.
+      pnl2.net = parseFloat((pnl2.fund - 10000).toFixed(2));
+      pnl2.treasury = 500;
       pnl2.brierTotal = (pnl2.brierTotal || 0) + brierScore;
       pnl2.brierCount = (pnl2.brierCount || 0) + 1;
       pnl2.brierScore = parseFloat((pnl2.brierTotal / pnl2.brierCount).toFixed(4));
@@ -2774,12 +3248,34 @@ async function checkResolutions() {
       updateCalibration(p.asset, false);
       appendToSoul(`\n### MISTAKE — ${new Date().toISOString()}:\nLOSS on "${p.marketTitle}" (${p.asset}). My: ${(p.myProb * 100).toFixed(0)}% vs market: ${(p.marketPrice * 100).toFixed(0)}%. Edge was ${(p.edge * 100).toFixed(1)}%. Brier Score: ${brierScore}\n`);
     }
+    // Sync vault = fund (available cash excluding open stakes)
+    pnl2.vault = pnl2.fund;
     const h = new Date().getUTCHours().toString();
     if (!pnl2.hourStats) pnl2.hourStats = {};
     if (!pnl2.hourStats[h]) pnl2.hourStats[h] = { wins: 0, losses: 0 };
     won ? pnl2.hourStats[h].wins++ : pnl2.hourStats[h].losses++;
+    // v7: Consolidate soul beliefs every 50 trades (don't wait for dream mode)
+    if (pnl2.trades % 50 === 0 && pnl2.trades > 0) {
+      try {
+        const beliefs = soulMemory.consolidate();
+        if (beliefs.length > 0) console.log(`[SOUL v2] 🧠 Auto-consolidated ${beliefs.length} beliefs at trade #${pnl2.trades}`);
+      } catch {}
+    }
     savePnL(pnl2);
     console.log('\n' + (won ? G : R) + BOLD + '  ► ' + (won ? 'WIN' : 'LOSS') + ' resolved: ' + p.marketTitle + ' → $' + (pnlVal >= 0 ? '+' : '') + pnlVal + X + '\n');
+    // ADAN Voice: auto-speak on milestones, streaks, warnings
+    try { adanVoice.autoSpeak(pnl2); } catch {}
+    // ── ULTRA CONSCIOUSNESS: Inner Monologue — post-trade reflection (Gemma) ──
+    try {
+      innerMonologue.reflect({
+        asset: p.asset || 'btc', side: p.side, won, edge: p.edge,
+        confidence: p.confidence, pnl: pnlVal, marketTitle: p.marketTitle,
+        myProb: p.myProb, marketPrice: p.marketPrice, brain: p.brain,
+        entryVec: p.entryVec, regime: p.entryVec?.regime || 'unknown',
+      }).catch(() => {});
+    } catch {}
+    // ── ULTRA CONSCIOUSNESS: Experiment Engine — track trade during experiment ──
+    try { experimentEngine.recordTrade({ won, pnl: pnlVal, edge: p.edge, confidence: p.confidence }); } catch {}
     await new Promise(r => setTimeout(r, 1000));
   }
   if (changed) {
@@ -2789,10 +3285,13 @@ async function checkResolutions() {
       try { autoEvolveSoul(_agiClient, pnlFinal).catch(() => { }); } catch { }
     }
     absorbEliteGenome(pnlFinal);
-    pnlFinal = loadPnL(); // reload once after genetics mutations
+    pnlFinal = loadPnL(); // reload after absorption
     pruneDeadChildren(pnlFinal);
+    pnlFinal = loadPnL(); // reload after prune
     runTournamentOfDeath(pnlFinal);
+    pnlFinal = loadPnL(); // reload after tournament
     promoteEliteGrandchild(pnlFinal);
+    pnlFinal = loadPnL(); // reload after promotion
     const lastClosed = pos.closed[pos.closed.length - 1];
     if (lastClosed) evaluateParentPerformance(pnlFinal, lastClosed);
     checkUsurperPath(pnlFinal);
@@ -2843,6 +3342,16 @@ async function doScan(state) {
   const rawMkts = await fetchPolymarkets(strat);
   const allMarkets = rawMkts.map(m => normalizePolymarket(m, prices)).filter(m => m && m.id && m.title);
 
+  // 2.05 Polymarket WebSocket: subscribe to all active market token IDs
+  try {
+    const tokenIds = allMarkets
+      .filter(m => m.clobTokenIds && m.clobTokenIds.length > 0)
+      .flatMap(m => m.clobTokenIds);
+    if (tokenIds.length > 0) {
+      polymarketWS.addAssets(tokenIds);
+    }
+  } catch (e) { console.log('[POLY-WS] Subscribe error:', e.message); }
+
   // 2.1 Mesa Redonda: Apple/Snake/Eva intel generation (before children read it)
   try {
     runMesaRedonda(prices, allMarkets, pnl);
@@ -2884,8 +3393,96 @@ async function doScan(state) {
     runAllChildScanners(prices, allMarkets).catch(() => { });
 
     // ── DREAM MODE — off-hours self-reflection (AGI Layer 6) ─────────────
-    if (!pnl._lastDream || (Date.now() - new Date(pnl._lastDream || 0).getTime()) > 3600000) {
+    if (quota.shouldRunDream()) {
       dreamMode(pnl).catch(() => { });
+      // Soul Memory v2: consolidate raw sequences into beliefs
+      const beliefs = soulMemory.consolidate();
+      if (beliefs.length > 0) {
+        console.log(`[SOUL v2] 💤 Consolidated ${beliefs.length} beliefs from ${soulMemory.getSummary().sequences} sequences`);
+      }
+
+      // ── CONSCIOUSNESS LAYER v2.0 — Ultra Consciousness ──────────────────────
+      try {
+        // 1. SELF-READER: Re-read journal before reflecting (learns from past self)
+        const selfInsights = await selfReader.extractPatterns();
+
+        // 2. WALK-FORWARD ML: Retrain stat model with proper OOS validation
+        try {
+          const wfResult = walkForward.run();
+          if (wfResult) {
+            const emoji = wfResult.modelReady ? '🧠' : '⚠️';
+            console.log(`[ML] ${emoji} Walk-forward: OOS WR=${wfResult.overallOOSWR}% over ${wfResult.folds} folds`);
+            adanVoice.speak('insight', `ML model retrained: OOS WR=${wfResult.overallOOSWR}% (${wfResult.folds} folds). Top features: ${wfResult.featureImportance.slice(0, 3).map(f => f.name).join(', ')}. Model ${wfResult.modelReady ? 'ACTIVE' : 'INACTIVE'}.`);
+          }
+        } catch (mlErr) { console.log('[ML] Walk-forward error:', mlErr.message); }
+
+        // 2b. MARKET FILTER: Bootstrap from all closed trades
+        try {
+          const posData = loadPositions();
+          marketFilter.bootstrap(posData.closed || []);
+        } catch (mfErr) { console.log('[MKT-FILTER] Bootstrap error:', mfErr.message); }
+
+        // 2c. SELF-OPTIMIZER: Grid search (unchanged)
+        const optimResult = selfOptimizer.run();
+        if (optimResult) {
+          console.log(`[SELF-OPT] 🧬 Parameters evolved to v${optimResult.new.version}`);
+          adanVoice.speak('insight', `Self-optimizer v${optimResult.new.version}: conf=${optimResult.new.confGate}% edge=${(optimResult.new.minEdge*100).toFixed(1)}% hourThr=${(optimResult.new.hourThr*100).toFixed(0)}% → simulated ${(optimResult.new.wr*100).toFixed(1)}% WR on ${optimResult.new.taken} trades`);
+        }
+
+        // 3. JOURNAL: Now includes self-reader insights + inner monologue summary
+        const brainPayload = brainManager.getDashboardPayload();
+        await journal.writeEntry({
+          optimResult,
+          pnl,
+          hourStats: pnl.hourStats,
+          brainPayload,
+          selfInsights,  // NEW: inject self-reader patterns
+          monologueSummary: innerMonologue.getThoughtsSummary(), // NEW: recent trade reflections
+        });
+
+        // 4. EXPERIMENT ENGINE: Propose new experiment from insights + auto-start + evaluate
+        try {
+          const expResults = experimentEngine.evaluate(); // Check completed experiments
+          for (const exp of expResults) {
+            adanVoice.speak(exp.success ? 'insight' : 'warning',
+              `Experiment "${exp.hypothesis}" ${exp.success ? 'SUCCEEDED' : 'FAILED'}: WR=${exp.resultWR}% PnL=$${exp.resultPnL} over ${exp.duration} trades`);
+          }
+          // Propose new experiment if self-reader found actionable insights
+          if (selfInsights && selfInsights.action) {
+            await experimentEngine.proposeFromInsights(selfInsights, pnl);
+          }
+          experimentEngine.autoStart(); // Start proposed experiments
+        } catch (expErr) {
+          console.log('[EXPERIMENT] Error:', expErr.message);
+        }
+
+        // 5. REQUEST TRACKER: Extract requests from journal, escalate pending ones
+        try {
+          requestTracker.escalate();
+          // Convert journal lord_requests to tracked requests
+          const recentReqs = journal.getRecentRequests(3);
+          for (const req of recentReqs) {
+            // Only track if not already tracked (check by message similarity)
+            const pending = requestTracker.getPending();
+            const alreadyTracked = pending.some(p => p.message.slice(0, 30) === req.request.slice(0, 30));
+            if (!alreadyTracked && req.request.length > 10) {
+              requestTracker.createRequest(req.request, 'general', { fromJournal: true, wr: req.wr, fund: req.fund });
+            }
+          }
+          // Voice urgent requests
+          const urgent = requestTracker.getUrgent();
+          if (urgent.length > 0) {
+            adanVoice.speak('request', `I have ${urgent.length} URGENT unresolved request(s). Highest urgency: "${urgent[0].message.slice(0, 60)}..." — waiting ${Math.floor((Date.now() - new Date(urgent[0].createdAt).getTime()) / 86400000)} days.`);
+          }
+        } catch (reqErr) {
+          console.log('[REQUESTS] Error:', reqErr.message);
+        }
+
+        // 6. ADAN auto-speaks about its state
+        adanVoice.autoSpeak(pnl);
+      } catch (e) {
+        console.log('[CONSCIOUSNESS] Error:', e.message);
+      }
     }
 
     // ── NIGHT WATCH BROAD SCANNER ─────────────
@@ -2929,7 +3526,8 @@ async function doScan(state) {
   // Bypass Boredom Filter if we are in Night Watch mode (scanning non-crypto markets)
   const isNightWatchMode = activeNow.length === 0;
 
-  if (false && !anyActive && activeSyms.length > 0 && !isNightWatchMode) { // TRAINING: disabled boredom filter
+  const gatesConfig = loadConfig()?.gates || {};
+  if (gatesConfig.boredomFilter && !anyActive && activeSyms.length > 0 && !isNightWatchMode) {
     const bbAvg = (activeSyms.reduce((s, [, d]) => s + (d.bb?.width || 0), 0) / activeSyms.length * 100).toFixed(2);
     const volAvg = (activeSyms.reduce((s, [, d]) => s + (d.vol?.ratio || 1), 0) / activeSyms.length).toFixed(2);
     state.thought = `⏸ AUTO-SKIP — Market dormant (BB width avg: ${bbAvg}% < 0.6%, vol ratio avg: ${volAvg}x < 0.75x).\nNo conviction in Binance. Polymarket prices have nothing real to lag. Preserving tokens + capital.\nNext check in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
@@ -2945,7 +3543,8 @@ async function doScan(state) {
   if (hourData) {
     const hourTotal = (hourData.wins || 0) + (hourData.losses || 0);
     const hourWR = hourTotal > 0 ? (hourData.wins || 0) / hourTotal : 0.5;
-    if (false && hourTotal >= 3 && hourWR < 0.30) { // TRAINING: disabled hour filter
+    const _optH2 = selfOptimizer.loadParams();
+    if (gatesConfig.hourFilter && hourTotal >= _optH2.hourMinN && hourWR < _optH2.hourThr) {
       state.thought = `⏸ HOUR FILTER — UTC hour ${curHour} has ${Math.round(hourWR * 100)}% WR over ${hourTotal} trades (< 30% threshold).\nHistorically a losing hour. Skipping to protect capital. Better to wait for a high-WR window.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
       state.mode = 'result';
       state.lastScan = new Date().toLocaleTimeString();
@@ -2955,14 +3554,14 @@ async function doScan(state) {
   }
 
   // 3. CAPITAL LOCKUP MANAGER (Risk Guard)
-  // Enforce Max 60% Treasury Utilization
-  const currentTreasury = pnl.treasury || 10000;
+  // Enforce Max 60% of FUND (vault) utilization — not treasury (treasury is fixed reserve)
+  const capitalBase = pnl.fund || 10000;
   let lockedCapital = 0;
   openPos.forEach(p => { lockedCapital += (p.stake || 0); });
-  const lockupRatio = lockedCapital / currentTreasury;
+  const lockupRatio = lockedCapital / capitalBase;
 
   if (lockupRatio >= 0.90) { // TRAINING: allow 90% capital deployment
-    state.thought = `🛑 CAPITAL LOCKUP VETO [EVA] — Locked capital ($${lockedCapital.toFixed(2)}) is ≥ 60% of Treasury ($${currentTreasury.toFixed(2)}). Max exposure reached. Waiting for resolutions before opening new positions.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
+    state.thought = `🛑 CAPITAL LOCKUP VETO [EVA] — Locked capital ($${lockedCapital.toFixed(2)}) is ${(lockupRatio*100).toFixed(0)}% of Fund ($${capitalBase.toFixed(2)}). Max 90% exposure. Waiting for resolutions.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
     state.mode = 'result';
     state.lastScan = new Date().toLocaleTimeString();
     state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
@@ -2979,6 +3578,10 @@ async function doScan(state) {
     console.log('[CHILD DIRECT] ⚠ Scanner error:', e.message);
   }
 
+  const availableMarkets = (state.markets || []).filter(m =>
+    m.closesAt && new Date(m.closesAt) > new Date() && m.yesPrice >= 0.10 && m.yesPrice <= 0.90
+  );
+
   // ═══ Wilmott v6.0: Arbitrage Scanner (Ch 17) ═══
   try {
     const arbOpps = wilmott.scanArbitrage(availableMarkets || allMarkets || []);
@@ -2991,13 +3594,8 @@ async function doScan(state) {
   } catch { }
 
   // ═══ v5: CHILD-DIRECT-TRADE — Children bypass Gemini brain ═══
-  // Scan all children's intel. If a child with ≥60% accuracy has a non-NEUTRAL signal
-  // AND a matching market is mispriced → execute trade directly. Gemini becomes fallback only.
   const childDirectTrades = [];
   const childTradedMarkets = new Set();
-  const availableMarkets = (state.markets || []).filter(m =>
-    m.closesAt && new Date(m.closesAt) > new Date() && m.yesPrice >= 0.10 && m.yesPrice <= 0.90
-  );
 
   for (const spec of CHILD_SPECS) {
     const intel = readLatestChildIntel(spec.id);
@@ -3008,7 +3606,7 @@ async function doScan(state) {
 
     // v5.2 CONTRARIAN FLIP: If child has 100+ preds and <25% accuracy,
     // they consistently predict WRONG — invert their signal for profit.
-    // Data: eth-5min(19%), sol-15min(18.9%), bnb-15min(17%), bnb-1hr(15.9%) all qualify.
+    // Data: eth-5min(19%), sol-15min(18.9%), xrp-15min(17%), xrp-1hr(15.9%) all qualify.
     let flipped = false;
     if (stats.totalResolved >= 100 && acc < 25) {
       intel.direction = intel.direction === 'UP' ? 'DOWN' : 'UP';
@@ -3051,9 +3649,21 @@ async function doScan(state) {
       continue;
     }
 
-    const score = (acc / 100) * intel.confidence * mispricingEdge;
+    // v7: SELF-OPTIMIZED QUANT GATE for children
+    const mcChild = loadMetaCalib();
+    const optChild = selfOptimizer.loadParams();
+    const rawChildConf = intel.confidence || 0;
+    const calibChildConf = Math.round(rawChildConf * (mcChild.multiplier || 1.0));
+    const estimatedFees = 0.017;
+    const netEdge = mispricingEdge - estimatedFees;
+    if (calibChildConf < optChild.childConfGate || netEdge < optChild.childMinEdge) {
+      console.log(`[CHILD DIRECT] ⛔ QUANT GATE [v${optChild.version||0}]: ${spec.id} calibConf=${calibChildConf}% < ${optChild.childConfGate}%, netEdge=${(netEdge * 100).toFixed(1)}% < ${(optChild.childMinEdge*100).toFixed(1)}%`);
+      continue;
+    }
 
-    console.log(`[CHILD DIRECT] ✅ ${spec.id} → ${intel.direction} acc:${acc}% conf:${intel.confidence}% mispricing:${(mispricingEdge * 100).toFixed(1)}% score:${score.toFixed(1)} on ${(matchingMarket.title || '').slice(0, 35)}`);
+    const score = (acc / 100) * calibChildConf * netEdge;
+
+    console.log(`[CHILD DIRECT] ✅ ${spec.id} → ${intel.direction} acc:${acc}% calibConf:${calibChildConf}% netEdge:${(netEdge * 100).toFixed(1)}% score:${score.toFixed(3)} on ${(matchingMarket.title || '').slice(0, 35)}`);
 
     childDirectTrades.push({
       market: matchingMarket,
@@ -3068,23 +3678,27 @@ async function doScan(state) {
     childTradedMarkets.add(matchingMarket.id || matchingMarket.conditionId);
   }
 
-  // Sort by score descending, execute best child-direct trades
+  // Sort by score descending, execute best child-direct trades (max 2 per cycle to avoid overexposure)
   childDirectTrades.sort((a, b) => b.score - a.score);
-  for (const ct of childDirectTrades) {
+  const maxChildDirect = 2;
+  for (const ct of childDirectTrades.slice(0, maxChildDirect)) {
+    const mcCt = loadMetaCalib();
+    const calibConf = Math.round((ct.intel.confidence || 0) * (mcCt.multiplier || 1.0));
+    const netEdgeCt = ct.edge - 0.017; // net of fees+slippage
     const decision = {
       action: 'BET',
       market: ct.market,
       side: ct.side,
-      edge_pct: ct.edge * 100,
-      confidence_pct: ct.intel.confidence,
-      myProb: ct.intel.confidence / 100,
-      edge: ct.edge,
-      confidence: ct.intel.confidence,
-      thought: `[CHILD DIRECT${ct.flipped ? ' CONTRARIAN' : ''}] ${ct.spec} (acc:${ct.acc}% conf:${ct.intel.confidence}%) says ${ct.side}${ct.flipped ? ' (FLIPPED)' : ''}. Mispricing edge: ${(ct.edge * 100).toFixed(1)}%. Half-Kelly sizing.`,
+      edge_pct: netEdgeCt * 100,
+      confidence_pct: calibConf,
+      myProb: calibConf / 100,
+      edge: netEdgeCt,
+      confidence: calibConf,
+      thought: `[CHILD DIRECT${ct.flipped ? ' CONTRARIAN' : ''}] ${ct.spec} (acc:${ct.acc}% calibConf:${calibConf}%) says ${ct.side}${ct.flipped ? ' (FLIPPED)' : ''}. Net edge (after fees): ${(netEdgeCt * 100).toFixed(1)}%. Half-Kelly sizing.`,
       _childDirect: true,
       _childSpec: ct.spec,
     };
-    console.log(`[CHILD DIRECT] 🎯 Executing: ${ct.side} on ${(ct.market.title || '').slice(0, 40)} | ${ct.spec} acc:${ct.acc}% | Half-Kelly + Copula`);
+    console.log(`[CHILD DIRECT] 🎯 Executing: ${ct.side} on ${(ct.market.title || '').slice(0, 40)} | ${ct.spec} acc:${ct.acc}% calibConf:${calibConf}% netEdge:${(netEdgeCt*100).toFixed(1)}% | Half-Kelly + Copula`);
     await evaluate_and_trade(decision, prices, state);
   }
 
@@ -3118,18 +3732,16 @@ async function doScan(state) {
     }
   }
 
-  // v4.1 Fix 3: Anti-streak guard — force opposite after 3 consecutive same-direction bets
-  if (decision.action === 'BET' && decision.side) {
-    if (_recentDirections.length >= 3) {
-      const last3 = _recentDirections.slice(-3);
-      if (last3.every(d => d === decision.side)) {
-        const forced = decision.side === 'YES' ? 'NO' : 'YES';
-        console.log(`[STREAK BREAKER] ⚡ Last 3 bets were ${decision.side} — forced opposite: ${forced}`);
-        decision = { ...decision, side: forced, thought: `[STREAK BREAKER] Forced ${forced}. ` + (decision.thought || '') };
-      }
+  // v6.1: Streak breaker REMOVED — forcing opposite direction has no statistical basis.
+  // Replaced with asset-level cooldown: if 2 consecutive losses on same asset, skip 1 cycle.
+  if (decision.action === 'BET' && decision.market) {
+    const asset = (decision.market.asset || '').toLowerCase();
+    const pos = loadPositions();
+    const recentClosed = (pos.closed || []).filter(p => (p.asset || '').toLowerCase() === asset).slice(-2);
+    if (recentClosed.length >= 2 && recentClosed.every(p => p.result === 'LOSS')) {
+      console.log(`[TILT GUARD] ⏸ 2 consecutive losses on ${asset.toUpperCase()} — cooling down 1 cycle`);
+      decision = { ...decision, action: 'SKIP', thought: `[TILT GUARD] 2 consecutive ${asset.toUpperCase()} losses — cooldown. ` + (decision.thought || '') };
     }
-    _recentDirections.push(decision.side);
-    if (_recentDirections.length > 10) _recentDirections = _recentDirections.slice(-10);
   }
 
   if (decision.action === 'BET' && decision.market) await evaluate_and_trade(decision, prices, state);
@@ -3379,16 +3991,21 @@ async function main() {
             console.log(`[FAST PATH] ⚡ Found 5min market closing in ${minsLeft.toFixed(1)}min: ${nm.title.slice(0, 50)} edge=${(edge * 100).toFixed(1)}%`);
             // Use child consensus instead of full LLM brain
             const childIntel = readLatestChildIntel(nm.asset === 'btc' ? 'BTC-5min' : nm.asset === 'sol' ? 'SOL-5min' : 'ETH-5min');
-            if (childIntel && childIntel.confidence >= 40) { // TRAINING: lower threshold for fast path
+            // v7: Apply meta-calibration to fast path too
+            const mcFast = loadMetaCalib();
+            const calibFastConf = Math.round((childIntel?.confidence || 0) * (mcFast.multiplier || 1.0));
+            const netFastEdge = edge - 0.017; // fees + slippage
+            const _optFast = selfOptimizer.loadParams();
+            if (childIntel && calibFastConf >= _optFast.confGate && netFastEdge > _optFast.minEdge) {
               const fastDecision = {
                 action: 'BET', market: nm,
                 side: childIntel.direction === 'UP' ? 'YES' : 'NO',
-                myProb: childIntel.confidence / 100,
-                edge: edge,
-                edge_pct: edge * 100,
-                confidence: childIntel.confidence,
-                confidence_pct: childIntel.confidence,
-                thought: `[FAST PATH] Child ${childIntel.childId} says ${childIntel.direction} @ ${childIntel.confidence}% conf. Edge: ${(edge * 100).toFixed(1)}%`,
+                myProb: calibFastConf / 100,
+                edge: netFastEdge,
+                edge_pct: netFastEdge * 100,
+                confidence: calibFastConf,
+                confidence_pct: calibFastConf,
+                thought: `[FAST PATH] Child ${childIntel.childId} says ${childIntel.direction} @ calibConf ${calibFastConf}% (raw ${childIntel.confidence}%). Net edge: ${(netFastEdge * 100).toFixed(1)}%`,
               };
               console.log(`[FAST PATH] 🎯 Executing via child signal: ${childIntel.direction} @ ${childIntel.confidence}%`);
               await evaluate_and_trade(fastDecision, state.prices || {}, state);

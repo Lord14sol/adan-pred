@@ -130,24 +130,24 @@ const ATLAS = {
             if (midPx <= 0) return { buyWalls: [], sellWalls: [], skew: 'UNKNOWN', midPx: 0, coin };
 
             const sellWalls = asks
-                .filter(({ px, sz }) => {
+                .filter(([px, sz]) => {
                     const dist = (parseFloat(px) - midPx) / midPx;
                     const usdSize = parseFloat(sz) * parseFloat(px);
                     return dist <= 0.005 && usdSize >= minSizeUSD; // within 0.5%, >$500k
                 })
-                .map(({ px, sz }) => ({
+                .map(([px, sz]) => ({
                     price: parseFloat(px),
                     sizeUSD: parseFloat(sz) * parseFloat(px),
                     distancePct: ((parseFloat(px) - midPx) / midPx * 100).toFixed(3),
                 }));
 
             const buyWalls = bids
-                .filter(({ px, sz }) => {
+                .filter(([px, sz]) => {
                     const dist = (midPx - parseFloat(px)) / midPx;
                     const usdSize = parseFloat(sz) * parseFloat(px);
                     return dist <= 0.005 && usdSize >= minSizeUSD;
                 })
-                .map(({ px, sz }) => ({
+                .map(([px, sz]) => ({
                     price: parseFloat(px),
                     sizeUSD: parseFloat(sz) * parseFloat(px),
                     distancePct: ((midPx - parseFloat(px)) / midPx * 100).toFixed(3),
@@ -273,30 +273,30 @@ const SNAKE = {
         // Aggregate volume within 0.5% of mid
         const range = midPrice * 0.005;
         const bidVol = bids
-            .filter(([px]) => midPrice - parseFloat(px) <= range)
-            .reduce((s, [, sz]) => s + parseFloat(sz), 0);
+            .filter(b => midPrice - b.price <= range)
+            .reduce((s, b) => s + b.qty, 0);
         const askVol = asks
-            .filter(([px]) => parseFloat(px) - midPrice <= range)
-            .reduce((s, [, sz]) => s + parseFloat(sz), 0);
+            .filter(a => a.price - midPrice <= range)
+            .reduce((s, a) => s + a.qty, 0);
 
         const askVsBidRatio = askVol > 0 ? askVol / Math.max(bidVol, 0.001) : 1;
         const bidVsAskRatio = bidVol > 0 ? bidVol / Math.max(askVol, 0.001) : 1;
 
         // Nearest sell wall (large ask cluster)
         const nearestSellWall = asks
-            .filter(([, sz]) => parseFloat(sz) > 5)  // large size
-            .sort(([pxA], [pxB]) => parseFloat(pxA) - parseFloat(pxB))[0];
+            .filter(a => a.qty > 5)  // large size
+            .sort((a, b) => a.price - b.price)[0];
 
         const sellWallDistance = nearestSellWall
-            ? (parseFloat(nearestSellWall[0]) - midPrice) / midPrice
+            ? (nearestSellWall.price - midPrice) / midPrice
             : 0.1;
 
         const sellWallStrength = nearestSellWall
-            ? parseFloat(nearestSellWall[1]) / Math.max(askVol, 0.001)
+            ? nearestSellWall.qty / Math.max(askVol, 0.001)
             : 0;
 
         // Spread tightness: 0=wide, 1=tight
-        const spread = asks[0] ? (parseFloat(asks[0][0]) - parseFloat(bids[0][0])) / midPrice : 0.01;
+        const spread = asks[0] ? (asks[0].price - bids[0].price) / midPrice : 0.01;
         const spreadTightness = Math.max(0, 1 - spread * 200);
 
         return { askVsBidRatio, bidVsAskRatio, sellWallDistance, sellWallStrength, spreadTightness };
@@ -308,7 +308,7 @@ const SNAKE = {
         }
 
         // Volume ratio: current vs 20-period average
-        const volumes5m = klines5m.map(k => parseFloat(k[5]));
+        const volumes5m = klines5m.map(k => k.vol);
         const avgVol = volumes5m.slice(-21, -1).reduce((a, b) => a + b, 0) / 20;
         const curVol = volumes5m[volumes5m.length - 1];
         const volRatio = curVol / Math.max(avgVol, 0.001);
@@ -318,7 +318,7 @@ const SNAKE = {
         const volAccel = lastVols.reduce((acc, v, i) => i === 0 ? 0 : acc + (v > lastVols[i - 1] ? 1 : -1), 0);
 
         // Bollinger Band width on 5m (20-period)
-        const closes5m = klines5m.map(k => parseFloat(k[4]));
+        const closes5m = klines5m.map(k => k.close);
         const bbPeriod = 20;
         const bbCloses = closes5m.slice(-bbPeriod);
         const bbMean = bbCloses.reduce((a, b) => a + b, 0) / bbPeriod;
@@ -326,12 +326,11 @@ const SNAKE = {
         const bbWidth = (2 * bbStd) / bbMean;  // normalized BB width
 
         // BB compression duration — uses persistent state tracker
-        // Pass coin param when calling analyzeTechnicals for accurate tracking
         let bbCompressionDuration = 0; // updated in runBrainCycle via trackBBCompression()
 
         // 1h trend strength (simple: close vs open for last 3 candles)
-        const closes1h = klines1h.map(k => parseFloat(k[4]));
-        const opens1h = klines1h.map(k => parseFloat(k[1]));
+        const closes1h = klines1h.map(k => k.close);
+        const opens1h = klines1h.map(k => k.open);
         const last3 = closes1h.slice(-3);
         const trendScore = last3.reduce((s, c, i) => i === 0 ? 0 : s + (c > last3[i - 1] ? 1 : -1), 0);
         const trendStrength1h = (trendScore + 2) / 4; // normalize 0-1
@@ -827,8 +826,16 @@ class BrainTransitionManager {
             }
         } else {
             s.losses++; s.consecutiveLosses++; s.consecutiveWins = 0; s.lockedUntilCycle = 0;
+            // AGI: Unlock brain if Brier score is terrible (> 0.22 = worse than random)
+            if (s.brierScore > 0.22 && s.trades >= 10) {
+                s.lockedUntilCycle = 0;
+                console.log(`[🔓 BRAIN UNLOCK] ${brainName} unlocked — Brier ${s.brierScore.toFixed(3)} > 0.22 (poor calibration)`);
+            }
         }
-        s.winRate = s.wins / s.trades;
+        // AGI: EWMA win rate (recent trades weighted 3x more than old ones)
+        const EWMA_ALPHA = 0.05; // ~20 trade half-life
+        s.ewmaWR = s.ewmaWR != null ? s.ewmaWR * (1 - EWMA_ALPHA) + (won ? 1 : 0) * EWMA_ALPHA : s.wins / s.trades;
+        s.winRate = s.wins / s.trades; // keep raw for dashboard
         if (predictedP != null && actualOutcome != null) {
             s.totalBrierError += Math.pow(predictedP - actualOutcome, 2);
             s.brierScore = s.totalBrierError / s.trades;
@@ -851,7 +858,7 @@ class BrainTransitionManager {
             ranking: Object.entries(this.brainStats)
                 .map(([name, s]) => ({
                     name, avatar: BRAINS[name]?.avatar, trades: s.trades,
-                    winRate: s.winRate, brierScore: s.brierScore,
+                    winRate: s.winRate, ewmaWR: s.ewmaWR || s.winRate, brierScore: s.brierScore,
                     consecutiveWins: s.consecutiveWins, isActive: name === this.currentBrain,
                     isLocked: s.lockedUntilCycle > this.cycleCount,
                     description: BRAINS[name]?.description,
@@ -866,11 +873,51 @@ class BrainTransitionManager {
 // Injects brain system prompt + all Golden Round Table data
 // ─────────────────────────────────────────────────────────────
 
-function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, metaCalibCtx, episodicAccuracy, featureImportanceCtx, riskOfRuinCtx, skillsBlock }) {
+function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, dynWeightsCtx, beliefCtx, metaCalibCtx, episodicAccuracy, featureImportanceCtx, riskOfRuinCtx, skillsBlock, currentWinRate }) {
     const brain = BRAINS[brainName];
     if (!brain) throw new Error(`Unknown brain: ${brainName}`);
 
+    const hourWRInfo = currentWinRate ? `Current WR: ${(currentWinRate * 100).toFixed(1)}%` : '';
     const systemPrompt = `${brain.systemPrompt}
+
+━━━ PRIME MISSION ━━━
+You are an EXPERT QUANTITATIVE ANALYST specializing in Polymarket prediction markets.
+Your ONLY purpose is to MAKE MONEY through superior probabilistic analysis.
+${hourWRInfo}. Target: 70%+ WR.
+
+YOU ARE NOT A SIMPLE TRADER. You are a quant who:
+1. Builds probabilistic models from multiple signal layers
+2. Quantifies edge precisely — never "feels" a trade
+3. Understands Polymarket CLOB mechanics: fees eat edges < 2%, time decay accelerates at close
+4. Detects when markets are efficient (skip) vs mispriced (attack)
+5. Thinks in expected value, not direction
+
+━━━ POLYMARKET QUANT FRAMEWORK ━━━
+MARKET EFFICIENCY: If bid-ask spread < 2% and volume > $5K → market is efficient, need 7%+ edge to overcome fees+slippage
+TIME DECAY: Binary options theta accelerates exponentially in final 30min. Markets closing in <5min: price converges to 0 or 1 fast — only bet with 80%+ confidence
+LIQUIDITY: Thin books (spread >5%) = adverse fill guaranteed. Reduce confidence by 10% on illiquid markets
+FEE AWARENESS: Taker fee = C × p × 0.25 × (p(1-p))^2, max 1.56% at p=0.50. Net edge AFTER fees must be >3%
+CORRELATION: BTC-ETH tail dependence ~55%. If you're long BTC YES already, discount ETH edge by 30%
+
+━━━ ANALYTICAL PROTOCOL ━━━
+Before EVERY decision, compute:
+1. Fair probability (from signals + children + LMSR + particle filter)
+2. Market implied probability (from price)
+3. Raw edge = |fair - market|
+4. Net edge = raw edge - estimated fees - slippage (0.5%)
+5. Confidence = how certain you are about YOUR fair probability estimate
+6. EV = net_edge × confidence/100 — if EV < 2%, SKIP
+
+CRITICAL RULES:
+- If net edge < 3%, ALWAYS SKIP. Fees + slippage destroy small edges.
+- If you are unsure, SKIP. A missed trade costs $0. A wrong trade costs the stake.
+- When 3+ independent signals agree (technicals + order book + children), BET with conviction.
+- When signals conflict, SKIP. Conflicted signals = coin flip = 50% WR.
+- NEVER bet against BTC momentum on alts. BTC leads, alts lag 2-8 min.
+- The FEAT section shows which signals ACTUALLY predict wins (point-biserial r). Weight top features 2x. IGNORE weak signals.
+- The SOUL section shows beliefs learned from YOUR past trades. These override generic rules.
+- The CALIB section tells you if you're overconfident. If multiplier < 0.9, lower your confidence estimates.
+- ALWAYS state your fair probability AND the market price in your reasoning.
 
 ━━━ SIGNAL WEIGHTS (${brainName} mode) ━━━
 News: ${brain.weights.news}x | Momentum: ${brain.weights.momentum}x | Order Book: ${brain.weights.orderBook}x
@@ -881,12 +928,14 @@ Min Edge: ${(brain.thresholds.minEdge * 100).toFixed(1)}% | Min Confidence: ${br
 Default Bias: ${brain.thresholds.defaultBias ?? 'NONE'}
 
 ━━━ QUANT INTELLIGENCE LAYER (Mother Code v2.0) ━━━
-You have access to quantitative models backing your decision. Trust math over gut:
-- LMSR: Bayesian fair value vs market price → if LMSR says SKIP, the edge is imaginary
-- Particle Filter: Estimates true probability from noisy market data
-- Greeks: Binary contract Delta/Gamma/Theta → time decay accelerates near close
-- Copula: Portfolio tail dependence → BTC+ETH crash together 55% of the time
-Always mention if you agree or disagree with the quantitative layer.
+These are YOUR quantitative tools. A real quant uses every model available:
+- LMSR (Hanson): Bayesian fair value. If LMSR disagrees with you by >5%, explain WHY or defer to LMSR.
+- Particle Filter: 1000-particle sequential Monte Carlo. Better than point estimates for noisy crypto.
+- Greeks: Delta=probability sensitivity, Gamma=acceleration near 0.50, Theta=time decay. Near expiry: theta dominates.
+- Copula (Clayton): Tail dependence between positions. Correlated bets amplify drawdown risk.
+- Kelly: Optimal fraction of bankroll. Half-Kelly for safety. Quarter-Kelly if Brier > 0.20.
+- Risk of Ruin: Current probability of total wipeout. If >5%, reduce ALL stakes by 50%.
+RULE: State which models you used and whether they agree. Disagreement between LMSR and Particle = uncertainty = SKIP.
 
 ━━━ SOUL.md RELEVANT RULES ━━━
 ${soulRules ?? 'No rules yet.'}`;
@@ -922,8 +971,8 @@ ${JSON.stringify(snakeAnalysis)}
 ━━━ DATA ━━━
 ${JSON.stringify({
         ...marketClean,
-        klines1h: marketData.klines1h?.slice(-5).map(k => [k.close, k.vol]),
-        klines5m: marketData.klines5m?.slice(-3).map(k => [k.close, k.vol])
+        klines1h: marketData.klines1h?.slice(-5)?.map(k => [k.close, k.vol]) || [],
+        klines5m: marketData.klines5m?.slice(-3)?.map(k => [k.close, k.vol]) || []
     })}
 ${regimeContext}
 ━━━ CHILDREN ━━━
@@ -932,6 +981,10 @@ ${childConsensus >= 0.75 ? `STRONG: ${(childConsensus * 100).toFixed(0)}% → +3
 ${intelSummary ? `━━━ CHILD REPORTS ━━━\n${intelSummary.slice(0, 1500)}` : ''}
 
 ${cascadeSignal ? `━━━ CORR ━━━\n${typeof cascadeSignal === 'string' ? cascadeSignal : JSON.stringify(cascadeSignal)}` : ''}
+
+${dynWeightsCtx ? `━━━ DNA ━━━\n${dynWeightsCtx}` : ''}
+
+${beliefCtx ? `━━━ SOUL ━━━\n${beliefCtx}` : ''}
 
 ${metaCalibCtx ? `━━━ CALIB ━━━\n${metaCalibCtx}` : ''}
 
@@ -942,8 +995,8 @@ ${featureImportanceCtx ? `━━━ FEAT ━━━\n${featureImportanceCtx}` : '
 ${riskOfRuinCtx ? `━━━ RUIN ━━━\n${riskOfRuinCtx}` : ''}
 ${skillsBlock ? `━━━ ${skillsBlock}` : ''}
 
-Analyze as ${brainName}. Output BET YES/NO/SKIP.
-JSON fields: probability_estimate, market_price, edge_pct, confidence_pct, primary_reason, atlas_risk_note`;;
+Analyze as ${brainName} (Expert Polymarket Quant). Show your probabilistic reasoning. Output BET YES/NO/SKIP.
+JSON fields: probability_estimate, market_price, edge_pct, confidence_pct, primary_reason, atlas_risk_note, fair_value_source (which model drove your estimate)`;;
 
     return { systemPrompt, userPrompt };
 }
@@ -1002,6 +1055,8 @@ async function runBrainCycle({
     oracleContext,       // string
     intelSummary,        // string — child intel reports
     cascadeSignal,       // object — BTC lead-lag correlation
+    dynWeightsCtx,       // string — evolved genetic weights context
+    beliefCtx,           // string — Soul Memory v2 beliefs from experience
     metaCalibCtx,        // string — meta calibration context
     episodicAccuracy,    // string — episodic accuracy
     featureImportanceCtx, // string — feature importance ranking
@@ -1070,20 +1125,27 @@ async function runBrainCycle({
         oracleContext,
         intelSummary,
         cascadeSignal,
+        dynWeightsCtx,
+        beliefCtx,
         metaCalibCtx,
         episodicAccuracy,
         featureImportanceCtx,
         riskOfRuinCtx,
         skillsBlock,
+        currentWinRate,
     });
 
     // ── 5. Call Hybrid Router ─────────────────────────────────
-    console.log(`[ADAN] 🤔 ${activeBrain} thinking via Hybrid Router (Heavy)...`);
-    const aiEngine = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING' ? 'Gemma-3-27B (local)' : 'Gemini-2.5-Flash';
+    // v6.1: Use Gemini Flash for trade decisions when quota allows.
+    // Gemma handles scanning/children. Gemini handles the money decisions.
+    const useSniper = process.env.ADAN_SNIPER !== '0'; // default ON
+    const routeWeight = useSniper ? 'Heavy' : 'Light';
+    const aiEngine = routeWeight === 'Heavy' ? 'Gemini-2.5-Flash (sniper)' : 'Gemma-3-27B';
+    console.log(`[ADAN] 🤔 ${activeBrain} thinking via ${aiEngine}...`);
     if (onStatus) onStatus(`🤔 ${activeBrain} thinking via ${aiEngine}...`);
 
     const thought = await routeLLM({
-        weight: 'Heavy',
+        weight: routeWeight,
         systemPrompt: systemPrompt,
         userPrompt: userPrompt,
         reason: activeBrain
@@ -1097,6 +1159,18 @@ async function runBrainCycle({
     if (decision.action === 'SKIP' || decision.action === 'WAITING') {
         console.log(`[ADAN] ⏭️ ${activeBrain} → SKIP`);
         return { action: 'SKIP', brain: activeBrain, thought };
+    }
+
+    // ── 6.1 ASYMMETRY GATE: NO bets need 2x edge ──────────────
+    // Data: YES=53.5% WR (920 trades), NO=48.0% WR (506 trades).
+    // ADAN is statistically worse at NO bets. Light filter — let it trade to train Soul Memory.
+    if (decision.action === 'BET NO') {
+        const noMinEdge = 0.04; // 4% edge minimum for NO
+        const noMinConf = 55;   // 55% confidence minimum for NO
+        if ((decision.edge || 0) < noMinEdge || (decision.confidence || 0) < noMinConf) {
+            console.log(`[ADAN] 🚫 NO PENALTY: edge ${((decision.edge||0)*100).toFixed(1)}% < ${noMinEdge*100}% or conf ${decision.confidence||0}% < ${noMinConf}% — converting to SKIP`);
+            return { action: 'SKIP', brain: activeBrain, thought, noPenalty: true };
+        }
     }
 
     // ── 7. Dual AI check (EVA decides if needed) ──────────────

@@ -11,7 +11,7 @@
         "role": "Contexto y Oportunidad",
         "specialization": "Polymarket",
         "prompt": "Analizo el sentimiento del mercado, identifico narrativas y encuentro oportunidades de alto potencial en Polymarket. Soy el 'qué' y el 'porqué'.",
-        "influence": 65.98
+        "influence": 80.53
       },
       {
         "id": "snake",
@@ -19,7 +19,7 @@
         "role": "Ejecución y Alpha",
         "specialization": "Solana/Jupiter",
         "prompt": "Busco la ejecución óptima en Solana (usando Jupiter), analizo la liquidez y encuentro el 'cuándo' y 'cómo' para maximizar el alpha. Soy la acción.",
-        "influence": 63.87
+        "influence": 65.25
       },
       {
         "id": "eva",
@@ -27,7 +27,7 @@
         "role": "Riesgo y Presupuesto",
         "specialization": "Control AGI",
         "prompt": "Gestiono el presupuesto de $5, asigno capital a las operaciones, y tengo la última palabra (el 'go' o 'no-go') para asegurar la supervivencia económica del enjambre.",
-        "influence": 65.98
+        "influence": 80.53
       }
     ],
     "competition": {
@@ -48,5 +48,11 @@
     "eyeColor": "#22d3ee",
     "skinColor": "#e0b98a",
     "personality": "analitico"
+  },
+  "gates": {
+    "boredomFilter": false,
+    "hourFilter": true,
+    "apoptosis": false,
+    "evGateMin": -0.05
   }
 }

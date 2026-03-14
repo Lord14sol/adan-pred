@@ -726,7 +726,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
   <div class="tick"><span class="tick-sym">BTC</span><span class="tick-p">--</span></div>
   <div class="tick"><span class="tick-sym">ETH</span><span class="tick-p">--</span></div>
   <div class="tick"><span class="tick-sym">SOL</span><span class="tick-p">--</span></div>
-  <div class="tick"><span class="tick-sym">BNB</span><span class="tick-p">--</span></div>
+  <div class="tick"><span class="tick-sym">XRP</span><span class="tick-p">--</span></div>
   <div class="tick" style="margin-left:auto;color:var(--grey)" id="fg-tick">F&G: --</div>
 </div>
 
@@ -926,6 +926,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
           <span><span style="display:inline-block;width:8px;height:8px;background:#00ff88;margin-right:3px;animation:pulse 1s infinite"></span>Trade Win</span>
           <span><span style="display:inline-block;width:8px;height:8px;background:#f43f5e;margin-right:3px;animation:pulse 1s infinite"></span>Trade Loss</span>
         </div>
+      </div>
+
+      <!-- ADAN Voice: Messages to Lord -->
+      <div class="card" id="adan-voice-card">
+        <div class="card-title">💬 ADAN VOICE · Messages to Lord</div>
+        <div id="adan-voice-wrap" style="max-height:180px;overflow-y:auto;font-family:var(--mono);font-size:12px"></div>
       </div>
 
       <!-- Brain Log: Decisions + Reasoning -->
@@ -1333,7 +1339,7 @@ function applyAvatar(idx) {
       window._renderInElement(\'av-sprite-wrap\', window._lastNFData, brainType, 12);
     }
   } else {
-    wrap.innerHTML = \`<svg id="av-sprite" class="av-sprite" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 94" width="84" height="141" shape-rendering="crispEdges">\\\${p.svg}</svg>\`;
+    wrap.innerHTML = \`<svg id="av-sprite" class="av-sprite" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 94" width="84" height="141" shape-rendering="crispEdges">\${p.svg}</svg>\`;
   }
 
   const lbl = document.getElementById('av-style-name');
@@ -1880,13 +1886,14 @@ async function refresh() {
     let activeStake = 0;
     _topOpen.forEach(function(p){ activeStake += parseFloat(p.stake || 0); });
     
-    // Fund = total vault (cash + active bets)
-    const totalVault = (pnl.fund || 0) + activeStake;
-    document.getElementById('top-fund').textContent = '\\$' + totalVault.toFixed(2);
+    // Vault = cash available (fund goes DOWN when opening positions)
+    document.getElementById('top-fund').textContent = '\\$' + (pnl.fund || 0).toFixed(2);
 
     const netEl = document.getElementById('top-net');
-    netEl.textContent = (pnl.net >= 0 ? '+' : '') + '\\$' + (pnl.net || 0).toFixed(2);
-    netEl.style.color = pnl.net >= 0 ? 'var(--green)' : 'var(--red)';
+    // Net PnL = profit above initial 10K
+    const netPnl = (pnl.fund || 10000) - 10000;
+    netEl.textContent = (netPnl >= 0 ? '+' : '') + '\\$' + netPnl.toFixed(2);
+    netEl.style.color = netPnl >= 0 ? 'var(--green)' : 'var(--red)';
     
     if (activeEl) {
       activeEl.textContent = _topCount > 0 ? _topCount + ' (\\$' + activeStake.toFixed(0) + ')' : '0';
@@ -1899,7 +1906,7 @@ async function refresh() {
 
     // Ticker
     const prices = st?.prices || {};
-    const tickItems = [['BTC', 'BTCUSDT'], ['ETH', 'ETHUSDT'], ['SOL', 'SOLUSDT'], ['BNB', 'BNBUSDT']];
+    const tickItems = [['BTC', 'BTCUSDT'], ['ETH', 'ETHUSDT'], ['SOL', 'SOLUSDT'], ['XRP', 'XRPUSDT']];
     document.getElementById('ticker').innerHTML = tickItems.map(([sym, key]) => {
       const p = prices[key];
       if (!p) return \`<div class="tick"><span class="tick-sym">\${sym}</span><span class="tick-p" style="color:var(--grey)">--</span></div>\`;
@@ -1913,7 +1920,7 @@ async function refresh() {
     document.getElementById('xp-fill').style.width=xp.pct+'%';
     document.getElementById('xp-pct').textContent=xp.pct+'%';
     document.getElementById('xp-exact').textContent=xp.curTotal+' / '+xp.nxtTotal+' EXP';
-    document.getElementById('treasury-box').innerHTML=\`<div style="color:var(--purple);font-size:12px;font-weight:700">\$\${(pnl.treasury||0).toFixed(2)}</div><div style="font-size:9px;color:var(--grey)">TREASURY</div>\`;
+    document.getElementById('treasury-box').innerHTML=\`<div style="color:var(--purple);font-size:12px;font-weight:700">$500.00</div><div style="font-size:9px;color:var(--grey)">TREASURY (fixed)</div>\`;
 
     // Fund ring
     const fundPct=Math.min(1,(pnl.fund||0)/10000);
@@ -1961,7 +1968,7 @@ async function refresh() {
     }).join('');
 
     // Prices
-    const priceSyms=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT']];
+    const priceSyms=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['XRP','XRPUSDT']];
     document.getElementById('price-grid').innerHTML=priceSyms.map(([sym,key])=>{
       const p=prices[key];
       if(!p)return \`<div class="price-card"><div class="sym">\${sym}</div><div class="price" style="color:var(--grey)">No data</div></div>\`;
@@ -2173,8 +2180,10 @@ async function refresh() {
     updateAdanWorld(d.children || [], d.config || {});
 
     updateNeuralFlow(d);
+    updateAdanVoice(d);
     updateDecisionsLog(d);
     updateHourHeatmap(d);
+    updateDynastyPanel(d);
 
   }catch(e){
     console.error('[refresh crash]',e);
@@ -2293,6 +2302,38 @@ function updateHourHeatmap(d) {
     const label = wr===null ? h : (wr*100).toFixed(0) + '%';
     return \`<div class="hour-cell" style="background:\${bg};color:\${fc}" title="Hour \${h} UTC: \${s.wins}W \${s.losses}L">\${label}</div>\`;
   }).join('');
+}
+
+// ── ADAN Voice Messages ─────────────────────────────────────────────────────
+function updateAdanVoice(d) {
+  const wrap = document.getElementById('adan-voice-wrap');
+  if (!wrap) return;
+  const msgs = d.adanMessages || [];
+  if (msgs.length === 0) {
+    wrap.innerHTML = '<div style="color:var(--dim);font-size:11px;padding:8px">ADAN has no messages yet. Messages appear after milestones, warnings, or dream mode.</div>';
+    return;
+  }
+  const emojis = { request: '📨', warning: '⚠️', insight: '💡', milestone: '🏆', fear: '😰' };
+  const colors = { request: 'var(--cyan)', warning: 'var(--yellow)', insight: 'var(--green)', milestone: 'var(--purple)', fear: 'var(--red)' };
+  wrap.innerHTML = msgs.slice(-10).reverse().map(function(m) {
+    const emoji = emojis[m.type] || '💬';
+    const color = colors[m.type] || 'var(--text)';
+    const time = new Date(m.ts).toLocaleTimeString();
+    return '<div style="padding:4px 0;border-bottom:1px dashed var(--border2)">' +
+      '<span style="color:var(--dim);font-size:9px">' + time + '</span> ' +
+      emoji + ' <span style="color:' + color + ';font-weight:600;font-size:10px;text-transform:uppercase">' + m.type + '</span> ' +
+      '<div style="color:var(--text);font-size:11px;margin-top:2px">' + (m.message || '').slice(0, 200) + '</div></div>';
+  }).join('');
+
+  // Self-opt params display
+  if (d.selfOptParams) {
+    const p = d.selfOptParams;
+    wrap.innerHTML += '<div style="margin-top:6px;padding:6px;background:rgba(90,26,138,0.1);border:1px solid var(--purple);font-size:10px">' +
+      '<span style="color:var(--purple);font-weight:700">SELF-OPT v' + (p.version||0) + '</span> ' +
+      'conf=' + p.confGate + '% edge=' + (p.minEdge*100).toFixed(1) + '% hourThr=' + (p.hourThr*100).toFixed(0) + '% ' +
+      '<span style="color:var(--green)">simWR=' + (p.simWR*100).toFixed(1) + '%</span> on ' + p.simTrades + ' trades' +
+      '</div>';
+  }
 }
 
 // ── Decisions Log ─────────────────────────────────────────────────────────────
@@ -2627,12 +2668,13 @@ function updateDynastyPanel(d) {
   
   const pColors = { apple: 'var(--yellow)', snake: 'var(--green)', eva: 'var(--red)', atlas: 'var(--purple)' };
   const pIcons = { apple: '🍎 APPLE', snake: '🐍 SNAKE', eva: '👑 EVA', atlas: '👁️ ATLAS' };
+  const pAssets = { atlas: 'BTC Squad', eva: 'ETH Squad', snake: 'SOL Squad', apple: 'XRP Squad' };
 
   parents.forEach((p, i) => {
     // Pulse rule: Apple pulses if scanning news. Snake pulses if scanning orderbook.
     const isScanning = d.state?.thought?.toLowerCase().includes(p.id);
     newNodes.push({
-      id: p.id, group: 1, label: pIcons[p.id], sub: p.role, color: pColors[p.id] || 'var(--grey)', edgeVolume: 3, pulseColor: isScanning ? pColors[p.id] : null
+      id: p.id, group: 1, label: pIcons[p.id], sub: pAssets[p.id] || p.role, color: pColors[p.id] || 'var(--grey)', edgeVolume: 3, pulseColor: isScanning ? pColors[p.id] : null
     });
     newLinks.push({ source: p.id, target: 'ADAN', value: 3, isGreen: false, edgeVolume: 3 });
   });
@@ -2669,10 +2711,11 @@ function updateDynastyPanel(d) {
       edgeVolume: Math.min(6, 1 + (xp / 20))
     });
     
-    // Link to specific parent or ADAN
-    const pStr = (c.faction || c.spec).toLowerCase();
-    const parent = parents.find(p => pStr.startsWith(p.id.charAt(0)));
-    const parentId = parent ? parent.id : 'ADAN';
+    // Link to parent by asset: BTC→atlas, ETH→eva, SOL→snake, XRP→apple
+    const assetMap = { btc: 'atlas', eth: 'eva', sol: 'snake', xrp: 'apple' };
+    const specLow = (c.spec || '').toLowerCase();
+    const asset = specLow.split('-')[0];
+    const parentId = assetMap[asset] || (c.faction ? c.faction.toLowerCase() : 'ADAN');
     
     // Green line if WR >= 50% and alive
     const isGreen = !isDead && wr >= 50;
@@ -3599,6 +3642,59 @@ setInterval(stepAdanWorld, 200);
         }
       } catch { }
 
+      // ADAN Voice messages
+      let adanMessages = [];
+      try {
+        const msgPath = path.join(DIR, 'lord_messages.json');
+        if (fs.existsSync(msgPath)) {
+          adanMessages = JSON.parse(fs.readFileSync(msgPath, 'utf8')).slice(-20);
+        }
+      } catch {}
+
+      // ADAN Journal latest entry
+      let journalPreview = '';
+      try {
+        const jPath = path.join(DIR, 'journal.md');
+        if (fs.existsSync(jPath)) {
+          const lines = fs.readFileSync(jPath, 'utf8').split('\n');
+          journalPreview = lines.slice(-30).join('\n');
+        }
+      } catch {}
+
+      // Self-optimizer params
+      let selfOptParams = null;
+      try {
+        const optPath = path.join(DIR, 'self_optimized_params.json');
+        if (fs.existsSync(optPath)) selfOptParams = JSON.parse(fs.readFileSync(optPath, 'utf8'));
+      } catch {}
+
+      // ── ML Intelligence Layer data ──
+      let mlData = null;
+      try {
+        const mlModelPath = path.join(DIR, 'ml_model.json');
+        const wfPath = path.join(DIR, 'walk_forward_log.json');
+        const ensemblePath = path.join(DIR, 'ensemble_weights.json');
+        const expPath = path.join(DIR, 'experiments.json');
+        const reqPath = path.join(DIR, 'tracked_requests.json');
+        mlData = {
+          model: fs.existsSync(mlModelPath) ? (() => { const m = JSON.parse(fs.readFileSync(mlModelPath, 'utf8')); return { trained: m.trained, trainSamples: m.trainSamples, trainWR: m.trainWR, oosWR: m.oosWR, onlineUpdates: m.onlineUpdates, trainedAt: m.trainedAt }; })() : null,
+          walkForward: fs.existsSync(wfPath) ? (() => { const w = JSON.parse(fs.readFileSync(wfPath, 'utf8')); return { overallOOSWR: w.overallOOSWR, folds: w.folds, modelReady: w.modelReady, featureImportance: (w.featureImportance || []).slice(0, 5) }; })() : null,
+          ensemble: fs.existsSync(ensemblePath) ? JSON.parse(fs.readFileSync(ensemblePath, 'utf8')) : null,
+          experiments: fs.existsSync(expPath) ? (() => { const e = JSON.parse(fs.readFileSync(expPath, 'utf8')); return { active: (e.active || []).length, proposed: (e.proposed || []).length, completed: (e.completed || []).length, totalRun: e.totalRun || 0 }; })() : null,
+          requests: fs.existsSync(reqPath) ? (() => { const r = JSON.parse(fs.readFileSync(reqPath, 'utf8')); return { pending: (r.requests || []).filter(x => x.status === 'pending').length, urgent: (r.requests || []).filter(x => x.status === 'pending' && x.urgency >= 3).length, total: r.totalSent || 0 }; })() : null,
+        };
+      } catch {}
+
+      // ── WebSocket status ──
+      let wsStatus = null;
+      try {
+        const whalePath = path.join(DIR, 'whale_flow.jsonl');
+        if (fs.existsSync(whalePath)) {
+          const lines = fs.readFileSync(whalePath, 'utf8').trim().split('\n').filter(Boolean);
+          wsStatus = { whaleEvents: lines.length, lastWhale: lines.length > 0 ? JSON.parse(lines[lines.length - 1]) : null };
+        }
+      } catch {}
+
       res.end(JSON.stringify({
         ts: new Date().toISOString(),
         pnl, calib, positions: pos,
@@ -3614,7 +3710,12 @@ setInterval(stepAdanWorld, 200);
         evolution: evolutionData,
         dynastyShadows,
         soulRules: soulRulesLite,
-        config
+        config,
+        adanMessages,
+        journalPreview,
+        selfOptParams,
+        ml: mlData,
+        ws: wsStatus,
       }));
     } else if (req.url === '/api/training-metrics') {
       // ── Training Metrics API ───────────────────────────────────────────

@@ -94,6 +94,10 @@ export async function routeLLM({ prompt, systemPrompt, userPrompt, weight = 'Hea
 
     const isPaper = process.env.ADAN_MODE !== 'LIVE';
     if (isPaper) {
+        // v6.1: Heavy = Gemini Flash for trade decisions (even in paper mode)
+        // This uses ~5-10 of the 18 daily Gemini calls for actual trade brain.
+        // Children/scanning stay on Gemma (Light weight).
+        if (weight === 'Heavy') return callGemini(finalPrompt, `paper_${reason}`);
         if (weight === 'Dream') return callGemini(finalPrompt, 'dream_mode', { maxTokens: 2048, temperature: 0.3 });
         return callGemma(finalPrompt);
     }

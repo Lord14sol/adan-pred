@@ -164,8 +164,8 @@ class CrashMetrics {
         let totalExposure = 0;
         for (const pos of openPositions) {
             const stake = pos.stake || 100;
-            const isCryptoUp = (pos.side === 'YES' && (pos.asset || '').match(/btc|eth|sol|bnb/i)) ||
-                (pos.side === 'NO' && !(pos.asset || '').match(/btc|eth|sol|bnb/i));
+            const isCryptoUp = (pos.side === 'YES' && (pos.asset || '').match(/btc|eth|sol|xrp/i)) ||
+                (pos.side === 'NO' && !(pos.asset || '').match(/btc|eth|sol|xrp/i));
 
             if (isCryptoUp) {
                 // Long crypto = loses on crash

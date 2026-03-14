@@ -23,7 +23,7 @@ const MIN_EDGE = 0.02;  // TRAINING: 2% edge — toma casi todo para aprender
 const PAPER_BET_SIZE = 100;   // $100 por bet = 1% del fondo $10k
 
 // Symbols to track on Binance
-const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'BNBUSDT'];
+const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT'];
 
 // ── Default Strategy ────────────────────────────────────────────────────────
 const DEFAULT_STRATEGY = {
@@ -41,7 +41,7 @@ const TREE_RULES = {
   // ADAN spawn rules:
   //   LVL 3 → primer hijo (1 máximo)
   //   LVL 4 → hasta 6 hijos
-  maxChildrenGen1: 12,  // max hijos directos — full coverage BTC/ETH/SOL/BNB × 5m/15m/1hr
+  maxChildrenGen1: 12,  // max hijos directos — full coverage BTC/ETH/SOL/XRP × 5m/15m/1hr
   maxChildrenAtLvl3: 1, // al LVL 3 solo puede tener 1 hijo
   // Nietos (Gen2 → Gen3): cada hijo puede tener hasta 2 nietos
   maxChildrenGen2: 2,   // max nietos por hijo (hijo necesita expChild >= 100)
@@ -129,17 +129,26 @@ function loadDynWeights() {
 }
 function saveStrategy(s) { fs.writeFileSync(STRATEGY_PATH, JSON.stringify(s, null, 2)); }
 
+// Atomic write: write to tmp then rename (prevents corruption from concurrent writes)
+function atomicWrite(filePath, data) {
+  const tmp = filePath + '.tmp.' + process.pid;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, filePath);
+}
+
 function loadPnL() {
   const def = { trades: 0, wins: 0, losses: 0, net: 0, exp: 0, fund: 10000, treasury: 0, children: [], generation: 1, streak: 0, hourStats: {} };
-  return fs.existsSync(PNL_PATH) ? { ...def, ...JSON.parse(fs.readFileSync(PNL_PATH, 'utf8')) } : def;
+  try { return fs.existsSync(PNL_PATH) ? { ...def, ...JSON.parse(fs.readFileSync(PNL_PATH, 'utf8')) } : def; }
+  catch { return def; }
 }
-function savePnL(p) { fs.writeFileSync(PNL_PATH, JSON.stringify(p, null, 2)); }
+function savePnL(p) { atomicWrite(PNL_PATH, p); }
 
 function loadPositions() {
   const def = { open: [], closed: [] };
-  return fs.existsSync(POSITIONS_PATH) ? { ...def, ...JSON.parse(fs.readFileSync(POSITIONS_PATH, 'utf8')) } : def;
+  try { return fs.existsSync(POSITIONS_PATH) ? { ...def, ...JSON.parse(fs.readFileSync(POSITIONS_PATH, 'utf8')) } : def; }
+  catch { return def; }
 }
-function savePositions(p) { fs.writeFileSync(POSITIONS_PATH, JSON.stringify(p, null, 2)); }
+function savePositions(p) { atomicWrite(POSITIONS_PATH, p); }
 
 // ── Calibration ─────────────────────────────────────────────────────────────
 function loadCalibration() {

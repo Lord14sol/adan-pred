@@ -17,7 +17,7 @@ class RegimeDetector {
             btc: [],
             eth: [],
             sol: [],
-            bnb: []
+            xrp: []
         };
         this.maxHistory = 60;
 
