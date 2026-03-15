@@ -957,6 +957,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
   </div>
 </div>
 
+<!-- v8.3 Intelligence Suite Panel -->
+  <div style="width: 100%; max-width: 1800px; padding: 0 16px 10px 16px; margin: 0 auto; box-sizing: border-box;">
+    <div class="card" style="margin: 0;">
+      <div class="card-title">🧬 INTELLIGENCE SUITE v8.3 · 22 Scientific Concepts</div>
+      <div id="intel-suite-wrap" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;font-family:var(--mono);font-size:11px;"></div>
+    </div>
+  </div>
+
 <!-- BOTTOM ROW: History (Full Width Native) -->
   <div style="width: 100%; max-width: 1800px; padding: 0 16px 20px 16px; margin: 0 auto; box-sizing: border-box;">
     <!-- History / Ghosts Toggle Panel -->
@@ -2181,6 +2189,7 @@ async function refresh() {
 
     updateNeuralFlow(d);
     updateAdanVoice(d);
+    updateIntelSuite(d);
     updateDecisionsLog(d);
     updateHourHeatmap(d);
     updateDynastyPanel(d);
@@ -2334,6 +2343,129 @@ function updateAdanVoice(d) {
       '<span style="color:var(--green)">simWR=' + (p.simWR*100).toFixed(1) + '%</span> on ' + p.simTrades + ' trades' +
       '</div>';
   }
+}
+
+// ── v8.3 Intelligence Suite Panel ─────────────────────────────────────────────
+function updateIntelSuite(d) {
+  const wrap = document.getElementById('intel-suite-wrap');
+  if (!wrap) return;
+  const i = d.intel || {};
+  const card = (title, icon, lines, color) => {
+    return '<div style="background:var(--bg4);border:1px solid var(--border2);padding:8px;border-radius:2px">' +
+      '<div style="font-weight:700;color:' + color + ';font-size:10px;margin-bottom:4px;text-transform:uppercase">' + icon + ' ' + title + '</div>' +
+      lines.map(l => '<div style="color:var(--text2);font-size:10px">' + l + '</div>').join('') +
+      '</div>';
+  };
+  const cards = [];
+
+  // Shadow
+  if (i.shadow) {
+    const s = i.shadow;
+    const col = s.hasBias ? 'var(--red)' : 'var(--green)';
+    cards.push(card('ADAN-SHADOW', '👤', [
+      'Trades: ' + s.total,
+      'Shadow WR: ' + s.shadowWR,
+      s.hasBias ? '<span style="color:var(--red)">⚠ BIAS DETECTED</span>' : '<span style="color:var(--green)">✓ No bias</span>'
+    ], col));
+  } else {
+    cards.push(card('ADAN-SHADOW', '👤', ['Waiting for trades...'], 'var(--dim)'));
+  }
+
+  // Meta-Labeler
+  if (i.metaLabeler) {
+    const m = i.metaLabeler;
+    const vetoPrecision = m.vetoes > 0 ? ((m.vetoCorrect / m.vetoes) * 100).toFixed(0) + '%' : '—';
+    const allowPrecision = m.allows > 0 ? ((m.allowCorrect / m.allows) * 100).toFixed(0) + '%' : '—';
+    cards.push(card('META-LABELER', '🏷️', [
+      m.trained ? '<span style="color:var(--green)">TRAINED</span>' : 'Training... ' + m.samples + '/200',
+      'Vetoes: ' + m.vetoes + ' (prec: ' + vetoPrecision + ')',
+      'Allows: ' + m.allows + ' (prec: ' + allowPrecision + ')'
+    ], m.trained ? 'var(--cyan)' : 'var(--yellow)'));
+  } else {
+    cards.push(card('META-LABELER', '🏷️', ['Collecting samples...'], 'var(--dim)'));
+  }
+
+  // CUSUM
+  if (i.cusum) {
+    const c = i.cusum;
+    cards.push(card('CUSUM FILTER', '📉', [
+      'Events: ' + c.totalEvents,
+      'Updates: ' + c.totalUpdates,
+      c.inTransition ? '<span style="color:var(--red)">⚠ BREAK ACTIVE</span>' : '<span style="color:var(--green)">✓ Stable</span>'
+    ], c.inTransition ? 'var(--red)' : 'var(--green)'));
+  } else {
+    cards.push(card('CUSUM FILTER', '📉', ['Warming up...'], 'var(--dim)'));
+  }
+
+  // VPIN
+  if (i.vpin) {
+    const v = i.vpin;
+    cards.push(card('VPIN', '🔬', [
+      'Trades: ' + v.totalTrades,
+      'Buckets: ' + v.buckets + '/50',
+      v.ready ? (v.toxic ? '<span style="color:var(--red)">⚠ TOXIC FLOW</span>' : '<span style="color:var(--green)">✓ Normal</span>') : 'Calibrating...'
+    ], v.toxic ? 'var(--red)' : 'var(--cyan)'));
+  } else {
+    cards.push(card('VPIN', '🔬', ['Warming up...'], 'var(--dim)'));
+  }
+
+  // Triple Barrier
+  if (i.tripleBarrier) {
+    const t = i.tripleBarrier;
+    cards.push(card('TRIPLE BARRIER', '🎯', [
+      'Total: ' + t.total,
+      t.total > 0 ? 'TP: ' + t.tp + ' SL: ' + t.sl + ' TIME: ' + t.time : 'Collecting labels...',
+      t.total > 0 ? 'TP%: ' + ((t.tp / t.total) * 100).toFixed(0) + '% SL%: ' + ((t.sl / t.total) * 100).toFixed(0) + '%' : ''
+    ], t.total > 0 ? 'var(--cyan)' : 'var(--dim)'));
+  } else {
+    cards.push(card('TRIPLE BARRIER', '🎯', ['No data yet'], 'var(--dim)'));
+  }
+
+  // Walk-Forward CV
+  if (i.walkForwardCV) {
+    const w = i.walkForwardCV;
+    cards.push(card('WALK-FORWARD CV', '📊', [
+      'Samples: ' + w.samples,
+      'Validations: ' + w.validations,
+      w.testAcc !== '—' ? 'Test Acc: ' + w.testAcc : 'Not validated yet',
+      w.overfit === true ? '<span style="color:var(--red)">⚠ OVERFIT</span>' : w.reliable === true ? '<span style="color:var(--green)">✓ Reliable</span>' : ''
+    ], w.overfit ? 'var(--red)' : w.reliable ? 'var(--green)' : 'var(--dim)'));
+  } else {
+    cards.push(card('WALK-FORWARD CV', '📊', ['Collecting samples...'], 'var(--dim)'));
+  }
+
+  // Resolution Oracle
+  if (i.resolutionOracle) {
+    const r = i.resolutionOracle;
+    cards.push(card('RES ORACLE', '🔮', [
+      'Scored: ' + r.scored,
+      'Avoided: ' + r.avoided,
+      Object.entries(r.history || {}).map(([k,v]) => k + ': ' + ((v.clean/v.total)*100).toFixed(0) + '% clean').join(', ') || 'No history'
+    ], r.scored > 0 ? 'var(--cyan)' : 'var(--dim)'));
+  } else {
+    cards.push(card('RES ORACLE', '🔮', ['No data yet'], 'var(--dim)'));
+  }
+
+  // MoE Dynasty
+  if (i.moeDynasty) {
+    const m = i.moeDynasty;
+    cards.push(card('MoE DYNASTY', '👑', [
+      'Experts: ' + m.experts,
+      m.topExpert ? 'Top: ' + m.topExpert.name + ' (w=' + m.topExpert.weight + ')' : '—'
+    ], 'var(--purple)'));
+  }
+
+  // Online Learner
+  if (i.onlineLearner) {
+    const o = i.onlineLearner;
+    cards.push(card('ONLINE LEARNER', '⚡', [
+      o.trained ? '<span style="color:var(--green)">ACTIVE</span>' : 'Training...',
+      'Updates: ' + o.updates,
+      'WR: ' + o.wr
+    ], o.trained ? 'var(--green)' : 'var(--dim)'));
+  }
+
+  wrap.innerHTML = cards.join('');
 }
 
 // ── Decisions Log ─────────────────────────────────────────────────────────────
@@ -3685,6 +3817,32 @@ setInterval(stepAdanWorld, 200);
         };
       } catch {}
 
+      // ── v8.3 Intelligence Suite ──
+      let v83Intel = {};
+      try {
+        const readJson = (f) => { try { return fs.existsSync(path.join(DIR, f)) ? JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8')) : null; } catch { return null; } };
+        const shadow = readJson('shadow_stats.json');
+        const meta = readJson('meta_labeler.json');
+        const cusum = readJson('cusum_state.json');
+        const vpin = readJson('vpin_state.json');
+        const tb = readJson('triple_barrier.json');
+        const wfcv = readJson('walkforward_cv.json');
+        const resOracle = readJson('resolution_oracle.json');
+        const moe = readJson('moe_weights.json');
+        const online = readJson('online_model.json');
+        v83Intel = {
+          shadow: shadow ? { total: shadow.stats?.total || 0, shadowWR: shadow.stats?.total > 0 ? ((shadow.stats.shadowWins / shadow.stats.total) * 100).toFixed(1) + '%' : '—', hasBias: shadow.stats?.total > 30 && (shadow.stats.shadowWins / shadow.stats.total) > 0.55 } : null,
+          metaLabeler: meta ? { trained: meta.trained, samples: meta.samples?.length || 0, vetoes: meta.vetoes || 0, vetoCorrect: meta.vetoCorrect || 0, allows: meta.allows || 0, allowCorrect: meta.allowCorrect || 0 } : null,
+          cusum: cusum ? { totalEvents: cusum.totalEvents || 0, totalUpdates: cusum.totalUpdates || 0, inTransition: (Date.now() - (cusum.lastEventTs || 0)) < 60000 } : null,
+          vpin: vpin ? { vpin: '—', totalTrades: vpin.totalTrades || 0, toxic: false, buckets: vpin.buckets?.length || 0, ready: (vpin.buckets?.length || 0) >= 50 } : null,
+          tripleBarrier: tb ? { tp: tb.stats?.tp || 0, sl: tb.stats?.sl || 0, time: tb.stats?.time || 0, total: (tb.stats?.tp || 0) + (tb.stats?.sl || 0) + (tb.stats?.time || 0) } : null,
+          walkForwardCV: wfcv ? { samples: wfcv.samples?.length || 0, validations: wfcv.validationHistory?.length || 0, reliable: wfcv.lastValidation?.isReliable ?? null, overfit: wfcv.lastValidation?.isOverfit ?? null, testAcc: wfcv.lastValidation ? (wfcv.lastValidation.avgTestAcc * 100).toFixed(1) + '%' : '—' } : null,
+          resolutionOracle: resOracle ? { scored: resOracle.totalScored || 0, avoided: resOracle.totalAvoided || 0, history: resOracle.history || {} } : null,
+          moeDynasty: moe ? { experts: Object.keys(moe.gates || {}).length, topExpert: (() => { const g = moe.gates || {}; const sorted = Object.entries(g).sort((a,b) => (b[1]?.weight||0) - (a[1]?.weight||0)); return sorted[0] ? { name: sorted[0][0], weight: (sorted[0][1]?.weight||0).toFixed(3) } : null; })() } : null,
+          onlineLearner: online ? { trained: online.trained, updates: online.totalUpdates || 0, wr: online.onlineWR ? (online.onlineWR * 100).toFixed(1) + '%' : '—' } : null,
+        };
+      } catch {}
+
       // ── WebSocket status ──
       let wsStatus = null;
       try {
@@ -3716,6 +3874,7 @@ setInterval(stepAdanWorld, 200);
         selfOptParams,
         ml: mlData,
         ws: wsStatus,
+        intel: v83Intel,
       }));
     } else if (req.url === '/api/training-metrics') {
       // ── Training Metrics API ───────────────────────────────────────────
