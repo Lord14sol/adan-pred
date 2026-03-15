@@ -87,6 +87,7 @@ import { copulaRisk } from './src/core/copula_risk.js';
 import { smartMoney } from './src/core/smart_money.js';
 import { orderBook } from './src/core/order_book.js';
 import { pinTracker } from './src/core/pin_score.js';
+import { futuresIntel } from './src/api/binance_futures.js';
 import { featureTracker } from './src/core/feature_attribution.js';
 import { oracle } from './src/core/oracle_front_run.js';
 import { childLearning } from './src/core/child_learning.js';
@@ -399,12 +400,13 @@ async function fetchAllPrices() {
   const result = { _meta: { fearGreed, fundingRates, cryptoNews } };
 
   await Promise.all(SYMBOLS.map(async sym => {
-    const [klines1m, klines5m, klines15m, klines1h, orderBook] = await Promise.all([
+    const [klines1m, klines5m, klines15m, klines1h, orderBook, futuresData] = await Promise.all([
       fetchBinanceKlines(sym, '1m', 30),
       fetchBinanceKlines(sym, '5m', 30),
       fetchBinanceKlines(sym, '15m', 20),
       fetchBinanceKlines(sym, '1h', 20),   // ← macro trend (20 hourly candles for RSI1h)
-      fetchOrderBookWalls(sym)
+      fetchOrderBookWalls(sym),
+      futuresIntel.fetchAll(sym)
     ]);
     if (!klines1m.length) return;
     const closes1m = klines1m.map(k => k.close);
@@ -424,6 +426,12 @@ async function fetchAllPrices() {
 
     // Concept #14: PIN Score — Order Flow Toxicity
     const pinScore = orderBook ? pinTracker.calculateFromOrderBook(sym, orderBook._rawBids, orderBook._rawAsks) : { pin_score: 0, signal: 'NONE' };
+
+    // ── Futures Intelligence: enrich with price-dependent signals ──
+    const priceDelta5m = closes5m.length >= 2 ? ((closes5m[closes5m.length - 1] - closes5m[closes5m.length - 2]) / closes5m[closes5m.length - 2]) * 100 : 0;
+    if (futuresData) {
+      futuresIntel.enrichWithPrice(futuresData, price, priceDelta5m, funding?.rate || 0);
+    }
 
     // ── Update Regime Classifier + Wilmott EWMA (Ch 42/49) ──
     const assetName = sym.replace('USDT', '').toLowerCase();
@@ -467,6 +475,7 @@ async function fetchAllPrices() {
       regime: regimeInfo.regime,
       regimeMetrics: regimeInfo.metrics,
       kmeansRegime: kmeansResult,  // Concept #12D
+      futuresSignals: futuresData ? futuresIntel.getSignals(sym) : null, // Futures leading indicators
       klines5m,  // Needed for volume/price analysis in brain
       klines1h,  // Needed for macro candles in brain
       _rawBids: orderBook?._rawBids || [], // For depth analysis
@@ -1893,6 +1902,14 @@ function buildFeatureVector(priceData, extra = {}) {
     rsi_x_meanrev: rsiNorm * isMeanRev,
     trend5m_x_trending: trend5m * isTrending,
     volRatio_x_volatile: (volRatio - 1) * isVolatile,
+    // Futures intelligence features (leading indicators)
+    futuresOiDelta5m: priceData.futuresSignals?.oiDelta5m || 0,
+    futuresOiDelta15m: priceData.futuresSignals?.oiDelta15m || 0,
+    futuresTakerRatio: priceData.futuresSignals?.takerRatio || 1,
+    futuresTakerRoC: priceData.futuresSignals?.takerRoC || 0,
+    futuresLongShortRatio: priceData.futuresSignals?.longShortRatio || 1,
+    futuresCompositeNet: priceData.futuresSignals?.compositeNet || 0,
+    futuresLiqDistance: priceData.futuresSignals?.liqDistance || 0,
   };
 }
 
@@ -2563,6 +2580,7 @@ async function think(markets, prices, pnl, openPos, state) {
       coins: ['BTC', 'ETH', 'SOL'],
       oracleContext: oracle.getPromptContext(prices) + _getPolyWsContext(candidates) + _getStatModelContext(candidates),
       pinScoreCtx: pinTracker.getPromptContext(primaryCoin),
+      futuresCtx: futuresIntel.getPromptContext(primaryCoin),
       intelSummary,
       cascadeSignal,
       dynWeightsCtx,

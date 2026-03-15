@@ -898,7 +898,7 @@ class BrainTransitionManager {
 // Injects brain system prompt + all Golden Round Table data
 // ─────────────────────────────────────────────────────────────
 
-function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, dynWeightsCtx, beliefCtx, metaCalibCtx, episodicAccuracy, featureImportanceCtx, shapleyCtx, riskOfRuinCtx, markovianStateCtx, pinScoreCtx, skillsBlock, currentWinRate, kmeansRegimeCtx }) {
+function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, dynWeightsCtx, beliefCtx, metaCalibCtx, episodicAccuracy, featureImportanceCtx, shapleyCtx, riskOfRuinCtx, markovianStateCtx, pinScoreCtx, futuresCtx, skillsBlock, currentWinRate, kmeansRegimeCtx }) {
     const brain = BRAINS[brainName];
     if (!brain) throw new Error(`Unknown brain: ${brainName}`);
 
@@ -996,6 +996,14 @@ ${JSON.stringify(atlasData)}
 ${JSON.stringify(snakeAnalysis)}
 
 ${pinScoreCtx ? `━━━ PIN (Order Flow Toxicity) ━━━\n${pinScoreCtx}\nRULES: PIN>0.6 = STRONG informed trading detected — follow momentum direction. PIN>0.3 = moderate flow — confirm with technicals. PIN<0.3 = noise, ignore.` : ''}
+
+${futuresCtx ? `━━━ FUTURES INTELLIGENCE (Leading Indicators) ━━━
+${futuresCtx}
+RULES:
+- OI Delta + Price alignment = strongest 5min predictor
+- Taker ratio > 1.3 = price moves up in 1-5 min (LEADING)
+- Crowded longs (L/S > 2.0) = contrarian SHORT signal
+- Liquidation cluster within 1% = price MAGNET, high probability of reaching it` : ''}
 
 ━━━ DATA ━━━
 ${JSON.stringify({
@@ -1118,6 +1126,7 @@ async function runBrainCycle({
     riskOfRuinCtx,       // string — risk of ruin status
     markovianStateCtx,   // string — Markovian state vector (Concept #8D)
     pinScoreCtx,         // string — PIN Score order flow toxicity (Concept #14)
+    futuresCtx,          // string — Futures Intelligence leading indicators (OI, taker, L/S, liquidation)
     brainManager,        // BrainTransitionManager instance
     onStatus,            // optional callback(status)
     skillsBlock,         // string — active skills from Skill Tree
@@ -1192,6 +1201,7 @@ async function runBrainCycle({
         riskOfRuinCtx,
         markovianStateCtx,
         pinScoreCtx,
+        futuresCtx,
         skillsBlock,
         currentWinRate,
         kmeansRegimeCtx,
