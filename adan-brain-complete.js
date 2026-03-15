@@ -898,7 +898,7 @@ class BrainTransitionManager {
 // Injects brain system prompt + all Golden Round Table data
 // ─────────────────────────────────────────────────────────────
 
-function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, dynWeightsCtx, beliefCtx, metaCalibCtx, episodicAccuracy, featureImportanceCtx, shapleyCtx, riskOfRuinCtx, markovianStateCtx, pinScoreCtx, futuresCtx, shadowCtx, skillsBlock, currentWinRate, kmeansRegimeCtx }) {
+function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, dynWeightsCtx, beliefCtx, metaCalibCtx, episodicAccuracy, featureImportanceCtx, shapleyCtx, riskOfRuinCtx, markovianStateCtx, pinScoreCtx, futuresCtx, shadowCtx, skillsBlock, currentWinRate, kmeansRegimeCtx, cusumCtx, vpinCtx, tripleBarrierCtx, walkForwardCtx, resOracleCtx }) {
     const brain = BRAINS[brainName];
     if (!brain) throw new Error(`Unknown brain: ${brainName}`);
 
@@ -1008,6 +1008,12 @@ RULES:
 ${shadowCtx ? `━━━ SHADOW MONITOR (Bias Detection) ━━━
 ${shadowCtx}
 IMPORTANT: If Shadow WR > 55%, you have a systematic bias. Consider the opposite direction more seriously. If Shadow WR > 60%, strongly consider FLIPPING your direction.` : ''}
+
+${cusumCtx ? `━━━ CUSUM (Structural Breaks) ━━━\n${cusumCtx}\nRULES: If break active → regime changing, reduce confidence. Wait for stability before large bets.` : ''}
+${vpinCtx ? `━━━ VPIN (Flow Toxicity) ━━━\n${vpinCtx}\nRULES: VPIN>70% = TOXIC, reduce exposure. VPIN>50% = elevated caution. VPIN<30% = safe.` : ''}
+${tripleBarrierCtx ? `━━━ TRIPLE BARRIER (Trade Labels) ━━━\n${tripleBarrierCtx}` : ''}
+${walkForwardCtx ? `━━━ WALK-FORWARD CV (Model Validation) ━━━\n${walkForwardCtx}` : ''}
+${resOracleCtx ? `━━━ RESOLUTION ORACLE ━━━\n${resOracleCtx}` : ''}
 
 ━━━ DATA ━━━
 ${JSON.stringify({
@@ -1136,6 +1142,11 @@ async function runBrainCycle({
     onStatus,            // optional callback(status)
     skillsBlock,         // string — active skills from Skill Tree
     kmeansRegimeCtx,     // string — K-Means regime detector context (Concept #12D)
+    cusumCtx,            // string — CUSUM structural break detection (Concept #20D)
+    vpinCtx,             // string — VPIN flow toxicity (Concept #20F)
+    tripleBarrierCtx,    // string — Triple Barrier trade labels (Concept #20A)
+    walkForwardCtx,      // string — Purged Walk-Forward CV (Concept #20C)
+    resOracleCtx,        // string — Resolution Oracle filter (Concept #22)
 }) {
 
     // ── 1. Gather all Golden Round Table signals ───────────────
@@ -1211,6 +1222,11 @@ async function runBrainCycle({
         skillsBlock,
         currentWinRate,
         kmeansRegimeCtx,
+        cusumCtx,
+        vpinCtx,
+        tripleBarrierCtx,
+        walkForwardCtx,
+        resOracleCtx,
     });
 
     // ── 5. Call Hybrid Router ─────────────────────────────────

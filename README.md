@@ -1,36 +1,37 @@
-# ADAN-PRED v8.0: Scientific Trading Intelligence
-## 4-Layer ML Brain × 14 Scientific Concepts × MoE Dynasty × Autonomous Evolution
+# ADAN-PRED v8.3: Complete López de Prado Suite + Scientific Trading Intelligence
+## 4-Layer ML Brain × 22 Scientific Concepts × MoE Dynasty × Autonomous Evolution
 ---
 
 ## Executive Summary
-ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent on **Polymarket**. It combines a **32-feature logistic regression brain**, **4-voter ensemble system** (stat model + LLM + historical + online learner), **Platt-calibrated probabilities**, **Kelly-optimal sizing with 9 multipliers**, a **12-child MoE genetic swarm**, and **14 integrated scientific concepts** — all in pure JavaScript with zero external ML dependencies.
+ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent on **Polymarket**. It combines a **32-feature logistic regression brain**, **4-voter ensemble system** (stat model + LLM + historical + online learner), **Platt-calibrated probabilities**, **Kelly-optimal sizing with 13 multipliers**, a **12-child MoE genetic swarm**, **Meta-Labeling gate**, **ADAN-SHADOW adversarial bias detection**, **Futures Intelligence leading indicators**, and the complete **López de Prado AFML suite** (Triple Barrier, CUSUM, VPIN, Purged Walk-Forward, Resolution Oracle) — all in pure JavaScript with zero external ML dependencies.
 
-**Current Stats (v8.0 paper trading):** 1,647 trades | 864W/783L | 52.5% WR | +$12,099 net P&L | $22,099 fund | Peak $23,552 | Gen 94 | Brier: 0.136
+**Current Stats (v8.3 paper trading):** 1,668+ trades | 875W/793L | 52.5% WR | +$14,448 net P&L | $24,448 fund | Gen 94 | Brier: 0.141
 
 ---
 
-## v8.0: The Scientific Intelligence Upgrade
+## v8.3: Complete López de Prado AFML Suite
 
-### What Changed (v7.0 → v8.0)
+### What Changed (v8.0 → v8.3)
 
-| Layer | Before (v7.0) | After (v8.0) |
-|-------|---------------|--------------|
-| **Ensemble** | 3-voter (stat + LLM + hist) | 4-voter: + Online Learner (#16) with exponential decay |
-| **Children** | Simple majority vote | MoE Dynasty (#10): softmax gating, auto-specialization |
-| **Hour Filter** | Boolean skip (WR < threshold) | Bin Counting (#12C): continuous log-odds with Laplace smoothing |
-| **Regime Detection** | EWMA-only | + K-Means Clustering (#12D): 3 clusters from 5 features |
-| **Order Flow** | Basic imbalance | PIN Score (#14): order flow toxicity + momentum detection |
-| **Order Book** | Wall detection only | L2 Tensor (#8A): wall_score + imbalance_ratio + depth_score |
-| **Market Selection** | Quality filter only | UCB Explorer (#8C): UCB1 bandit + blacklisting |
-| **Risk Management** | 5 multipliers | 9 multipliers: + time_decay + kmeans + bin_count + markovian |
-| **State Tracking** | Streak counter | Markovian State (#8D): 5 state vars, 4 hard risk gates |
-| **Sentiment** | CryptoPanic titles | + VADER Sentiment (#3): compound scores, BLACK_SWAN detection |
-| **Feature Transform** | Raw values | Log Transform (#12A): Math.log1p() on volumes |
-| **LLM Output** | Regex parsing | Conformal Prediction (#17): JSON-first parser, norm01, anti-bias |
-| **Evolution** | DNA crossover only | Evolution Strategies (#2): 20-vector ES with Sharpe fitness |
-| **Feature Analysis** | Weight magnitude | Shapley Values (#7): Monte Carlo permutation importance |
-| **TTC Filter** | Hard 1h cutoff | Time-to-Close (#21): 5min/15min exemptions, graduated decay |
-| **Voice** | Streaks + milestones | + MoE, K-Means, PIN, Online Learner, ES, Shapley reports |
+| Layer | v8.0 | v8.3 |
+|-------|------|------|
+| **Risk Multipliers** | 9 | 13: + meta-labeler + CUSUM + VPIN + copula |
+| **Bet Gate** | Markovian + K-Means | + Meta-Labeling (#20E) + Resolution Oracle (#22) + CUSUM (#20D) |
+| **Bias Detection** | None | ADAN-SHADOW (#15): adversarial twin per asset/timeframe/hour |
+| **Leading Indicators** | Binance spot only | + Futures Intelligence: OI Delta, Taker Ratio, L/S Ratio, Liquidation Clusters |
+| **Trade Labeling** | Binary win/loss | Triple Barrier (#20A): TP/SL/Time labels with volatility-scaled barriers |
+| **ML Validation** | Walk-forward only | + Purged Walk-Forward CV (#20C): chronological splits, purge, embargo |
+| **Structural Breaks** | None | CUSUM Filter (#20D): two-sided accumulator with dynamic threshold |
+| **Flow Toxicity** | VPIN kill switch | + Volume VPIN (#20F): volume-bucket informed trading probability |
+| **Market Quality** | Filter + UCB | + Resolution Oracle (#22): clarity scoring, ambiguous market filter |
+
+### v8.0 → v8.1 → v8.2 → v8.3 Full Changelog
+| Version | Added |
+|---------|-------|
+| v8.0 | 14 scientific concepts, MoE Dynasty, 4-voter ensemble |
+| v8.1 | Futures Intelligence (OI Delta, Taker, L/S, Liquidation) |
+| v8.2 | Meta-Labeling (#20E), ADAN-SHADOW (#15) |
+| v8.3 | Triple Barrier (#20A), CUSUM (#20D), VPIN (#20F), Purged WF (#20C), Resolution Oracle (#22) |
 
 ---
 
@@ -58,10 +59,11 @@ ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent 
            └──────────────────────┬────────────────────────┘
                                   │
            ┌──────────────────────▼────────────────────────┐
-           │             RISK PIPELINE (9 gates)            │
+           │             RISK PIPELINE (13 gates)           │
            │  Kelly × session × metabolic × particle ×      │
            │  copula × wilmott × IV × timeDecay ×           │
-           │  kmeansRegime × binCountHour                   │
+           │  kmeansRegime × binCountHour × metaLabel ×     │
+           │  cusum × vpin                                   │
            └──────────────────────┬────────────────────────┘
                                   │
            ┌──────────────────────▼────────────────────────┐
@@ -75,7 +77,7 @@ ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent 
 
 ---
 
-## Scientific Concepts (14 Integrated)
+## Scientific Concepts (22 Integrated)
 
 ### Concept #2: Evolution Strategies (ES)
 **File:** `src/ml/evolution_strategies.js`
@@ -242,6 +244,89 @@ Graduated decay based on market closing time:
   - < 4h → ×0.85 + min 2% edge
   - > 24h → ×1.0
 
+### Concept #15: ADAN-SHADOW (Adversarial Twin)
+**File:** `src/core/adan_shadow.js`
+
+Takes the OPPOSITE bet on every ADAN trade. If Shadow wins > 55%, ADAN has a systematic bias:
+- Tracks per-asset, per-timeframe, per-hour, per-direction Shadow WR
+- `getBiasReport()`: identifies worst-performing dimensions
+- `shouldFlip(asset, timeframe)`: returns true when Shadow WR > 60%
+- Prompt warning injected when bias detected
+- Persists to `~/.adan-pred/shadow_stats.json`
+
+### Concept #20A: Triple Barrier Labeling (López de Prado)
+**File:** `src/ml/triple_barrier.js`
+
+Replaces binary win/loss with 3-barrier labels:
+- **Upper barrier** (TP): entry ± 2.0 × volatility
+- **Lower barrier** (SL): entry ± 2.0 × volatility
+- **Vertical barrier**: max 20 bars
+- Labels: `{1 = TP hit, 0 = timed out, -1 = SL hit}`
+- Tracks avg P&L per label type, optimal TP/SL ratio suggestion
+
+### Concept #20C: Purged Walk-Forward Cross-Validation (López de Prado)
+**File:** `src/ml/purged_walkforward.js`
+
+Proper ML validation preventing information leakage:
+- 5-fold chronological splits (not random)
+- 5-sample purge at train/test boundary
+- 3-sample embargo after each test fold
+- Overfitting detection: train/test accuracy ratio > 1.3x → flag
+- Auto-validates every 200 new samples with built-in logistic regression
+- Persists to `~/.adan-pred/walkforward_cv.json`
+
+### Concept #20D: CUSUM Filter (López de Prado)
+**File:** `src/ml/cusum_filter.js`
+
+Detects structural breaks in price series:
+- Two-sided CUSUM: tracks positive (S+) and negative (S-) cumulative sums
+- Dynamic threshold: 2 × rolling std of log returns (window 100)
+- `isInTransition()`: true if break detected in last 30 seconds
+- Stake reduction: ×0.6 during structural breaks (regime changing)
+- Persists to `~/.adan-pred/cusum_state.json`
+
+### Concept #20E: Meta-Labeling (López de Prado)
+**File:** `src/ml/meta_labeler.js`
+
+Second logistic regression that predicts P(primary model is correct):
+- 12 meta-features: primary_confidence, ensemble_agreement, edge_magnitude, etc.
+- L2-regularized, trains every 100 samples, activates after 200
+- Decisions: `ALLOW` (prob > 0.55), `REDUCE` (0.45-0.55, stake ×0.6), `VETO` (< 0.45)
+- Tracks veto precision (correctly blocked losers) and allow precision
+
+### Concept #20F: VPIN — Volume-Synchronized Probability of Informed Trading
+**File:** `src/ml/vpin.js`
+
+Estimates toxic flow using volume buckets (López de Prado):
+- Auto-calibrated bucket size from rolling volume average
+- 50 buckets for VPIN calculation
+- `VPIN = mean(|buyVol - sellVol| / bucketSize)` over last 50 buckets
+- VPIN > 0.7 = TOXIC → stake ×0.5 | VPIN > 0.5 = ELEVATED → stake ×0.8
+- Trend detection: RISING/FALLING/STABLE
+- Persists to `~/.adan-pred/vpin_state.json`
+
+### Concept #22: Resolution Oracle Filter
+**File:** `src/ml/resolution_oracle.js`
+
+Predicts whether a market will resolve cleanly:
+- Crypto price markets ("Up or Down", "above/below") → high clarity (0.8+)
+- Clear events with specific conditions → medium clarity (0.5-0.7)
+- Vague events → low clarity (0.2-0.4)
+- `TRADE` if clarity > 0.6, `AVOID` if < 0.4
+- Learns from historical resolution quality per market type
+- Persists to `~/.adan-pred/resolution_oracle.json`
+
+### Futures Intelligence (Leading Indicators)
+**File:** `src/api/binance_futures.js`
+
+4 modules from Binance Futures API (free, no API key):
+| Module | Signal | Leading? |
+|--------|--------|----------|
+| OI Delta | TREND_CONFIRMED, SHORT_BUILDUP, LONG_LIQUIDATION | 1-5 min |
+| Taker Ratio | AGGRESSIVE_BUYING/SELLING + momentum | 1-3 min |
+| Long/Short Ratio | CROWDED_LONGS/SHORTS (contrarian) | 5-15 min |
+| Liquidation Clusters | Price magnets at 10x/20x/50x/100x leverage | Event-based |
+
 ---
 
 ## ML Intelligence Layer
@@ -287,11 +372,12 @@ P_ensemble = normalize(P_stat^w1 × P_llm^w2 × P_hist^w3 × P_online^w4)
 | **HIST** | 15% | Bayesian base-rate (bin count + asset + soul) |
 | **ONLINE** | 5% | Online SGD learner (adaptive) |
 
-### 3. Kelly Sizer with 9 Multipliers
+### 3. Kelly Sizer with 13 Multipliers
 
 ```
 stake = baseKelly × human × session × metabolic × particle × copula ×
-        wilmott × IV × timeDecay × kmeansRegime × binCountHour
+        wilmott × IV × timeDecay × kmeansRegime × binCountHour ×
+        metaLabel × cusum × vpin
 ```
 
 ---
@@ -331,6 +417,12 @@ stake = baseKelly × human × session × metabolic × particle × copula ×
 | Markovian Gate | 3 open positions | Block new bets |
 | Markovian Gate | Drawdown > 20% | Dream Mode + full stop |
 | Markovian Gate | 3+ consecutive losses | Cap stake at $75 |
+| Meta-Labeling | P(correct) < 0.45 | VETO bet |
+| Meta-Labeling | P(correct) < 0.55 | Stake ×0.6 |
+| Resolution Oracle | Clarity < 0.4 | AVOID market |
+| CUSUM Filter | Structural break active | Stake ×0.6 |
+| VPIN Toxicity | VPIN > 0.7 | Stake ×0.5 |
+| VPIN Toxicity | VPIN > 0.5 | Stake ×0.8 |
 | K-Means Regime | EVENT detected | Veto ALL bets |
 | K-Means Regime | RANGING | Kelly ×0.5 |
 | Bin Count Hour | Log-odds < -1.0 | Skip toxic hour |
@@ -339,6 +431,7 @@ stake = baseKelly × human × session × metabolic × particle × copula ×
 | CrashMetrics | Correlation spike | Stake ×0.3 |
 | VaR Limit | 99% confidence | Block if > 20% fund |
 | Copula Risk | Portfolio correlation | Penalty |
+| ADAN-SHADOW | Shadow WR > 60% | Consider flipping direction |
 
 ---
 
@@ -353,6 +446,9 @@ stake = baseKelly × human × session × metabolic × particle × copula ×
 | Fear & Greed Index | Market sentiment (0-100) | `src/api/binance.js` |
 | HyperLiquid | ATLAS cross-exchange intelligence | ATLAS module |
 | PIN Score | Order flow toxicity per symbol | `src/core/pin_score.js` |
+| Binance Futures | OI Delta, Taker Ratio, L/S Ratio, Liquidation | `src/api/binance_futures.js` |
+| VPIN | Volume-synced informed trading probability | `src/ml/vpin.js` |
+| CUSUM | Structural break detection in price series | `src/ml/cusum_filter.js` |
 
 ---
 
@@ -428,17 +524,25 @@ Real-time telemetry at `http://localhost:3141`:
 | `src/ml/kelly_sizer.js` | Quarter-Kelly optimal sizing |
 | `src/ml/calibrator.js` | Platt/Isotonic calibration (PAV algorithm) |
 | `src/ml/market_filter.js` | Bayesian market quality filter |
-| `src/ml/online_learner.js` | **NEW** Online SGD learner with exponential decay |
-| `src/ml/evolution_strategies.js` | **NEW** 20-vector ES with Sharpe fitness |
-| `src/ml/shapley_values.js` | **NEW** Monte Carlo Shapley feature importance |
-| `src/ml/ucb_explorer.js` | **NEW** UCB1 market selection bandit |
+| `src/ml/online_learner.js` | Online SGD learner with exponential decay |
+| `src/ml/evolution_strategies.js` | 20-vector ES with Sharpe fitness |
+| `src/ml/shapley_values.js` | Monte Carlo Shapley feature importance |
+| `src/ml/ucb_explorer.js` | UCB1 market selection bandit |
+| `src/ml/meta_labeler.js` | **v8.2** Meta-Labeling bet quality gate |
+| `src/ml/triple_barrier.js` | **v8.3** Triple Barrier trade labeling |
+| `src/ml/cusum_filter.js` | **v8.3** CUSUM structural break detector |
+| `src/ml/vpin.js` | **v8.3** VPIN volume toxicity tracker |
+| `src/ml/purged_walkforward.js` | **v8.3** Purged Walk-Forward CV |
+| `src/ml/resolution_oracle.js` | **v8.3** Resolution Oracle market filter |
 | **Core** | |
 | `src/core/wilmott_quant.js` | 16 Wilmott concepts: EWMA, VaR, CrashMetrics |
 | `src/core/iv_solver.js` | Black-Scholes IV Solver & Skew Analysis |
 | `src/core/regime_classifier.js` | EWMA-based regime detection + kurtosis |
 | `src/core/regime_detector.js` | **NEW** K-Means clustering regime detector |
-| `src/core/pin_score.js` | **NEW** PIN Score order flow toxicity tracker |
-| `src/core/moe_dynasty.js` | **NEW** Mixture of Experts gating for children |
+| `src/core/pin_score.js` | PIN Score order flow toxicity tracker |
+| `src/core/moe_dynasty.js` | Mixture of Experts gating for children |
+| `src/core/adan_shadow.js` | **v8.2** ADAN-SHADOW adversarial bias detection |
+| `src/api/binance_futures.js` | **v8.1** Futures Intelligence (OI, taker, L/S, liquidation) |
 | `src/core/genetics.js` | DNA crossover, mutation, Tournament of Death |
 | `src/core/child_learning.js` | Accuracy tracking + MoE weight updates |
 | `src/core/soul_memory_v2.js` | Pattern memory per market type |

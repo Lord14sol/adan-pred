@@ -119,6 +119,12 @@ import { evolutionStrategies } from './src/ml/evolution_strategies.js';
 import { onlineLearner } from './src/ml/online_learner.js';
 import { metaLabeler } from './src/ml/meta_labeler.js';
 import { adanShadow } from './src/core/adan_shadow.js';
+// ── López de Prado Suite (Concepts #20A, #20C, #20D, #20F, #22) ────────────
+import { cusumFilter } from './src/ml/cusum_filter.js';
+import { vpinTracker } from './src/ml/vpin.js';
+import { tripleBarrier } from './src/ml/triple_barrier.js';
+import { purgedWF } from './src/ml/purged_walkforward.js';
+import { resolutionOracle } from './src/ml/resolution_oracle.js';
 
 let consecutiveLosses = 0;
 let lastWinTime = null; // Markovian: timestamp of last winning trade
@@ -434,6 +440,14 @@ async function fetchAllPrices() {
     if (futuresData) {
       futuresIntel.enrichWithPrice(futuresData, price, priceDelta5m, funding?.rate || 0);
     }
+
+    // ── Concept #20D: CUSUM structural break detection ──
+    try { cusumFilter.update(price); } catch {}
+    // ── Concept #20F: VPIN volume toxicity ──
+    try {
+      const lastVol = klines1m[klines1m.length - 1]?.vol || 0;
+      vpinTracker.update(price, lastVol);
+    } catch {}
 
     // ── Update Regime Classifier + Wilmott EWMA (Ch 42/49) ──
     const assetName = sym.replace('USDT', '').toLowerCase();
@@ -2600,6 +2614,11 @@ async function think(markets, prices, pnl, openPos, state) {
       skillsBlock,
       kmeansRegimeCtx: kmeansRegime.getPromptContext(),
       shadowCtx: adanShadow.getPromptWarning(),
+      cusumCtx: cusumFilter.getPromptContext(),
+      vpinCtx: vpinTracker.getPromptContext(),
+      tripleBarrierCtx: tripleBarrier.getPromptContext(),
+      walkForwardCtx: purgedWF.getPromptContext(),
+      resOracleCtx: resolutionOracle.getPromptContext(),
       onStatus: (msg) => {
         state.status = msg;
         _startThinkSpin(msg); // Update terminal spinner with current step
@@ -2930,6 +2949,29 @@ async function evaluate_and_trade(decision, prices, state) {
     return;
   }
 
+  // ═══ Concept #22: Resolution Oracle — filter ambiguous markets ═══
+  try {
+    const resScore = resolutionOracle.scoreMarket(market);
+    if (resScore.recommendation === 'AVOID') {
+      console.log(`[RES-ORACLE] ⛔ AVOID: clarity ${(resScore.clarity * 100).toFixed(0)}% — ${resScore.reasons.join(', ')}`);
+      recordAdanShadow(decision, market, 'RES_ORACLE_AVOID');
+      return;
+    }
+    if (resScore.recommendation === 'CAUTION' && (edge || 0) < 0.08) {
+      console.log(`[RES-ORACLE] ⚠ CAUTION (${(resScore.clarity * 100).toFixed(0)}%) + low edge — skipping`);
+      recordAdanShadow(decision, market, 'RES_ORACLE_CAUTION');
+      return;
+    }
+  } catch {}
+
+  // ═══ Concept #20D: CUSUM structural break gate ═══
+  try {
+    if (cusumFilter.isInTransition(30000)) { // 30s window
+      console.log(`[CUSUM] ⚠ Structural break active — reducing stake (regime transitioning)`);
+      // Don't block, but the stake will be reduced below
+    }
+  } catch {}
+
   // ═══ WILMOTT v6.0: Pre-trade analysis (16 quantitative checks) ═══
   // TRAINING MODE: Wilmott gates LOG + SHADOW but do NOT block trades.
   // This preserves training data collection while recording what would have been blocked.
@@ -3135,7 +3177,11 @@ async function evaluate_and_trade(decision, prices, state) {
   }
   // Concept #20E: Meta-Labeler stake reduction
   const metaLabelMult = decision._metaStakeReduction || 1.0;
-  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult * ivStakeMult * timeDecayMult * kmeansRegimeMult * hourBinMult * metaLabelMult);
+  // Concept #20D: CUSUM structural break → reduce 40%
+  const cusumMult = cusumFilter.isInTransition(30000) ? 0.6 : 1.0;
+  // Concept #20F: VPIN toxicity → reduce 50%
+  const vpinMult = vpinTracker.isToxic() ? 0.5 : (vpinTracker.getVPIN() > 0.5 ? 0.8 : 1.0);
+  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult * ivStakeMult * timeDecayMult * kmeansRegimeMult * hourBinMult * metaLabelMult * cusumMult * vpinMult);
   let stake = Math.round(Math.max(100, baseStake * combined) / 25) * 25; // TRAINING: min $100 per bet
 
   // v5.3 Wilmott: Child-direct trades use Half Kelly + Copula correlation penalty
@@ -3576,6 +3622,28 @@ async function checkResolutions() {
         }, won, p.edge || 0);
       } catch {};
     } catch (e) { console.log('[ML-ONLINE] Error:', e.message); }
+
+    // Concept #20A: Triple Barrier — label the resolved trade
+    try {
+      const entryP = p.sniperPrice || p.marketPrice || 0.5;
+      const exitP = won ? entryP * 1.01 : entryP * 0.99; // approximation from binary outcome
+      const vol = p.entryVec?.[3] || 1; // volatility from feature vector
+      const tbLabel = tripleBarrier.labelTrade(entryP, exitP, p.side, p.barsHeld || 5, vol);
+      if (tbLabel) p._tripleBarrierLabel = tbLabel.label;
+    } catch {}
+
+    // Concept #20C: Purged Walk-Forward — add training sample
+    try {
+      if (p.entryVec) {
+        purgedWF.addSample(p.entryVec, won, p.entryTime ? new Date(p.entryTime).getTime() : Date.now());
+      }
+    } catch {}
+
+    // Concept #22: Resolution Oracle — record clean resolution
+    try {
+      const mType = (p.marketTitle || '').match(/up or down/i) ? 'crypto_price' : 'other';
+      resolutionOracle.recordResolution(p.marketId, true, mType); // all Polymarket resolutions are clean
+    } catch {}
 
     // Resolve feature tracking for this trade
     try { featureTracker.recordResolution(p.id, won); } catch { }
