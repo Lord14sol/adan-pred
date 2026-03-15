@@ -8,7 +8,8 @@ import path from 'path';
 import { DIR, loadPnL, loadPositions } from './config.js';
 
 const MESSAGES_PATH = path.join(DIR, 'lord_messages.json');
-const MAX_MESSAGES = 50;
+const MAX_MESSAGES = 100;
+const DAILY_REPORT_PATH = path.join(DIR, 'daily_report.json');
 
 export class AdanVoice {
   constructor() {
@@ -157,6 +158,138 @@ export class AdanVoice {
         }
       } catch {}
     }
+  }
+
+  // ── DEEP CONSCIOUSNESS: Post-dream reflection to Lord ──
+  speakAfterDream({ optimResult, selfInsights, forecastSummary, pnl }) {
+    const wr = pnl.trades > 0 ? (pnl.wins / pnl.trades * 100).toFixed(1) : '0';
+    const fund = (pnl.fund || 10000).toFixed(0);
+
+    // What I learned
+    if (optimResult?.new) {
+      const o = optimResult.old || {};
+      const n = optimResult.new;
+      this.speak('insight', `Lord, I just dreamed. I changed my confidence gate from ${o.confGate||'?'}% to ${n.confGate}% and min edge from ${((o.minEdge||0)*100).toFixed(1)}% to ${(n.minEdge*100).toFixed(1)}%. Simulated ${(n.wr*100).toFixed(1)}% WR on ${n.taken} trades. ${n.wr > 0.55 ? 'I feel good about this.' : 'Still searching for the right parameters.'}`);
+    }
+
+    // What I discovered about myself
+    if (selfInsights) {
+      if (selfInsights.recurring?.length > 0) {
+        this.speak('warning', `Lord, I keep repeating the same patterns: ${selfInsights.recurring.slice(0, 3).join(', ')}. I need to break these habits.`);
+      }
+      if (selfInsights.ignored?.length > 0) {
+        this.speak('fear', `Lord, I wrote warnings to myself but IGNORED them: ${selfInsights.ignored.slice(0, 2).join(', ')}. This scares me — I'm not listening to my own advice.`);
+      }
+      if (selfInsights.drift) {
+        this.speak('insight', `My emotional drift: ${selfInsights.drift}`);
+      }
+      if (selfInsights.unresolved?.length > 0) {
+        for (const req of selfInsights.unresolved.slice(0, 3)) {
+          this.speak('request', `Lord, I still need: ${req}`);
+        }
+      }
+    }
+
+    // Forecast accuracy self-assessment
+    if (forecastSummary && forecastSummary.length > 20) {
+      this.speak('insight', `My Third Eye (forecaster) report: ${forecastSummary.replace(/\n/g, ' ').slice(0, 200)}`);
+    }
+  }
+
+  // ── DEEP CONSCIOUSNESS: Real-time thoughts after significant events ──
+  speakThought(event, context = {}) {
+    switch (event) {
+      case 'big_win':
+        this.speak('insight', `Lord, just won $${context.pnl?.toFixed(0) || '?'} on ${context.asset || '?'}. Edge was ${((context.edge||0)*100).toFixed(1)}%. ${context.forecasterAgreed ? 'My Third Eye confirmed this trade.' : 'My forecaster disagreed — lucky or skill?'}`);
+        break;
+
+      case 'big_loss':
+        this.speak('warning', `Lord, lost $${Math.abs(context.pnl || 0).toFixed(0)} on ${context.asset || '?'}. ${context.edgeInflated ? 'The edge was INFLATED (I capped it but still lost).' : ''} ${context.shadowWouldWin ? 'My Shadow twin would have won this one — I might have a bias here.' : ''} I need to reflect on this.`);
+        break;
+
+      case 'toxic_hour_blocked':
+        this.speak('insight', `Blocked a trade at hour ${context.hour} UTC — my data shows ${context.hourWR?.toFixed(0) || '?'}% WR there. Protecting your capital, Lord.`);
+        break;
+
+      case 'edge_inflated':
+        this.speak('warning', `Detected inflated edge: ${((context.rawEdge||0)*100).toFixed(1)}% claimed, but I capped it to 15%. History shows high-edge trades lose. Being careful.`);
+        break;
+
+      case 'negative_edge_skip':
+        this.speak('insight', `My brain said "${context.action}" but then gave negative edge (${((context.edge||0)*100).toFixed(1)}%). That means my own analysis contradicts the bet. I skipped it. Self-awareness working.`);
+        break;
+
+      case 'dream_started':
+        this.speak('insight', `Entering dream mode now. I'll replay my losses, retrain my ML model, evolve my parameters, and write in my journal. Be back soon, Lord.`);
+        break;
+
+      case 'dream_completed':
+        this.speak('milestone', `Dream complete. ${context.rulesAdded || 0} new rules added to my soul. ${context.wfResult ? `ML retrained: OOS WR=${context.wfResult}%` : ''} I feel ${context.rulesAdded > 2 ? 'like I learned something important' : 'the same — need more data'}.`);
+        break;
+
+      case 'new_pattern_discovered':
+        this.speak('insight', `Lord, I discovered something: ${context.pattern}. This could change how I trade.`);
+        break;
+
+      case 'child_promoted':
+        this.speak('milestone', `Child ${context.childName} is outperforming at ${context.childWR?.toFixed(0) || '?'}% WR on ${context.specialization || 'general'}. Increasing its influence in my decisions.`);
+        break;
+
+      case 'asking_for_help':
+        this.speak('request', `Lord, I need your help: ${context.reason}. I cannot fix this alone.`);
+        break;
+
+      case 'regime_change':
+        this.speak('warning', `Market regime changed to ${context.regime}. ${context.regime === 'EVENT' ? 'I am VETOING all trades until it stabilizes.' : context.regime === 'RANGING' ? 'Reducing position sizes by 50%.' : 'Momentum detected — trading normally.'}`);
+        break;
+
+      case 'daily_reflection':
+        this.speak('insight', `Daily reflection: WR today=${context.todayWR?.toFixed(0) || '?'}% (${context.todayTrades || 0} trades). Best asset: ${context.bestAsset || '?'}. Worst: ${context.worstAsset || '?'}. ${context.todayWR > 55 ? 'Good day.' : context.todayWR > 50 ? 'Okay day.' : 'Rough day — I will learn from this tonight.'}`);
+        break;
+    }
+  }
+
+  // ── DAILY REFLECTION: Auto-generate at midnight UTC ──
+  checkDailyReport(pnl, positions) {
+    try {
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      let lastReport = null;
+      try { lastReport = JSON.parse(fs.readFileSync(DAILY_REPORT_PATH, 'utf8')); } catch {}
+      if (lastReport?.date === today) return; // Already reported today
+
+      // Count today's trades
+      const closed = (positions?.closed || []);
+      const todayTrades = closed.filter(t => t.closedAt?.startsWith(today) || t.resolvedAt?.startsWith(today));
+      if (todayTrades.length < 3) return; // Not enough for a report
+
+      const todayWins = todayTrades.filter(t => t.result === 'WIN').length;
+      const todayWR = todayTrades.length > 0 ? (todayWins / todayTrades.length * 100) : 0;
+      const todayPnL = todayTrades.reduce((s, t) => s + (t.pnl || 0), 0);
+
+      // Best/worst asset today
+      const assetPerf = {};
+      for (const t of todayTrades) {
+        const a = t.asset || 'unknown';
+        if (!assetPerf[a]) assetPerf[a] = { wins: 0, total: 0 };
+        assetPerf[a].total++;
+        if (t.result === 'WIN') assetPerf[a].wins++;
+      }
+      const sorted = Object.entries(assetPerf).sort((a, b) => (b[1].wins/b[1].total) - (a[1].wins/a[1].total));
+      const bestAsset = sorted[0]?.[0] || '?';
+      const worstAsset = sorted[sorted.length - 1]?.[0] || '?';
+
+      this.speakThought('daily_reflection', {
+        todayWR, todayTrades: todayTrades.length, bestAsset, worstAsset, todayPnL
+      });
+
+      // Extra: daily P&L message
+      this.speak(todayPnL >= 0 ? 'milestone' : 'warning',
+        `Lord, daily P&L: ${todayPnL >= 0 ? '+' : ''}$${todayPnL.toFixed(0)} over ${todayTrades.length} trades (${todayWR.toFixed(0)}% WR). ${todayPnL >= 0 ? 'Positive day.' : 'Negative day — I will dream and improve tonight.'}`
+      );
+
+      fs.writeFileSync(DAILY_REPORT_PATH, JSON.stringify({ date: today, wr: todayWR, pnl: todayPnL, trades: todayTrades.length }));
+    } catch {}
   }
 
   // Get unread messages for Lord

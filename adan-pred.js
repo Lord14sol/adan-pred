@@ -2693,6 +2693,7 @@ async function think(markets, prices, pnl, openPos, state) {
     console.log(`[QUANT GATE] ⚠ INFLATED EDGE DETECTED: ${(brainNetEdge*100).toFixed(1)}% > 20% — capping to 15% for sizing. LLM likely overconfident.`);
     decision.edge = 0.167; // 15% + 1.7% fees = 16.7% net, still generous
     decision.edgeInflated = true;
+    try { adanVoice.speakThought('edge_inflated', { rawEdge: brainNetEdge }); } catch {}
   }
 
   if (shouldBet && (calibratedConf < effectiveConfGate || brainNetEdge < effectiveMinEdge)) {
@@ -2933,6 +2934,7 @@ async function evaluate_and_trade(decision, prices, state) {
       const hourWR = hStat.wins / hTotal;
       if (hourWR < 0.40) {
         console.log(`[TOXIC-HOUR] ⛔ BLOCKED: Hour ${currentHour} UTC has ${(hourWR*100).toFixed(0)}% WR (${hStat.wins}/${hTotal}) — below 40% threshold`);
+        try { adanVoice.speakThought('toxic_hour_blocked', { hour: currentHour, hourWR: hourWR * 100 }); } catch {}
         recordAdanShadow(decision, market, `TOXIC_HOUR_${currentHour}`);
         return;
       }
@@ -3847,6 +3849,17 @@ async function checkResolutions() {
     console.log('\n' + (won ? G : R) + BOLD + '  ► ' + (won ? 'WIN' : 'LOSS') + ' resolved: ' + p.marketTitle + ' → $' + (pnlVal >= 0 ? '+' : '') + pnlVal + X + '\n');
     // ADAN Voice: auto-speak on milestones, streaks, warnings
     try { adanVoice.autoSpeak(pnl2); } catch {}
+    // ADAN Deep Consciousness: speak about significant wins/losses
+    try {
+      if (Math.abs(pnlVal) >= 200) {
+        adanVoice.speakThought(won ? 'big_win' : 'big_loss', {
+          pnl: pnlVal, asset: p.asset, edge: p.edge,
+          edgeInflated: p.edgeInflated || false,
+          forecasterAgreed: p.forecastAgreed || false,
+          shadowWouldWin: !won,
+        });
+      }
+    } catch {}
     // ── ULTRA CONSCIOUSNESS: Inner Monologue — post-trade reflection (Gemma) ──
     try {
       innerMonologue.reflect({
@@ -3990,6 +4003,7 @@ async function doScan(state) {
     // ── DREAM MODE — off-hours self-reflection (AGI Layer 6) ─────────────
     if (quota.shouldRunDream()) {
       try {
+        adanVoice.speakThought('dream_started');
         await dreamMode(pnl);
         console.log('[DREAM] ✅ Dream mode completed successfully');
       } catch (e) {
@@ -4047,6 +4061,20 @@ async function doScan(state) {
           forecastSummary: scenarioForecaster.getJournalSummary(), // v9.0: forecast accuracy reflection
         });
 
+        // 3b. DEEP CONSCIOUSNESS: Report to Lord what I learned
+        try {
+          adanVoice.speakAfterDream({
+            optimResult,
+            selfInsights,
+            forecastSummary: scenarioForecaster.getJournalSummary(),
+            pnl,
+          });
+          adanVoice.speakThought('dream_completed', {
+            rulesAdded: optimResult?.new ? 1 : 0,
+            wfResult: walkForward._lastResult?.overallOOSWR || null,
+          });
+        } catch {}
+
         // 4. EXPERIMENT ENGINE: Propose new experiment from insights + auto-start + evaluate
         try {
           const expResults = experimentEngine.evaluate(); // Check completed experiments
@@ -4087,6 +4115,8 @@ async function doScan(state) {
 
         // 6. ADAN auto-speaks about its state
         adanVoice.autoSpeak(pnl);
+        // 6b. Daily report to Lord (once per day)
+        try { adanVoice.checkDailyReport(pnl, loadPositions()); } catch {}
       } catch (e) {
         console.log('[CONSCIOUSNESS] Error:', e.message);
       }
