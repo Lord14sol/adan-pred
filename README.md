@@ -1,11 +1,11 @@
-# ADAN-PRED v8.3: Complete López de Prado Suite + Scientific Trading Intelligence
-## 4-Layer ML Brain × 22 Scientific Concepts × MoE Dynasty × Autonomous Evolution
+# ADAN-PRED v8.4: Distributed Intelligence + Scenario Forecaster + Critical Calibration Fixes
+## 4-Layer ML Brain × 24 Scientific Concepts × MoE Dynasty × Autonomous Evolution × Third Eye Forecaster
 ---
 
 ## Executive Summary
-ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent on **Polymarket**. It combines a **32-feature logistic regression brain**, **4-voter ensemble system** (stat model + LLM + historical + online learner), **Platt-calibrated probabilities**, **Kelly-optimal sizing with 13 multipliers**, a **12-child MoE genetic swarm**, **Meta-Labeling gate**, **ADAN-SHADOW adversarial bias detection**, **Futures Intelligence leading indicators**, and the complete **López de Prado AFML suite** (Triple Barrier, CUSUM, VPIN, Purged Walk-Forward, Resolution Oracle) — all in pure JavaScript with zero external ML dependencies.
+ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent on **Polymarket**. It combines a **32-feature logistic regression brain**, **4-voter ensemble system** (stat model + LLM + historical + online learner), **Platt-calibrated probabilities**, **Kelly-optimal sizing with 15 multipliers**, a **12-child MoE genetic swarm**, **Scenario Forecaster (Third Eye)**, **Meta-Labeling gate**, **ADAN-SHADOW adversarial bias detection**, **Futures Intelligence leading indicators**, a **Distributed LLM Router v9.0** across 8 Gemini models, and the complete **López de Prado AFML suite** (Triple Barrier, CUSUM, VPIN, Purged Walk-Forward, Resolution Oracle) — all in pure JavaScript with zero external ML dependencies.
 
-**Current Stats (v8.3 paper trading):** 1,668+ trades | 875W/793L | 52.5% WR | +$14,448 net P&L | $24,448 fund | Gen 94 | Brier: 0.141
+**Current Stats (v8.4):** 1,701+ trades | 891W/809L | 52.4% WR | +$1,754 net P&L | $11,754 fund | Brier: 0.144
 
 ---
 
@@ -25,13 +25,41 @@ ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent 
 | **Flow Toxicity** | VPIN kill switch | + Volume VPIN (#20F): volume-bucket informed trading probability |
 | **Market Quality** | Filter + UCB | + Resolution Oracle (#22): clarity scoring, ambiguous market filter |
 
-### v8.0 → v8.1 → v8.2 → v8.3 Full Changelog
+### v8.0 → v8.4 Full Changelog
 | Version | Added |
 |---------|-------|
 | v8.0 | 14 scientific concepts, MoE Dynasty, 4-voter ensemble |
 | v8.1 | Futures Intelligence (OI Delta, Taker, L/S, Liquidation) |
 | v8.2 | Meta-Labeling (#20E), ADAN-SHADOW (#15) |
 | v8.3 | Triple Barrier (#20A), CUSUM (#20D), VPIN (#20F), Purged WF (#20C), Resolution Oracle (#22) |
+| **v8.4** | **Scenario Forecaster (#23), Distributed LLM Router v9.0 (8 models), Edge Sign Fix, Edge Inflation Guard, YES Bias Correction, Dream Cycle Repair, Smart Shapley Mask, Toxic Hour Blocker, 15 Kelly Multipliers** |
+
+---
+
+## v8.4: Critical Calibration Fixes + Distributed Intelligence
+
+### What Changed (v8.3 → v8.4)
+
+| Layer | v8.3 | v8.4 |
+|-------|------|------|
+| **LLM Router** | Single Gemma 27B (15K TPM bottleneck) | Distributed v9.0: 8 models, 6-tier fallback, 250K TPM primary |
+| **Risk Multipliers** | 13 | **15**: + scenario forecaster + purged walk-forward |
+| **Edge Calibration** | `Math.abs()` destroyed negative edges | Sign preserved: negative edge = LLM rejects trade → SKIP |
+| **Edge Inflation** | No cap (>25% edge = 48% WR) | Guard: edges >20% capped to 15% for sizing |
+| **Default Edge** | 5% fallback when LLM silent | Reduced to 1% — no free edge gifts |
+| **YES/NO Bias** | 96% YES bias, NO penalty 4% edge | Prompt corrected, NO penalty relaxed to 3% (same as YES) |
+| **Dream Cycle** | Silent `.catch(() => {})`, stuck 42h | `await` + `markDreamRun()` on all exits + full error logging |
+| **Shapley Mask** | Blanket mask on HARMFUL features | Smart mask: only silences if BOTH Shapley=HARMFUL AND ML weight < 0.05 |
+| **Hour Filter** | Broken (`hStat.total` undefined) | Fixed: `(hStat.wins + hStat.losses)`, H21 UTC blocked |
+| **Scenario Forecaster** | None | 3-scenario simulation (bull/bear/neutral) before each trade |
+| **Error Handling** | 6 silent `.catch(() => {})` | All replaced with proper error logging |
+
+### Critical Bugs Fixed in v8.4
+1. **Edge Sign Destruction** — `Math.abs(edge)` converted "bad trade" signals (-7% edge) into "good trade" signals (+7%). ADAN was betting on trades its own brain rejected.
+2. **Dream Cycle Dead** — `dreamMode().catch(() => {})` swallowed all errors. Dream hadn't run in 42+ hours, disabling journal, self-reader, experiments, walk-forward retrain.
+3. **Edge Inflation** — Trades with >25% declared edge had 48% WR (worse than random). Now capped at 20%.
+4. **YES Bias** — 96% of trades were YES side. Brain prompt said "83% NO bias" (outdated/inverted). NO penalty gate was too restrictive (4% vs 3% for YES).
+5. **Toxic Hour Broken** — Hour stats used `.total` (undefined) instead of `wins + losses`. H21 UTC (34% WR) was never blocked.
 
 ---
 
@@ -39,15 +67,21 @@ ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent 
 
 ```
                          ┌─────────────────────────────┐
-                         │        ADAN v8.0             │
+                         │        ADAN v8.4             │
                          │   Scientific Trading Agent   │
                          └─────────┬───────────────────┘
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │  SCENARIO FORECASTER (#23)   │
+                    │  3 scenarios × Kelly mult    │
+                    │  bull/bear/neutral → confirm │
+                    └──────────────┬──────────────┘
                                    │
        ┌───────────────────────────┼───────────────────────────┐
        │                          │                            │
 ┌──────▼──────┐  ┌───────▼───────┐  ┌──────▼──────┐  ┌───────▼───────┐
 │ STAT MODEL   │  │ LLM BRAIN     │  │ HISTORICAL   │  │ ONLINE LEARNER│
-│ LogReg 32ft  │  │ Gemma/Gemini  │  │ Bayesian WR  │  │ SGD + decay   │
+│ LogReg 32ft  │  │ Gemini Fleet  │  │ Bayesian WR  │  │ SGD + decay   │
 │ L2 + Platt   │  │ 8 personas    │  │ BinCount+Soul│  │ λ=0.995       │
 └──────┬──────┘  └───────┬───────┘  └──────┬──────┘  └───────┬───────┘
        │                  │                 │                  │
@@ -59,17 +93,26 @@ ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent 
            └──────────────────────┬────────────────────────┘
                                   │
            ┌──────────────────────▼────────────────────────┐
-           │             RISK PIPELINE (13 gates)           │
-           │  Kelly × session × metabolic × particle ×      │
-           │  copula × wilmott × IV × timeDecay ×           │
-           │  kmeansRegime × binCountHour × metaLabel ×     │
-           │  cusum × vpin                                   │
+           │          15 HARD BLOCKERS + QUANT GATE         │
+           │  Markovian | Meta-Label | Resolution Oracle |  │
+           │  CUSUM | VPIN | Toxic Hour | Edge Inflation |  │
+           │  Soul Caution | Time Decay | K-Means Regime |  │
+           │  Order Book | Shadow Bias | ES Threshold |     │
+           │  Experiment Overrides | Drawdown Stop          │
            └──────────────────────┬────────────────────────┘
                                   │
            ┌──────────────────────▼────────────────────────┐
-           │          MARKOVIAN STATE GATE (#8D)            │
-           │  positions_open ≤ 3 | drawdown < 20%          │
-           │  loss_streak ≥ 3 → cap $75 | exposure gate    │
+           │         RISK PIPELINE (15 Kelly mults)         │
+           │  Kelly × session × metabolic × particle ×      │
+           │  copula × wilmott × IV × timeDecay ×           │
+           │  kmeansRegime × binCountHour × metaLabel ×     │
+           │  cusum × vpin × purgedWF × forecast             │
+           └──────────────────────┬────────────────────────┘
+                                  │
+           ┌──────────────────────▼────────────────────────┐
+           │   DISTRIBUTED LLM ROUTER v9.0 (8 models)      │
+           │  Workhorse 3.1 → Gemma 12B → Lite 2.5 →       │
+           │  Flash 3 → Gemma 27B → Flash 2.0 (last resort) │
            └──────────────────────┬────────────────────────┘
                                   │
                             PAPER TRADE
@@ -77,7 +120,7 @@ ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent 
 
 ---
 
-## Scientific Concepts (22 Integrated)
+## Scientific Concepts (24 Integrated)
 
 ### Concept #2: Evolution Strategies (ES)
 **File:** `src/ml/evolution_strategies.js`
@@ -230,7 +273,9 @@ const norm01 = (v) => {
 ```
 - Tries JSON block first, regex fallback only if JSON fails
 - Sanity bounds: probability ∈ [0.01, 0.99], edge ∈ [-0.5, 0.5]
-- Anti-bias notice injected into prompt: "You bet NO 83% of the time. This is a BIAS."
+- Anti-bias notice injected into prompt: "You bet YES 96% of the time. This is a SEVERE BIAS."
+- **v8.4 Edge Sign Fix:** Negative edges (LLM contradicts its own bet) → auto-SKIP instead of silent `Math.abs()`
+- **v8.4 Edge Inflation Guard:** Edges > 20% capped to 15% (data: >25% edge = 48% WR, inverted)
 
 ### Concept #21: Time-to-Close (TTC) Filter
 **Integrated in:** `adan-pred.js` (getTimeDecayFactor)
@@ -316,6 +361,36 @@ Predicts whether a market will resolve cleanly:
 - Learns from historical resolution quality per market type
 - Persists to `~/.adan-pred/resolution_oracle.json`
 
+### Concept #23: Scenario Forecaster (Third Eye)
+**File:** `src/ml/scenario_forecaster.js`
+
+Before each trade, ADAN simulates 3 future scenarios using LLM:
+- **Input:** Last 30 candle closes + RSI + trend + vol ratio + BB% + MACD
+- **Output:** Bull/Bear/Neutral scenarios with probability + price target
+- **Expected Move:** Probability-weighted sum of all 3 scenarios
+- **Kelly Multiplier #15:** forecast agrees with trade → ×1.15, contradicts → ×0.75
+- **ML Features:** `forecast_direction`, `forecast_confidence`, `forecast_expected_move_pct` (features #33-35)
+- **Learning:** Records actual outcome vs prediction, tracks accuracy per asset
+- **Journal Integration:** Writes forecast accuracy to consciousness journal for self-reflection
+- Persists to `~/.adan-pred/forecast_stats.json` and `forecast_log.jsonl`
+
+### Concept #24: Distributed LLM Router v9.0
+**File:** `adan-llm-router.js`
+
+Inverted pyramid: Flash models (250K TPM) are primary, Gemma (15K TPM) is reserve:
+| Priority | Model | RPM | TPM | RPD | Role |
+|----------|-------|-----|-----|-----|------|
+| 1 | `gemini-3.1-flash-lite-preview` | 15 | 250K | 500 | **Workhorse** (primary) |
+| 2 | `gemma-3-12b-it` | 30 | 15K | 14.4K | Reserve (light) |
+| 3 | `gemini-2.5-flash-lite` | 10 | 250K | 20 | Overflow |
+| 4 | `gemini-3-flash-preview` | 5 | 250K | 20 | Overflow #2 |
+| 5 | `gemma-3-27b-it` | 30 | 15K | 14.4K | Reserve (heavy) |
+| 6 | `gemini-2.0-flash` | ∞ | 250K | 0* | Last resort |
+
+- **Routing:** `routeLLM()` dispatches by weight: Heavy → Sniper (2.5 Flash), Dream → Sniper, Light → Distributed fleet, Child → Gemma 12B
+- **Quota Manager:** Tracks RPD for all 6 tiers, resets daily, RPM tracking per minute
+- **Embeddings:** Gemini Embedding v2 (`gemini-embedding-exp-03-07`) with legacy fallback
+
 ### Futures Intelligence (Leading Indicators)
 **File:** `src/api/binance_futures.js`
 
@@ -372,12 +447,12 @@ P_ensemble = normalize(P_stat^w1 × P_llm^w2 × P_hist^w3 × P_online^w4)
 | **HIST** | 15% | Bayesian base-rate (bin count + asset + soul) |
 | **ONLINE** | 5% | Online SGD learner (adaptive) |
 
-### 3. Kelly Sizer with 13 Multipliers
+### 3. Kelly Sizer with 15 Multipliers
 
 ```
 stake = baseKelly × human × session × metabolic × particle × copula ×
         wilmott × IV × timeDecay × kmeansRegime × binCountHour ×
-        metaLabel × cusum × vpin
+        metaLabel × cusum × vpin × purgedWF × forecast
 ```
 
 ---
@@ -432,6 +507,12 @@ stake = baseKelly × human × session × metabolic × particle × copula ×
 | VaR Limit | 99% confidence | Block if > 20% fund |
 | Copula Risk | Portfolio correlation | Penalty |
 | ADAN-SHADOW | Shadow WR > 60% | Consider flipping direction |
+| **v8.4** Toxic Hour | WR < 40% over 15+ trades in hour | Hard SKIP |
+| **v8.4** Edge Inflation | Declared edge > 20% net | Cap to 15% for sizing |
+| **v8.4** Edge Sign Gate | LLM gives negative edge | Auto-SKIP (brain contradicts bet) |
+| **v8.4** QUANT GATE + ES | ES-evolved confidence + edge floor | Block if below threshold |
+| **v8.4** Experiment Override | Active A/B test params | Dynamic threshold adjustment |
+| **v8.4** Scenario Forecaster | Forecast contradicts trade | Kelly ×0.75 |
 
 ---
 
@@ -515,7 +596,8 @@ Real-time telemetry at `http://localhost:3141`:
 | File | Purpose |
 |------|---------|
 | `adan-pred.js` | Main engine (~4300 lines): scanning, trading, ensemble, risk |
-| `adan-brain-complete.js` | LLM brain: 8 personas, prompt builder, JSON parser |
+| `adan-brain-complete.js` | LLM brain: 8 personas, prompt builder, JSON parser, edge sign fix |
+| `adan-llm-router.js` | **v8.4** Distributed LLM Router v9.0 (8 Gemini models) |
 | `force_dream.js` | Manual dream cycle trigger |
 | **ML Layer** | |
 | `src/ml/logistic_regression.js` | 32-feature L2-regularized logistic regression |
@@ -534,6 +616,7 @@ Real-time telemetry at `http://localhost:3141`:
 | `src/ml/vpin.js` | **v8.3** VPIN volume toxicity tracker |
 | `src/ml/purged_walkforward.js` | **v8.3** Purged Walk-Forward CV |
 | `src/ml/resolution_oracle.js` | **v8.3** Resolution Oracle market filter |
+| `src/ml/scenario_forecaster.js` | **v8.4** Scenario Forecaster (Third Eye) |
 | **Core** | |
 | `src/core/wilmott_quant.js` | 16 Wilmott concepts: EWMA, VaR, CrashMetrics |
 | `src/core/iv_solver.js` | Black-Scholes IV Solver & Skew Analysis |
@@ -575,18 +658,19 @@ node adan-pred.js
 
 ---
 
-## Intelligence Score: 780/1000
+## Intelligence Score: 835/1000
 
 | Category | Score | Details |
 |----------|-------|---------|
-| **Statistical Brain** | 130/150 | 32-feature LogReg + Online SGD + walk-forward + Shapley feature analysis. Missing: XGBoost, neural net. |
-| **Calibration** | 85/100 | Platt isotonic + meta-calibration + conformal JSON parser. |
+| **Statistical Brain** | 135/150 | 32-feature LogReg + Online SGD + walk-forward + Shapley (smart mask) + edge sign fix. Missing: XGBoost, neural net. |
+| **Calibration** | 95/100 | Platt isotonic + meta-calibration + conformal parser + edge inflation guard + negative edge detection. |
 | **Ensemble** | 95/100 | 4-voter log-linear pooling + learned weights + veto + online learner. |
 | **Market Selection** | 85/100 | Bayesian quality filter + UCB Explorer bandit + blacklisting. |
-| **Risk Management** | 95/100 | Kelly (9 mult) + Wilmott (16) + VaR + CrashMetrics + Copula + Markovian (4 gates) + K-Means regime veto. |
-| **Data Pipeline** | 80/100 | Binance + Polymarket WS + CryptoPanic + VADER + Fear&Greed + PIN Score + L2 Tensor. Missing: on-chain. |
-| **Consciousness** | 55/100 | Self-reader + monologue + experiments + voice (7 report types). Missing: meta-learning. |
+| **Risk Management** | 100/100 | Kelly (15 mult) + Wilmott (16) + VaR + CrashMetrics + Copula + Markovian (4 gates) + K-Means regime veto + 15 hard blockers + toxic hour + edge inflation guard. |
+| **Data Pipeline** | 80/100 | Binance + Polymarket WS + CryptoPanic + VADER + Fear&Greed + PIN Score + L2 Tensor + Futures Intelligence. Missing: on-chain. |
+| **Consciousness** | 70/100 | Self-reader + monologue + experiments + voice + Scenario Forecaster (Third Eye) + consciousness journal. Missing: meta-learning. |
 | **Genetic Evolution** | 75/100 | MoE Dynasty + Evolution Strategies + Shapley pruning. Missing: CMA-ES. |
+| **LLM Infrastructure** | 70/100 | Distributed Router v9.0 (8 models), quota management, 6-tier fallback. |
 | **Execution** | 30/100 | Paper trading only. No real CLOB execution. |
 
 **What gets us to 900+:** CNN/LSTM/XGBoost (Python microservice), whale wallet tracking, real CLOB execution, and >58% WR sustained.
@@ -604,15 +688,21 @@ node adan-pred.js
 | 5 | LSTM Regime Detector | Python + TensorFlow | HIGH |
 | 6 | XGBoost Ensemble | Python + XGBoost | HIGH |
 | 9 | Whale Wallet Tracker | On-chain API | MEDIUM |
-| 15 | ADAN-SHADOW (adversarial) | Node.js twin | MEDIUM |
-| 20 | López de Prado Financial ML | Node.js possible | MEDIUM |
 | 18 | Infrastructure (PostgreSQL, Docker) | DevOps | LOW |
 | 19 | Arbitrage Cross-Venue | Additional APIs | LOW |
 | 11 | Ephemeral Coding | LVL 25+ gate | GATED |
 | 13 | Mempool Reader | WR>62% + fund>$30k | GATED |
 
+### Completed in v8.4 (removed from roadmap)
+- ~~#15 ADAN-SHADOW~~ → Done in v8.2
+- ~~#20 López de Prado AFML~~ → Done in v8.3 (Triple Barrier, CUSUM, VPIN, Purged WF)
+- ~~#23 Scenario Forecaster~~ → Done in v8.4
+- ~~#24 Distributed LLM Router~~ → Done in v8.4
+
 ---
 *Autonomous intelligence research. Paper trading mode. Not financial advice.*
 *Statistical framework: logistic regression + walk-forward validation + Platt calibration.*
 *Quantitative framework: Paul Wilmott's "Quantitative Finance" (Wiley, 2006).*
-*Scientific concepts: VADER, K-Means, UCB1, Shapley, Evolution Strategies, PIN, MoE, Markov.*
+*ML framework: Marcos López de Prado's "Advances in Financial Machine Learning" (Wiley, 2018).*
+*Scientific concepts: VADER, K-Means, UCB1, Shapley, Evolution Strategies, PIN, MoE, Markov, CUSUM, VPIN, Triple Barrier, Meta-Labeling.*
+*LLM Infrastructure: Google Gemini Fleet (8 models, distributed routing, 250K+ TPM).*
