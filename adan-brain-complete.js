@@ -937,7 +937,7 @@ Before EVERY decision, compute:
 5. If net edge >= 0.03 → BET in the direction of your edge
 
 BALANCE RULES:
-- You currently bet NO 83% of the time. This is a BIAS. YES and NO should be roughly balanced.
+- You currently bet YES 96% of the time. This is a SEVERE BIAS. Actively look for NO opportunities — markets can go DOWN too.
 - Asset WR: BTC 50.9%, ETH 56.9%, SOL 50.7%. ETH has the best edge — weight ETH signals higher.
 - When 3+ independent signals agree → BET with conviction. Do NOT second-guess aligned signals.
 - BTC leads alts by 2-8 min. Use BTC momentum to confirm alt direction.
@@ -1255,14 +1255,14 @@ async function runBrainCycle({
         return { action: 'SKIP', brain: activeBrain, thought };
     }
 
-    // ── 6.1 ASYMMETRY GATE: NO bets need 2x edge ──────────────
-    // Data: YES=53.5% WR (920 trades), NO=48.0% WR (506 trades).
-    // ADAN is statistically worse at NO bets. Light filter — let it trade to train Soul Memory.
+    // ── 6.1 ASYMMETRY GATE: NO bets — RELAXED to fix 96% YES bias ──────────────
+    // OLD: 4% min edge + 55% conf for NO → blocked nearly ALL NO trades
+    // NEW: Same threshold as YES (3% edge, 50% conf) — let data and soul memory train NO skill
     if (decision.action === 'BET NO') {
-        const noMinEdge = 0.04; // 4% edge minimum for NO
-        const noMinConf = 55;   // 55% confidence minimum for NO
+        const noMinEdge = 0.03; // Same as YES minimum
+        const noMinConf = 50;   // Same as YES minimum
         if ((decision.edge || 0) < noMinEdge || (decision.confidence || 0) < noMinConf) {
-            console.log(`[ADAN] 🚫 NO PENALTY: edge ${((decision.edge||0)*100).toFixed(1)}% < ${noMinEdge*100}% or conf ${decision.confidence||0}% < ${noMinConf}% — converting to SKIP`);
+            console.log(`[ADAN] 🚫 NO FILTER: edge ${((decision.edge||0)*100).toFixed(1)}% < ${noMinEdge*100}% or conf ${decision.confidence||0}% < ${noMinConf}% — converting to SKIP`);
             return { action: 'SKIP', brain: activeBrain, thought, noPenalty: true };
         }
     }
@@ -1399,15 +1399,26 @@ function parseDecision(text) {
             edge = parseFloat(edgeMatch[1]);
             if (Math.abs(edge) > 1) edge = edge / 100;
         } else {
-            edge = 0.05;
+            // FIXED: Default was 5% free edge — now 1% (barely above noise)
+            // Forces LLM to explicitly state edge for it to matter
+            edge = 0.01;
         }
     }
 
     // ── 4. Sanity bounds ──
     probability = Math.max(0.01, Math.min(0.99, probability));
-    edge = Math.max(-0.5, Math.min(0.5, Math.abs(edge)));
+    // CRITICAL FIX: preserve edge sign — negative edge means trade is BAD for chosen side
+    // Math.abs was destroying this signal, making ALL edges look positive
+    edge = Math.max(-0.5, Math.min(0.5, edge));
 
-    return { action, confidence, edge, probability };
+    // If edge is negative, the LLM is saying "this trade is against my analysis"
+    // Convert to SKIP unless edge is very slightly negative (noise)
+    if (edge < -0.01 && action !== 'SKIP') {
+        console.log(`[BRAIN] ⚠ Negative edge ${(edge*100).toFixed(1)}% for ${action} — LLM contradicts its own bet → SKIP`);
+        action = 'SKIP';
+    }
+
+    return { action, confidence, edge: Math.abs(edge), probability };
 }
 
 function computeKelly({ winRate, edge, fund }) {

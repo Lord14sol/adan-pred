@@ -10,9 +10,12 @@ const QUOTA_FILE = path.join(DIR, 'quota.json');
 const DEFAULTS = {
     date: '',
     gemma: { used: 0, limit: 14400 },
-    gemini: { used: 0, limit: 18 },   // 20 RPD - reservamos 2 para emergencias
-    embed: { used: 0, limit: 950 },  // 1000 RPD - margen de 50
-    rpm: { gemma: 0, lastMinute: 0 }, // control por minuto (30 RPM de Gemma)
+    gemini: { used: 0, limit: 18 },      // Gemini 2.5 Flash: 20 RPD - reservamos 2
+    workhorse: { used: 0, limit: 480 },   // Gemini 3.1 Flash Lite: 500 RPD - margen 20
+    lite: { used: 0, limit: 18 },         // Gemini 2.5 Flash Lite: 20 RPD - margen 2
+    flash3: { used: 0, limit: 18 },       // Gemini 3 Flash: 20 RPD - margen 2
+    embed: { used: 0, limit: 950 },       // Embeddings: 1000 RPD - margen 50
+    rpm: { gemma: 0, workhorse: 0, lastMinute: 0 }, // RPM tracking
     lastDream: null,
     // v4.0: Per-category LLM budget tracking
     categories: {
@@ -78,7 +81,50 @@ export class QuotaManager {
         return this.q.gemma.used;
     }
 
-    // ── GEMINI (Francotirador) ───────────────────────────────────────────────
+    // ── WORKHORSE: Gemini 3.1 Flash Lite (500 RPD, 15 RPM, 250K TPM) ──────
+    canUseWorkhorse() {
+        this._checkRpmReset();
+        if (!this.q.workhorse) this.q.workhorse = { used: 0, limit: 480 };
+        if (!this.q.rpm.workhorse) this.q.rpm.workhorse = 0;
+        return this.q.workhorse.used < this.q.workhorse.limit && this.q.rpm.workhorse < 13;
+    }
+
+    consumeWorkhorse() {
+        if (!this.q.workhorse) this.q.workhorse = { used: 0, limit: 480 };
+        if (!this.q.rpm.workhorse) this.q.rpm.workhorse = 0;
+        this.q.workhorse.used++;
+        this.q.rpm.workhorse++;
+        this._save();
+        return this.q.workhorse.used;
+    }
+
+    // ── LITE: Gemini 2.5 Flash Lite (20 RPD, 10 RPM, 250K TPM) ────────────
+    canUseLite() {
+        if (!this.q.lite) this.q.lite = { used: 0, limit: 18 };
+        return this.q.lite.used < this.q.lite.limit;
+    }
+
+    consumeLite() {
+        if (!this.q.lite) this.q.lite = { used: 0, limit: 18 };
+        this.q.lite.used++;
+        this._save();
+        return this.q.lite.used;
+    }
+
+    // ── FLASH3: Gemini 3 Flash (20 RPD, 5 RPM, 250K TPM) ──────────────────
+    canUseFlash3() {
+        if (!this.q.flash3) this.q.flash3 = { used: 0, limit: 18 };
+        return this.q.flash3.used < this.q.flash3.limit;
+    }
+
+    consumeFlash3() {
+        if (!this.q.flash3) this.q.flash3 = { used: 0, limit: 18 };
+        this.q.flash3.used++;
+        this._save();
+        return this.q.flash3.used;
+    }
+
+    // ── GEMINI 2.5 Flash (Francotirador) ───────────────────────────────────
     canUseGemini() {
         return this.q.gemini.used < this.q.gemini.limit;
     }
@@ -155,6 +201,7 @@ export class QuotaManager {
         const now = Date.now();
         if (now - this.q.rpm.lastMinute > 60000) {
             this.q.rpm.gemma = 0;
+            this.q.rpm.workhorse = 0;
             this.q.rpm.lastMinute = now;
             this._save();
         }
@@ -162,10 +209,17 @@ export class QuotaManager {
 
     // ── STATUS ───────────────────────────────────────────────────────────────
     status() {
+        const wh = this.q.workhorse || { used: 0, limit: 480 };
+        const lt = this.q.lite || { used: 0, limit: 18 };
+        const f3 = this.q.flash3 || { used: 0, limit: 18 };
         return {
             date: this.q.date,
-            gemma: `${this.q.gemma.used}/${this.q.gemma.limit} RPD`,
-            gemini: `${this.q.gemini.used}/${this.q.gemini.limit} RPD ${this.isSaverMode() ? '⚠️ SAVER MODE' : '✅'}`,
+            workhorse: `${wh.used}/${wh.limit} RPD (3.1 Flash Lite — PRIMARY)`,
+            flash20: 'unlimited (2.0 Flash — FALLBACK)',
+            gemini: `${this.q.gemini.used}/${this.q.gemini.limit} RPD ${this.isSaverMode() ? '⚠️ SAVER MODE' : '✅'} (2.5 Flash — SNIPER)`,
+            lite: `${lt.used}/${lt.limit} RPD (2.5 Flash Lite — OVERFLOW)`,
+            flash3: `${f3.used}/${f3.limit} RPD (3 Flash — OVERFLOW)`,
+            gemma: `${this.q.gemma.used}/${this.q.gemma.limit} RPD (27B — RESERVE ONLY)`,
             embed: `${this.q.embed.used}/${this.q.embed.limit} RPD`,
             lastDream: this.q.lastDream,
             dreamReady: this.shouldRunDream(),

@@ -107,6 +107,8 @@ import { selfReader } from './src/core/self_reader.js';
 import { innerMonologue } from './src/core/inner_monologue.js';
 import { experimentEngine } from './src/core/experiment_engine.js';
 import { requestTracker } from './src/core/request_tracker.js';
+// ── Scenario Forecaster (Third Eye) ─────────────────────────────────────────
+import { scenarioForecaster } from './src/ml/scenario_forecaster.js';
 // ── ML Intelligence Layer ───────────────────────────────────────────────────
 import { statModel, LogisticRegression } from './src/ml/logistic_regression.js';
 import { walkForward } from './src/ml/walk_forward.js';
@@ -442,12 +444,12 @@ async function fetchAllPrices() {
     }
 
     // ── Concept #20D: CUSUM structural break detection ──
-    try { cusumFilter.update(price); } catch {}
+    try { cusumFilter.update(price); } catch (e) { console.error('[CUSUM] Update error:', e.message); }
     // ── Concept #20F: VPIN volume toxicity ──
     try {
       const lastVol = klines1m[klines1m.length - 1]?.vol || 0;
       vpinTracker.update(price, lastVol);
-    } catch {}
+    } catch (e) { console.error('[VPIN] Update error:', e.message); }
 
     // ── Update Regime Classifier + Wilmott EWMA (Ch 42/49) ──
     const assetName = sym.replace('USDT', '').toLowerCase();
@@ -2066,7 +2068,11 @@ Be specific. If BTC NO bets with edge >10% win more, say that. If morning trades
 async function dreamMode(pnl) {
   const pos = loadPositions();
   const losses = (pos.closed || []).filter(p => p.result === 'LOSS').slice(-5);
-  if (losses.length < 2) return; // need at least 2 losses to reflect
+  if (losses.length < 2) {
+    console.log('[DREAM] Not enough losses to reflect (<2). Marking dream as run to prevent infinite retry.');
+    quota.markDreamRun();
+    return;
+  }
 
   const lossDetails = losses.map(l =>
     `LOSS: "${l.marketTitle}" | ${l.asset} ${l.side} | My prob: ${(l.myProb * 100).toFixed(0)}% | Market: ${(l.marketPrice * 100).toFixed(0)}% | Edge: ${((l.edge || 0) * 100).toFixed(1)}% | Confidence: ${l.confidence || '?'}%`
@@ -2114,7 +2120,9 @@ Be brutally honest. This is self-reflection, not performance.`,
       console.log('\n' + M + BOLD + `  💤 DREAM MODE — ${dreamLines.length} rules added to soul` + X);
     }
   } catch (e) {
-    console.log('Dream mode error:', e.message);
+    console.log('[DREAM] Dream mode error:', e.message);
+    // Mark dream as run even on error to prevent infinite retry loop
+    quota.markDreamRun();
   }
 }
 
@@ -2664,12 +2672,32 @@ async function think(markets, prices, pnl, openPos, state) {
     decision.thought = (decision.thought || '') + `\n🎯 META-CALIB: raw ${rawConf}% × ${mc.multiplier} = ${calibratedConf}% calibrated confidence`;
   }
 
-  // v7: SELF-OPTIMIZED QUANT GATE — params auto-tuned nightly
+  // v7+v9: SELF-OPTIMIZED QUANT GATE — params from selfOptimizer + Evolution Strategies + Experiments
   const optParams = selfOptimizer.loadParams();
+  const esGateParams = evolutionStrategies.getBestParams();
+  // Apply active experiment overrides (e.g. confGate=70, minEdge=0.04)
+  const expOverrides = experimentEngine.getActiveOverrides();
+  if (Object.keys(expOverrides).length > 0) {
+    console.log(`[EXPERIMENT] Active overrides: ${JSON.stringify(expOverrides)}`);
+    if (expOverrides.confGate) optParams.confGate = parseFloat(expOverrides.confGate);
+    if (expOverrides.minEdge) optParams.minEdge = parseFloat(expOverrides.minEdge);
+  }
+  // Use ES-evolved thresholds if they're stricter than self-optimizer
+  const effectiveConfGate = Math.max(optParams.confGate, esGateParams.confidenceFloor || 0);
+  const effectiveMinEdge = Math.max(optParams.minEdge, esGateParams.edgeMin || 0);
   const brainNetEdge = Math.abs(decision.edge || 0) - 0.017; // subtract fees+slippage
-  if (shouldBet && (calibratedConf < optParams.confGate || brainNetEdge < optParams.minEdge)) {
+
+  // EDGE INFLATION GUARD: Data shows high edge (>25%) = 48% WR vs low edge (<25%) = 68% WR
+  // Edges above 20% are almost certainly miscalibrated — cap Kelly and flag suspicion
+  if (brainNetEdge > 0.20) {
+    console.log(`[QUANT GATE] ⚠ INFLATED EDGE DETECTED: ${(brainNetEdge*100).toFixed(1)}% > 20% — capping to 15% for sizing. LLM likely overconfident.`);
+    decision.edge = 0.167; // 15% + 1.7% fees = 16.7% net, still generous
+    decision.edgeInflated = true;
+  }
+
+  if (shouldBet && (calibratedConf < effectiveConfGate || brainNetEdge < effectiveMinEdge)) {
     shouldBet = false;
-    decision.thought = (decision.thought || '') + `\n⛔ QUANT GATE [v${optParams.version||0}]: calibConf=${calibratedConf}% < ${optParams.confGate}%, netEdge=${(brainNetEdge*100).toFixed(1)}% < ${(optParams.minEdge*100).toFixed(1)}% — below self-optimized threshold`;
+    decision.thought = (decision.thought || '') + `\n⛔ QUANT GATE [v${optParams.version||0}+ES]: calibConf=${calibratedConf}% < ${effectiveConfGate.toFixed(0)}%, netEdge=${(brainNetEdge*100).toFixed(1)}% < ${(effectiveMinEdge*100).toFixed(1)}% — below evolved threshold`;
   }
 
   // ═══ ENSEMBLE INTELLIGENCE LAYER — Stat Model + LLM + Rules ═══
@@ -2895,6 +2923,27 @@ async function evaluate_and_trade(decision, prices, state) {
   // Persist markov state for prompt injection
   state._markovState = markov;
 
+  // ═══ TOXIC HOUR BLACKLIST (data-driven from pnl.json hourStats) ═══
+  try {
+    const currentHour = new Date().getUTCHours();
+    const hourStats = pnlNow.hourStats || {};
+    const hStat = hourStats[currentHour];
+    const hTotal = hStat ? (hStat.wins || 0) + (hStat.losses || 0) : 0;
+    if (hStat && hTotal >= 15) {
+      const hourWR = hStat.wins / hTotal;
+      if (hourWR < 0.40) {
+        console.log(`[TOXIC-HOUR] ⛔ BLOCKED: Hour ${currentHour} UTC has ${(hourWR*100).toFixed(0)}% WR (${hStat.wins}/${hTotal}) — below 40% threshold`);
+        recordAdanShadow(decision, market, `TOXIC_HOUR_${currentHour}`);
+        return;
+      }
+      if (hourWR < 0.45) {
+        console.log(`[TOXIC-HOUR] ⚠ WARNING: Hour ${currentHour} UTC has ${(hourWR*100).toFixed(0)}% WR — proceeding with caution`);
+      }
+    }
+  } catch (thErr) {
+    console.error('[TOXIC-HOUR] Error:', thErr.message);
+  }
+
   // ═══ SOUL MEMORY v2: Predictive recall — "I've been here before" ═══
   const entryFeatures = market.priceData ? {
     rsi: market.priceData.rsi || 50,
@@ -2962,7 +3011,7 @@ async function evaluate_and_trade(decision, prices, state) {
       recordAdanShadow(decision, market, 'RES_ORACLE_CAUTION');
       return;
     }
-  } catch {}
+  } catch (e) { console.error('[RES-ORACLE] Error:', e.message); }
 
   // ═══ Concept #20D: CUSUM structural break gate ═══
   try {
@@ -2970,7 +3019,7 @@ async function evaluate_and_trade(decision, prices, state) {
       console.log(`[CUSUM] ⚠ Structural break active — reducing stake (regime transitioning)`);
       // Don't block, but the stake will be reduced below
     }
-  } catch {}
+  } catch (e) { console.error('[CUSUM] Gate error:', e.message); }
 
   // ═══ WILMOTT v6.0: Pre-trade analysis (16 quantitative checks) ═══
   // TRAINING MODE: Wilmott gates LOG + SHADOW but do NOT block trades.
@@ -3181,12 +3230,25 @@ async function evaluate_and_trade(decision, prices, state) {
   const cusumMult = cusumFilter.isInTransition(30000) ? 0.6 : 1.0;
   // Concept #20F: VPIN toxicity → reduce 50%
   const vpinMult = vpinTracker.isToxic() ? 0.5 : (vpinTracker.getVPIN() > 0.5 ? 0.8 : 1.0);
-  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult * ivStakeMult * timeDecayMult * kmeansRegimeMult * hourBinMult * metaLabelMult * cusumMult * vpinMult);
+  // Concept #20C: Purged WF overfit penalty — if model overfitting, reduce trust
+  let purgedWFMult = 1.0;
+  try {
+    const overfitScore = purgedWF.getOverfitScore();
+    if (overfitScore > 1.3) {
+      purgedWFMult = 0.6; // Model is overfitting — reduce stake 40%
+      console.log(`[PURGED-WF] ⚠ Overfit score ${overfitScore.toFixed(2)} > 1.3 — stake ×0.6`);
+    } else if (overfitScore > 1.15) {
+      purgedWFMult = 0.8;
+    }
+  } catch (e) { console.error('[PURGED-WF] Overfit check error:', e.message); }
+  // v9.0: Scenario Forecaster — "Third Eye" Kelly multiplier
+  const forecastMult = scenarioForecaster.getKellyMultiplier();
+  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult * ivStakeMult * timeDecayMult * kmeansRegimeMult * hourBinMult * metaLabelMult * cusumMult * vpinMult * purgedWFMult * forecastMult);
   let stake = Math.round(Math.max(100, baseStake * combined) / 25) * 25; // TRAINING: min $100 per bet
 
   // v5.3 Wilmott: Child-direct trades use Half Kelly + Copula correlation penalty
   if (decision._childDirect) {
-    const edge = decision.edge || 0.05;
+    const edge = decision.edge || 0.01; // was 0.05 — don't gift free edge to child trades
     const variance = edge * (1 - edge); // Bernoulli variance for binary outcome
     const fullKelly = variance > 0 ? edge / variance : 0;
     const halfKelly = fullKelly / 2;
@@ -3591,7 +3653,21 @@ async function checkResolutions() {
           });
           onlineLearner.update(onlineFeatures, won, statProb);
           if (onlineLearner.shouldPromote()) {
-            console.log('[ONLINE-LEARNER] *** PROMOTION FLAG: Online model beating batch by 2%+ over last 100 trades ***');
+            console.log('[ONLINE-LEARNER] *** PROMOTION: Online model beating batch by 2%+ — transferring weights ***');
+            // Transfer online weights to batch model (actual promotion)
+            try {
+              const olStatus = onlineLearner.getStatus();
+              for (let j = 0; j < statModel.weights.length && j < onlineLearner.weights.length; j++) {
+                // Blend: 70% online + 30% batch (soft transfer, not hard swap)
+                statModel.weights[j] = 0.7 * onlineLearner.weights[j] + 0.3 * statModel.weights[j];
+              }
+              statModel.bias = 0.7 * onlineLearner.bias + 0.3 * statModel.bias;
+              statModel.onlineUpdates += 1;
+              statModel._save();
+              console.log(`[ONLINE-LEARNER] Weights transferred. Online WR: ${olStatus.recentWR}% vs Batch: ${olStatus.batchRecentWR}%`);
+            } catch (promErr) {
+              console.error('[ONLINE-LEARNER] Promotion error:', promErr.message);
+            }
           }
         } catch (olErr) {
           console.log('[ONLINE-LEARNER] Update error:', olErr.message);
@@ -3613,14 +3689,14 @@ async function checkResolutions() {
           windowMin: p.windowMin || 5, liquidity: p.marketLiquidity || 0,
           yesPrice: p.marketPrice || 0.5, side: p.side || 'YES', won,
         });
-      } catch {};
+      } catch (e) { console.error('[MKT-FILTER] Record error:', e.message); }
       // Concept #8C: Record in UCB Explorer for exploration scoring
       try {
         ucbExplorer.recordTrade({
           id: p.marketId, conditionId: p.conditionId,
           title: p.title || p.marketTitle || '', asset: p.asset || 'unknown',
         }, won, p.edge || 0);
-      } catch {};
+      } catch (e) { console.error('[UCB] Record error:', e.message); }
     } catch (e) { console.log('[ML-ONLINE] Error:', e.message); }
 
     // Concept #20A: Triple Barrier — label the resolved trade
@@ -3630,24 +3706,24 @@ async function checkResolutions() {
       const vol = p.entryVec?.[3] || 1; // volatility from feature vector
       const tbLabel = tripleBarrier.labelTrade(entryP, exitP, p.side, p.barsHeld || 5, vol);
       if (tbLabel) p._tripleBarrierLabel = tbLabel.label;
-    } catch {}
+    } catch (e) { console.error('[TRIPLE-BARRIER] Label error:', e.message); }
 
     // Concept #20C: Purged Walk-Forward — add training sample
     try {
       if (p.entryVec) {
         purgedWF.addSample(p.entryVec, won, p.entryTime ? new Date(p.entryTime).getTime() : Date.now());
       }
-    } catch {}
+    } catch (e) { console.error('[PURGED-WF] Sample error:', e.message); }
 
     // Concept #22: Resolution Oracle — record clean resolution
     try {
       const mType = (p.marketTitle || '').match(/up or down/i) ? 'crypto_price' : 'other';
       resolutionOracle.recordResolution(p.marketId, true, mType); // all Polymarket resolutions are clean
-    } catch {}
+    } catch (e) { console.error('[RES-ORACLE] Record error:', e.message); }
 
     // Resolve feature tracking for this trade
-    try { featureTracker.recordResolution(p.id, won); } catch { }
-    try { featureImportance.resolveEntry(p.featureTradeId || p.id, won); } catch { }
+    try { featureTracker.recordResolution(p.id, won); } catch (e) { console.error('[FEATURE-TRACK] Error:', e.message); }
+    try { featureImportance.resolveEntry(p.featureTradeId || p.id, won); } catch (e) { console.error('[FEATURE-IMP] Error:', e.message); }
 
     // ── Record Result for Brain Manager
     if (p.brainStake && p.brainStake > 0) {
@@ -3737,7 +3813,35 @@ async function checkResolutions() {
       try {
         const beliefs = soulMemory.consolidate();
         if (beliefs.length > 0) console.log(`[SOUL v2] 🧠 Auto-consolidated ${beliefs.length} beliefs at trade #${pnl2.trades}`);
-      } catch {}
+      } catch (e) { console.error('[SOUL] Consolidate error:', e.message); }
+    }
+    // v8.4: AUTO-DREAM — retrain model + Shapley + ES every 200 trades
+    if (pnl2.trades % 200 === 0 && pnl2.trades > 0) {
+      try {
+        console.log(`[AUTO-DREAM] 🧠 Triggering auto-retrain at trade #${pnl2.trades}...`);
+        const { walkForward } = await import('./src/ml/walk_forward.js');
+        const { shapleyAnalyzer } = await import('./src/ml/shapley_values.js');
+        const posData2 = loadPositions();
+        const wfResult = walkForward.run();
+        if (wfResult) {
+          console.log(`[AUTO-DREAM] Walk-Forward: OOS WR ${wfResult.overallOOSWR}% over ${wfResult.folds} folds`);
+          // Refresh Shapley mask after retrain
+          const shapResult = shapleyAnalyzer.analyze(posData2.closed || [], statModel);
+          if (shapResult) {
+            statModel.reloadShapleyMask();
+            console.log(`[AUTO-DREAM] Shapley mask refreshed — ${shapResult.filter(v => v.category === 'HARMFUL').length} harmful features masked`);
+          }
+          // Evolve strategy params
+          const esInput = (posData2.closed || []).slice(-200).map(t => ({
+            pnl: t.pnl || 0, edge: t.edge || 0,
+            confidence: t.confidence || 50, stake: t.stake || 100,
+          }));
+          if (esInput.length >= 50) {
+            const esResult = evolutionStrategies.evolve(esInput);
+            if (esResult) console.log(`[AUTO-DREAM] ES gen ${esResult.generation} fitness: ${esResult.fitness?.toFixed(4)}`);
+          }
+        }
+      } catch (e) { console.error('[AUTO-DREAM] Error:', e.message); }
     }
     savePnL(pnl2);
     console.log('\n' + (won ? G : R) + BOLD + '  ► ' + (won ? 'WIN' : 'LOSS') + ' resolved: ' + p.marketTitle + ' → $' + (pnlVal >= 0 ? '+' : '') + pnlVal + X + '\n');
@@ -3750,17 +3854,30 @@ async function checkResolutions() {
         confidence: p.confidence, pnl: pnlVal, marketTitle: p.marketTitle,
         myProb: p.myProb, marketPrice: p.marketPrice, brain: p.brain,
         entryVec: p.entryVec, regime: p.entryVec?.regime || 'unknown',
-      }).catch(() => {});
+      }).catch((e) => { console.log('[MONOLOGUE] Reflect error:', e.message); });
     } catch {}
     // ── ULTRA CONSCIOUSNESS: Experiment Engine — track trade during experiment ──
     try { experimentEngine.recordTrade({ won, pnl: pnlVal, edge: p.edge, confidence: p.confidence }); } catch {}
+    // v9.0: Scenario Forecaster — record outcome for learning
+    try {
+      if (p._forecast) {
+        const actualDir = won ? (p.side === 'YES' ? 'UP' : 'DOWN') : (p.side === 'YES' ? 'DOWN' : 'UP');
+        scenarioForecaster.recordOutcome({
+          asset: p._forecast.asset,
+          forecastDirection: p._forecast.forecastDirection,
+          actualDirection: actualDir,
+          expectedMove: p._forecast.expectedMove,
+          actualMove: undefined, // we don't track exact price move yet
+        });
+      }
+    } catch (fcErr) { console.error('[FORECAST] Outcome recording error:', fcErr.message); }
     await new Promise(r => setTimeout(r, 1000));
   }
   if (changed) {
     savePositions(pos);
     let pnlFinal = loadPnL();
     if (typeof _agiClient !== 'undefined' && _agiClient) {
-      try { autoEvolveSoul(_agiClient, pnlFinal).catch(() => { }); } catch { }
+      try { autoEvolveSoul(_agiClient, pnlFinal).catch((e) => { console.log('[SOUL-EVOLVE] Error:', e.message); }); } catch { }
     }
     absorbEliteGenome(pnlFinal);
     pnlFinal = loadPnL(); // reload after absorption
@@ -3803,7 +3920,7 @@ async function doScan(state) {
   }
 
   // Check grandchildren spawning (LVL 4+ only, silently in background)
-  if (xpCheck.level >= 4) spawnGrandchildren().catch(() => { });
+  if (xpCheck.level >= 4) spawnGrandchildren().catch((e) => { console.log('[GRANDCHILD] Spawn error:', e.message); });
 
   if (openPos.length >= MAX_POSITIONS) {
     state.thought = 'All ' + MAX_POSITIONS + ' slots full. Monitoring for resolutions.';
@@ -3868,11 +3985,16 @@ async function doScan(state) {
       }
     }
     checkShadowResolutions(prices);
-    runAllChildScanners(prices, allMarkets).catch(() => { });
+    runAllChildScanners(prices, allMarkets).catch((e) => { console.log('[CHILDREN] Scanner error:', e.message); });
 
     // ── DREAM MODE — off-hours self-reflection (AGI Layer 6) ─────────────
     if (quota.shouldRunDream()) {
-      dreamMode(pnl).catch(() => { });
+      try {
+        await dreamMode(pnl);
+        console.log('[DREAM] ✅ Dream mode completed successfully');
+      } catch (e) {
+        console.error(`[DREAM] ❌ DREAM MODE FAILED: ${e.message}\n${e.stack}`);
+      }
       // Soul Memory v2: consolidate raw sequences into beliefs
       const beliefs = soulMemory.consolidate();
       if (beliefs.length > 0) {
@@ -3922,6 +4044,7 @@ async function doScan(state) {
           brainPayload,
           selfInsights,  // NEW: inject self-reader patterns
           monologueSummary: innerMonologue.getThoughtsSummary(), // NEW: recent trade reflections
+          forecastSummary: scenarioForecaster.getJournalSummary(), // v9.0: forecast accuracy reflection
         });
 
         // 4. EXPERIMENT ENGINE: Propose new experiment from insights + auto-start + evaluate
@@ -3995,7 +4118,7 @@ async function doScan(state) {
   }
 
   // 2.5 Run child scanners in background (LVL 3+) — no Claude, just data
-  runAllChildScanners(prices, allMarkets).catch(() => { });
+  runAllChildScanners(prices, allMarkets).catch((e) => { console.log('[CHILDREN] Scanner error (cycle):', e.message); });
   checkShadowResolutions(prices);
 
   // 2.6 BOREDOM FILTER — skip Claude call if market is asleep (low BB width + low volume)
@@ -4292,7 +4415,31 @@ async function doScan(state) {
     decision._metaFeatures = metaFeatures;
   }
 
-  if (decision.action === 'BET' && decision.market) await evaluate_and_trade(decision, prices, state);
+  // v9.0: Scenario Forecaster — simulate 3 scenarios before every trade
+  if (decision.action === 'BET' && decision.market) {
+    try {
+      const asset = decision.asset || decision.market?.ticker || 'BTC';
+      const candles = prices?.[asset]?.candles || prices?.BTC?.candles || [];
+      const indicators = prices?.[asset] || prices?.BTC || {};
+      const forecast = await scenarioForecaster.forecast({
+        asset,
+        candles,
+        rsi: indicators.rsi,
+        trend1m: indicators.trend1m,
+        trend5m: indicators.trend5m,
+        volRatio: indicators.volRatio,
+        bbPct: indicators.bbPct,
+        macdHist: indicators.macdHist,
+        side: decision.action?.includes('YES') ? 'YES' : 'NO',
+        edge: decision.edge,
+        marketPrice: decision.marketPrice,
+      });
+      if (forecast) {
+        decision._forecast = forecast; // Attach for learning after resolution
+      }
+    } catch (fErr) { console.error('[FORECAST] Pre-trade error:', fErr.message); }
+    await evaluate_and_trade(decision, prices, state);
+  }
 
   // v4.1 Fix 4: Process category trade candidates from LLM children
   await processCategoryTrades(prices, state);

@@ -8,6 +8,50 @@ import path from 'path';
 
 const DIR = path.join(process.env.HOME, '.adan-pred');
 const MODEL_PATH = path.join(DIR, 'ml_model.json');
+const SHAPLEY_PATH = path.join(DIR, 'shapley_values.json');
+
+// ── Shapley-based feature mask: zero out features marked HARMFUL ──
+// v9.0: Smart mask — only silence features where Shapley says HARMFUL
+// AND the ML model weight is weak (< 0.05). If ML says a feature is
+// important (high weight), trust the ML over Shapley.
+function loadHarmfulFeatures() {
+  try {
+    if (fs.existsSync(SHAPLEY_PATH)) {
+      const data = JSON.parse(fs.readFileSync(SHAPLEY_PATH, 'utf8'));
+      if (data.values) {
+        // Load ML weights to cross-reference
+        let mlWeights = {};
+        try {
+          if (fs.existsSync(MODEL_PATH)) {
+            const model = JSON.parse(fs.readFileSync(MODEL_PATH, 'utf8'));
+            if (model.featureNames && model.weights) {
+              model.featureNames.forEach((name, i) => { mlWeights[name] = Math.abs(model.weights[i] || 0); });
+            }
+          }
+        } catch {}
+
+        const harmful = data.values
+          .filter(v => v.category === 'HARMFUL')
+          .filter(v => {
+            const mlWeight = mlWeights[v.feature] || 0;
+            if (mlWeight >= 0.05) {
+              console.log(`[STAT-MODEL] Shapley says ${v.feature} HARMFUL (${v.shapley.toFixed(4)}) but ML weight=${mlWeight.toFixed(4)} — KEEPING (ML overrides)`);
+              return false; // ML says it's important, don't mask
+            }
+            return true;
+          })
+          .map(v => v.feature);
+        if (harmful.length > 0) {
+          console.log(`[STAT-MODEL] Shapley mask: zeroing confirmed HARMFUL features: ${harmful.join(', ')}`);
+        }
+        return new Set(harmful);
+      }
+    }
+  } catch {}
+  return new Set();
+}
+
+let HARMFUL_FEATURES = loadHarmfulFeatures();
 
 // ── Feature config ──
 const NUMERIC_FEATURES = [
@@ -116,11 +160,16 @@ export class LogisticRegression {
     return ALL_FEATURES.map(f => features[f] ?? 0);
   }
 
-  // ── Z-score normalize (skip binary and cyclical features) ──
+  // ── Z-score normalize (skip binary and cyclical features, zero harmful) ──
   _normalize(x) {
     const z = new Float64Array(N_FEATURES);
     for (let i = 0; i < N_FEATURES; i++) {
       const name = ALL_FEATURES[i];
+      // Shapley mask: zero out features identified as HARMFUL
+      if (HARMFUL_FEATURES.has(name)) {
+        z[i] = 0;
+        continue;
+      }
       if (BINARY_FEATURES.includes(name) || CYCLICAL_FEATURES.includes(name)) {
         z[i] = x[i]; // Don't normalize binary/cyclical
       } else {
@@ -128,6 +177,11 @@ export class LogisticRegression {
       }
     }
     return z;
+  }
+
+  // ── Reload Shapley mask (called after dream cycle) ──
+  reloadShapleyMask() {
+    HARMFUL_FEATURES = loadHarmfulFeatures();
   }
 
   // ── Compute normalization stats from data ──

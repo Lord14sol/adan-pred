@@ -1,6 +1,6 @@
-// adan-llm-router.js — NUEVA VERSION
-// Reemplaza Anthropic/Ollama con Google AI Studio
-// Gemma 3 27B = Cerebro 24/7 | Gemini 2.5 Flash = Francotirador (20 RPD)
+// adan-llm-router.js — v9.0 DISTRIBUTED INTELLIGENCE
+// Inverted pyramid: Flash models (250K TPM) are primary, Gemma (15K TPM) is reserve
+// Load distributed across ALL available free models
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { quota } from './src/core/quota_manager.js';
@@ -12,10 +12,23 @@ function getGenAI() {
 }
 
 const MODELS = {
-    BRAIN: 'gemma-3-27b-it',
-    SNIPER: 'gemini-2.5-flash',
-    EMBEDDER: 'text-embedding-004'
+    // === PRIMARY FLEET (250K TPM each) ===
+    WORKHORSE: 'gemini-3.1-flash-lite-preview',  // 15 RPM, 250K TPM, 500 RPD — NEW BRAIN
+    FAST: 'gemini-2.0-flash',                     // unlimited RPM, 250K TPM — FALLBACK #1
+    SNIPER: 'gemini-2.5-flash',                   // 5 RPM, 250K TPM, 20 RPD — CRITICAL ONLY
+    LITE: 'gemini-2.5-flash-lite',                // 10 RPM, 250K TPM, 20 RPD — OVERFLOW
+    FLASH3: 'gemini-3-flash-preview',             // 5 RPM, 250K TPM, 20 RPD — OVERFLOW #2
+    FLASH_LITE: 'gemini-2.0-flash-lite',          // unlimited RPM, fallback
+    // === RESERVE FLEET (15K TPM each — use sparingly) ===
+    GEMMA_27B: 'gemma-3-27b-it',                  // 30 RPM, 15K TPM, 14.4K RPD
+    GEMMA_12B: 'gemma-3-12b-it',                  // 30 RPM, 15K TPM, 14.4K RPD
+    // === EMBEDDINGS ===
+    EMBEDDER: 'gemini-embedding-exp-03-07',       // Gemini Embedding 2 — 100 RPM, 30K TPM
+    EMBEDDER_LEGACY: 'text-embedding-004',
 };
+
+// Round-robin counter for load distribution
+let _callCounter = 0;
 
 async function withRetry(fn, maxRetries = 3, label = '') {
     for (let i = 0; i < maxRetries; i++) {
@@ -35,52 +48,111 @@ async function withRetry(fn, maxRetries = 3, label = '') {
     }
 }
 
-async function callGemma(prompt, options = {}) {
-    if (!quota.canUseGemma()) return null;
+// ── HELPER: Call any model by name with fallback chain ──
+async function callModel(modelName, prompt, options = {}, label = '') {
     const model = getGenAI().getGenerativeModel({
-        model: MODELS.BRAIN,
+        model: modelName,
         generationConfig: {
             temperature: options.temperature ?? 0.1,
-            topP: 0.8, topK: 20,
+            topP: options.topP ?? 0.9,
             maxOutputTokens: options.maxTokens ?? 1024,
         }
     });
-    const result = await withRetry(() => model.generateContent(prompt), 3, 'Gemma');
+    const result = await withRetry(() => model.generateContent(prompt), 3, label || modelName);
     if (!result) return null;
 
-    // Token monitoring
     const usage = result.response.usageMetadata;
     const tokens = usage ? usage.promptTokenCount : Math.round(prompt.length / 4);
-    console.log(`[ROUTER] 🧠 Gemma Prompt: ${tokens} tokens${usage ? '' : ' (est)'}`);
-
-    quota.consumeGemma();
+    console.log(`[ROUTER] ${label || modelName}: ${tokens} tokens${usage ? '' : ' (est)'}`);
     return result.response.text();
 }
 
-async function callGemini(prompt, reason = 'unknown', options = {}) {
-    if (!quota.canUseGemini()) return callGemma(prompt, options);
-    if (quota.isSaverMode() && reason !== 'dream_mode') return callGemma(prompt, options);
-    const model = getGenAI().getGenerativeModel({
-        model: MODELS.SNIPER,
-        generationConfig: { temperature: 0.1, topP: 0.9, maxOutputTokens: options.maxTokens ?? 2048 }
-    });
-    const result = await withRetry(() => model.generateContent(prompt), 3, 'Gemini');
-    if (!result) return null;
+// ── PRIMARY: Distributed call across available fleet ──
+// Priority: Workhorse (3.1 Flash Lite, 500 RPD) → Gemma 12B → Lite 2.5 → Flash 3 → Gemma 27B
+// NOTE: Gemini 2.0 Flash has quota=0 on free tier, only used as last-resort retry
+async function callDistributed(prompt, options = {}) {
+    _callCounter++;
 
-    // Token monitoring
-    const usage = result.response.usageMetadata;
-    const tokens = usage ? usage.promptTokenCount : Math.round(prompt.length / 4);
-    console.log(`[ROUTER] 🎯 Gemini Prompt: ${tokens} tokens${usage ? '' : ' (est)'}`);
+    // Route #1: Workhorse — Gemini 3.1 Flash Lite (500 RPD, 15 RPM, 250K TPM)
+    // This is the PRIMARY brain now
+    if (quota.canUseWorkhorse()) {
+        const result = await callModel(MODELS.WORKHORSE, prompt, options, '🐎 Workhorse-3.1');
+        if (result) { quota.consumeWorkhorse(); return result; }
+    }
+
+    // Route #2: Gemma 12B (14.4K RPD, 30 RPM, 15K TPM) — lighter, saves 27B
+    if (quota.canUseGemma()) {
+        const r2 = await callModel(MODELS.GEMMA_12B, prompt, { ...options, maxTokens: Math.min(options.maxTokens || 512, 512) }, '🧒 Gemma-12B');
+        if (r2) { quota.consumeGemma(); return r2; }
+    }
+
+    // Route #3: Gemini 2.5 Flash Lite (20 RPD, 250K TPM)
+    if (quota.canUseLite()) {
+        const r3 = await callModel(MODELS.LITE, prompt, options, '💡 Lite-2.5');
+        if (r3) { quota.consumeLite(); return r3; }
+    }
+
+    // Route #4: Gemini 3 Flash Preview (20 RPD, 250K TPM)
+    if (quota.canUseFlash3()) {
+        const r4 = await callModel(MODELS.FLASH3, prompt, options, '🔥 Flash-3');
+        if (r4) { quota.consumeFlash3(); return r4; }
+    }
+
+    // Route #5: Gemma 27B (15K TPM — heavy, last resort before full exhaust)
+    if (quota.canUseGemma()) {
+        const r5 = await callModel(MODELS.GEMMA_27B, prompt, { ...options, maxTokens: Math.min(options.maxTokens || 512, 512) }, '🧠 Gemma-27B');
+        if (r5) { quota.consumeGemma(); return r5; }
+    }
+
+    // Route #6: Gemini 2.0 Flash — may have quota=0 but try anyway as absolute last resort
+    const r6 = await callModel(MODELS.FAST, prompt, options, '⚡ Flash-2.0-lastresort');
+    if (r6) return r6;
+
+    console.error('[ROUTER] ALL MODELS EXHAUSTED — no response possible');
+    return null;
+}
+
+// ── callGemma: Now redirects to distributed fleet (Gemma is RESERVE, not primary) ──
+async function callGemma(prompt, options = {}) {
+    // Gemma 15K TPM is too small for primary use — redirect to Flash fleet
+    return callDistributed(prompt, options);
+}
+
+// ── callFast: Quick route — Workhorse first, then distributed ──
+async function callFast(prompt, options = {}) {
+    // Workhorse (3.1 Flash Lite) is the fastest available with quota
+    if (quota.canUseWorkhorse()) {
+        const result = await callModel(MODELS.WORKHORSE, prompt, options, '🐎 Fast-Workhorse');
+        if (result) { quota.consumeWorkhorse(); return result; }
+    }
+    return callDistributed(prompt, options);
+}
+
+// ── callGemini: Sniper for critical decisions (20 RPD) ──
+async function callGemini(prompt, reason = 'unknown', options = {}) {
+    if (!quota.canUseGemini()) return callDistributed(prompt, options);
+    if (quota.isSaverMode() && reason !== 'dream_mode') return callDistributed(prompt, options);
+
+    const result = await callModel(MODELS.SNIPER, prompt, { ...options, maxTokens: options.maxTokens ?? 2048 }, '🎯 Sniper-2.5');
+    if (!result) return callDistributed(prompt, options);
 
     quota.consumeGemini(reason);
-    return result.response.text();
+    return result;
 }
 
 export async function getEmbedding(text) {
     if (!quota.canEmbed()) return null;
+    // Use Gemini Embedding 2 (newer, better) with legacy fallback
     const model = getGenAI().getGenerativeModel({ model: MODELS.EMBEDDER });
-    const result = await withRetry(() => model.embedContent(text.slice(0, 2000)), 3, 'Embed');
-    if (!result) return null;
+    const result = await withRetry(() => model.embedContent(text.slice(0, 2000)), 3, 'Embed-v2');
+    if (!result) {
+        // Fallback to legacy embedder
+        const legacy = getGenAI().getGenerativeModel({ model: MODELS.EMBEDDER_LEGACY });
+        const r2 = await withRetry(() => legacy.embedContent(text.slice(0, 2000)), 3, 'Embed-legacy');
+        if (!r2) return null;
+        quota.consumeEmbed();
+        return r2.embedding.values;
+    }
     quota.consumeEmbed();
     return result.embedding.values;
 }
@@ -92,18 +164,31 @@ export async function routeLLM({ prompt, systemPrompt, userPrompt, weight = 'Hea
         finalPrompt = `SYSTEM:\n${systemPrompt}\n\nUSER:\n${userPrompt}`;
     }
 
-    const isPaper = process.env.ADAN_MODE !== 'LIVE';
-    if (isPaper) {
-        // v6.1: Heavy = Gemini Flash for trade decisions (even in paper mode)
-        // This uses ~5-10 of the 18 daily Gemini calls for actual trade brain.
-        // Children/scanning stay on Gemma (Light weight).
-        if (weight === 'Heavy') return callGemini(finalPrompt, `paper_${reason}`);
-        if (weight === 'Dream') return callGemini(finalPrompt, 'dream_mode', { maxTokens: 2048, temperature: 0.3 });
-        return callGemma(finalPrompt);
+    // v9.0: Distributed Intelligence — Flash fleet is primary (250K TPM)
+    // Gemma (15K TPM) is RESERVE only
+    switch (weight) {
+        case 'Heavy':
+            // Critical trade decisions → Sniper if available, else distributed fleet
+            return callGemini(finalPrompt, reason);
+        case 'Dream':
+            // Dream mode → Sniper with high temp
+            return callGemini(finalPrompt, 'dream_mode', { maxTokens: 2048, temperature: 0.3 });
+        case 'Light':
+            // Children/scanning → distributed Flash fleet
+            return callDistributed(finalPrompt, { temperature: 0.05 });
+        case 'UltraLight':
+            // Inner monologue, naming → direct to Gemini 2.0 Flash (unlimited)
+            return callFast(finalPrompt, { temperature: 0.1, maxTokens: 512 });
+        case 'Child':
+            // Child scanning → Gemma 12B (15K TPM is fine for small prompts)
+            if (quota.canUseGemma()) {
+                const r = await callModel(MODELS.GEMMA_12B, finalPrompt, { temperature: 0.05, maxTokens: 512 }, '🧒 Gemma-12B');
+                if (r) { quota.consumeGemma(); return r; }
+            }
+            return callDistributed(finalPrompt, { temperature: 0.05 });
+        default:
+            return callDistributed(finalPrompt);
     }
-    if (weight === 'Heavy') return callGemini(finalPrompt, `live_${reason}`);
-    if (weight === 'Dream') return callGemini(finalPrompt, 'dream_mode', { maxTokens: 2048, temperature: 0.3 });
-    return callGemma(finalPrompt, { temperature: 0.05 });
 }
 
 export function parseAIResponse(text) {
@@ -117,4 +202,4 @@ export function parseAIResponse(text) {
     } catch { return { raw: text }; }
 }
 
-export { callGemma, callGemini, MODELS };
+export { callGemma, callGemini, callFast, callDistributed, callModel, MODELS };
