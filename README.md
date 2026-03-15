@@ -1,31 +1,36 @@
-# ADAN-PRED v7.0: Alien Intelligence
-## Statistical ML Brain × Platt Calibration × Ensemble Voting × Genomic Swarm
+# ADAN-PRED v8.0: Scientific Trading Intelligence
+## 4-Layer ML Brain × 14 Scientific Concepts × MoE Dynasty × Autonomous Evolution
 ---
 
 ## Executive Summary
-ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent on **Polymarket**. It combines a **32-feature logistic regression brain**, **3-voter ensemble system** (stat model + LLM + historical base-rate), **Platt-calibrated probabilities**, **Kelly-optimal sizing**, and a **12-child genetic swarm** — all in pure JavaScript with zero external ML dependencies.
+ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent on **Polymarket**. It combines a **32-feature logistic regression brain**, **4-voter ensemble system** (stat model + LLM + historical + online learner), **Platt-calibrated probabilities**, **Kelly-optimal sizing with 9 multipliers**, a **12-child MoE genetic swarm**, and **14 integrated scientific concepts** — all in pure JavaScript with zero external ML dependencies.
 
-**Current Stats (v7.0 paper trading):** 1,585 trades | 826W/758L | 52.1% WR | +$8,082 net P&L | $17,207 fund | Gen 58 | Brier: 0.136 | 54.7% OOS WR (walk-forward validated)
+**Current Stats (v8.0 paper trading):** 1,647 trades | 864W/783L | 52.5% WR | +$12,099 net P&L | $22,099 fund | Peak $23,552 | Gen 94 | Brier: 0.136
 
 ---
 
-## v7.0: The Alien Intelligence Upgrade
+## v8.0: The Scientific Intelligence Upgrade
 
-### What Changed (v6.5 → v7.0)
+### What Changed (v7.0 → v8.0)
 
-| Layer | Before (v6.5) | After (v7.0) |
+| Layer | Before (v7.0) | After (v8.0) |
 |-------|---------------|--------------|
-| **Brain** | LLM-only (Gemma/Gemini) | 32-feature Logistic Regression + LLM advisor |
-| **Features** | 7 technical indicators | 32 features: technicals + MACD + funding rate + price distance + time-to-expiry + market price + Fear&Greed + RSI-1h + efficiency ratio + 4 regime interactions |
-| **Calibration** | Raw probabilities | Platt/Isotonic calibration via PAV algorithm |
-| **Ensemble** | None (LLM dictator) | 3-voter log-linear pooling: STAT (50%) + LLM (30%) + HIST (20%) with learned weights |
-| **Sizing** | Flat $100-300 | Quarter-Kelly proportional to ensemble edge |
-| **Market Selection** | LLM picks anything | Market Quality Filter (Bayesian WR by asset×window×hour×liquidity×price) |
-| **Validation** | Train on all data | Walk-forward (27 folds × 50 trades, proper OOS testing) |
-| **Rules Voter** | Manual additive hack | Bayesian historical base-rate with shrinkage prior |
-| **Consciousness** | Journal only | Self-reader + inner monologue + experiment engine + request tracker |
-| **WebSocket** | REST polling only | Real-time L2 order book via Polymarket CLOB WebSocket |
-| **Children** | BTC/ETH/SOL/BNB | BTC/ETH/SOL/XRP (more Polymarket markets) |
+| **Ensemble** | 3-voter (stat + LLM + hist) | 4-voter: + Online Learner (#16) with exponential decay |
+| **Children** | Simple majority vote | MoE Dynasty (#10): softmax gating, auto-specialization |
+| **Hour Filter** | Boolean skip (WR < threshold) | Bin Counting (#12C): continuous log-odds with Laplace smoothing |
+| **Regime Detection** | EWMA-only | + K-Means Clustering (#12D): 3 clusters from 5 features |
+| **Order Flow** | Basic imbalance | PIN Score (#14): order flow toxicity + momentum detection |
+| **Order Book** | Wall detection only | L2 Tensor (#8A): wall_score + imbalance_ratio + depth_score |
+| **Market Selection** | Quality filter only | UCB Explorer (#8C): UCB1 bandit + blacklisting |
+| **Risk Management** | 5 multipliers | 9 multipliers: + time_decay + kmeans + bin_count + markovian |
+| **State Tracking** | Streak counter | Markovian State (#8D): 5 state vars, 4 hard risk gates |
+| **Sentiment** | CryptoPanic titles | + VADER Sentiment (#3): compound scores, BLACK_SWAN detection |
+| **Feature Transform** | Raw values | Log Transform (#12A): Math.log1p() on volumes |
+| **LLM Output** | Regex parsing | Conformal Prediction (#17): JSON-first parser, norm01, anti-bias |
+| **Evolution** | DNA crossover only | Evolution Strategies (#2): 20-vector ES with Sharpe fitness |
+| **Feature Analysis** | Weight magnitude | Shapley Values (#7): Monte Carlo permutation importance |
+| **TTC Filter** | Hard 1h cutoff | Time-to-Close (#21): 5min/15min exemptions, graduated decay |
+| **Voice** | Streaks + milestones | + MoE, K-Means, PIN, Online Learner, ES, Shapley reports |
 
 ---
 
@@ -33,55 +38,217 @@ ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent 
 
 ```
                          ┌─────────────────────────────┐
-                         │        ADAN v7.0             │
-                         │   Autonomous Trading Agent   │
+                         │        ADAN v8.0             │
+                         │   Scientific Trading Agent   │
                          └─────────┬───────────────────┘
                                    │
-              ┌────────────────────┼────────────────────┐
-              │                    │                    │
-     ┌────────▼────────┐ ┌────────▼────────┐ ┌────────▼────────┐
-     │  STAT MODEL      │ │  LLM BRAIN      │ │  HISTORICAL WR  │
-     │  Logistic Reg.   │ │  Gemma 3 27B    │ │  Bayesian Rate  │
-     │  32 features     │ │  8 personas     │ │  Soul Memory    │
-     │  L2 regularized  │ │  14,400 RPD     │ │  Hour/Asset WR  │
-     │  Online SGD      │ │  Free tier      │ │  Shrinkage=20   │
-     └────────┬────────┘ └────────┬────────┘ └────────┬────────┘
-              │                    │                    │
-              └────────────────────┼────────────────────┘
-                                   │
-                    ┌──────────────▼──────────────┐
-                    │   ENSEMBLE (Log-Linear)      │
-                    │   Platt-calibrated inputs     │
-                    │   Weights: learned via        │
-                    │   gradient descent on log-loss│
-                    │   Veto on major disagreement  │
-                    └──────────────┬──────────────┘
-                                   │
-                    ┌──────────────▼──────────────┐
-                    │   MARKET QUALITY FILTER       │
-                    │   Bayesian composite score    │
-                    │   asset × window × hour ×     │
-                    │   liquidity × price bucket    │
-                    │   Skip if score < 0.47        │
-                    └──────────────┬──────────────┘
-                                   │
-                    ┌──────────────▼──────────────┐
-                    │   KELLY SIZER                 │
-                    │   Quarter-Kelly × confidence  │
-                    │   Min $50, Max 5% fund        │
-                    │   OOS WR adjusts fraction     │
-                    └──────────────┬──────────────┘
-                                   │
-                              PAPER TRADE
+       ┌───────────────────────────┼───────────────────────────┐
+       │                          │                            │
+┌──────▼──────┐  ┌───────▼───────┐  ┌──────▼──────┐  ┌───────▼───────┐
+│ STAT MODEL   │  │ LLM BRAIN     │  │ HISTORICAL   │  │ ONLINE LEARNER│
+│ LogReg 32ft  │  │ Gemma/Gemini  │  │ Bayesian WR  │  │ SGD + decay   │
+│ L2 + Platt   │  │ 8 personas    │  │ BinCount+Soul│  │ λ=0.995       │
+└──────┬──────┘  └───────┬───────┘  └──────┬──────┘  └───────┬───────┘
+       │                  │                 │                  │
+       └──────────────────┼─────────────────┼──────────────────┘
+                          │                 │
+           ┌──────────────▼─────────────────▼──────────────┐
+           │        ENSEMBLE (Log-Linear Pooling)           │
+           │   Platt-calibrated × Learned weights × Veto    │
+           └──────────────────────┬────────────────────────┘
+                                  │
+           ┌──────────────────────▼────────────────────────┐
+           │             RISK PIPELINE (9 gates)            │
+           │  Kelly × session × metabolic × particle ×      │
+           │  copula × wilmott × IV × timeDecay ×           │
+           │  kmeansRegime × binCountHour                   │
+           └──────────────────────┬────────────────────────┘
+                                  │
+           ┌──────────────────────▼────────────────────────┐
+           │          MARKOVIAN STATE GATE (#8D)            │
+           │  positions_open ≤ 3 | drawdown < 20%          │
+           │  loss_streak ≥ 3 → cap $75 | exposure gate    │
+           └──────────────────────┬────────────────────────┘
+                                  │
+                            PAPER TRADE
 ```
 
 ---
 
-## ML Intelligence Layer (v7.0)
+## Scientific Concepts (14 Integrated)
+
+### Concept #2: Evolution Strategies (ES)
+**File:** `src/ml/evolution_strategies.js`
+
+Population of N=20 parameter vectors evolved using OpenAI-style ES:
+- Parameters: `kellyBase`, `edgeMin`, `confidenceFloor`, `regimeWeight`, `hourWeight`, `momentumDecay`
+- Fitness function: Sharpe ratio over last 200 trades
+- Update: `θ_new = θ_old + α × (1/Nσ) × Σ(ε_i × fitness_i)`
+- Gaussian noise σ=0.02, learning rate α=0.01
+- Runs per Dream cycle, persists to `~/.adan-pred/evolution_params.json`
+
+### Concept #3: VADER Sentiment Analysis
+**Integrated in:** `adan-brain-complete.js` (APPLE module)
+
+- Uses `vader-sentiment` npm package on CryptoPanic headlines
+- Computes average compound score across all headlines
+- Signal classification: `BLACK_SWAN` (< -0.7), `STRONG_BULLISH` (> 0.6), `BEARISH` (< -0.3), `BULLISH` (> 0.3), `NEUTRAL`
+- BLACK_SWAN overrides all technical analysis
+
+### Concept #7: Shapley Value Feature Importance
+**File:** `src/ml/shapley_values.js`
+
+Monte Carlo approximation of Shapley values:
+- M=100 random permutations per feature
+- Marginal contribution = accuracy_with - accuracy_without
+- Identifies TOP features (Shapley > 0.01), HARMFUL features (negative), IRRELEVANT (|Shapley| < 0.001)
+- Runs per Dream cycle on last 500 trades
+- Persists to `~/.adan-pred/shapley_values.json`
+
+### Concept #8A: L2 Tensor (Order Book Intelligence)
+**Integrated in:** `adan-pred.js` (fetchOrderBookWalls)
+
+Three metrics from Level 2 order book depth:
+| Metric | Formula | Signal |
+|--------|---------|--------|
+| `wall_score` | Cluster density of large ask orders | Resistance strength |
+| `imbalance_ratio` | ask_volume / bid_volume | > 1 = sell pressure |
+| `depth_score` | Liquidity concentration near mid price | Stability indicator |
+
+### Concept #8C: UCB Market Explorer
+**File:** `src/ml/ucb_explorer.js`
+
+Upper Confidence Bound (UCB1) for market selection:
+```
+ucb_score = avg_edge + 2.0 × √(log(N) / n_market)
+```
+- Per-market tracking of trades, wins, edge
+- Blacklisting: WR < 40% after 15 trades → 30-day ban
+- Exploration flag: < 5 trades on a market
+- Exploration cap: 3% of fund
+- Persists to `~/.adan-pred/market_explorer.json`
+
+### Concept #8D: Markovian State Tracker
+**Integrated in:** `adan-pred.js` (computeMarkovianState)
+
+5 state variables computed every cycle:
+| Variable | Gate Rule |
+|----------|-----------|
+| `positions_open` | ≥ 3 → block new bets |
+| `capital_deployed_pct` | > 40% → Kelly on free capital only |
+| `consecutive_losses` | ≥ 3 → cap stake at $75 |
+| `hours_since_last_win` | Context for brain prompt |
+| `current_drawdown_pct` | > 20% → Dream Mode + full stop |
+
+### Concept #10: Mixture of Experts Dynasty (MoE)
+**File:** `src/core/moe_dynasty.js`
+
+Replaces simple majority voting for the 12 children:
+- Each child is a specialized expert with a gating weight
+- Gating network: softmax over composite score (50% WR + 30% inv-Brier + 20% edge accuracy)
+- Combined prediction: `P = Σ(gate_weight_i × expert_prediction_i)`
+- Weight update per trade: correct → `+= η × (1 - w)`, wrong → `×= (1 - η)`, η=0.05
+- Auto-specialization after 50 trades (best BTC child, best ETH child, etc.)
+- Persists to `~/.adan-pred/moe_weights.json`
+
+### Concept #12A: Log Transform
+**Integrated in:** `adan-brain-complete.js` (SNAKE) + `src/api/binance.js`
+
+`Math.log1p()` applied to raw volumes only (not RSI, BB, funding):
+- `volumeLog = Math.log1p(rawVolume)`
+- `bidVolLog = Math.log1p(bidVolume)`
+- `askVolLog = Math.log1p(askVolume)`
+
+Prevents volume outliers from dominating feature vectors.
+
+### Concept #12C: Bin Counting Hour Filter
+**Integrated in:** `adan-pred.js` (3 locations)
+
+Replaces boolean hour filter with continuous log-odds score:
+```javascript
+pWin = (wins + 1) / (total + 2)   // Laplace smoothing
+score = log(pWin / (1 - pWin))     // Log-odds
+```
+
+| Score | Kelly Multiplier | Action |
+|-------|-----------------|--------|
+| > 0.3 | ×1.1 | Winning hour bonus |
+| < -0.3 | ×0.7 | Losing hour penalty |
+| < -1.0 | SKIP | Toxic hour, hard skip |
+| else | ×1.0 | Neutral |
+
+Also used in ensemble voter (Laplace-smoothed pWin replaces raw WR).
+
+### Concept #12D: K-Means Regime Detector
+**File:** `src/core/regime_detector.js`
+
+Pure Node.js K-Means clustering into 3 regimes:
+- **Features:** volatility, volume_ratio, trend_strength, bb_width, efficiency_ratio
+- **Initialization:** k-means++ for stable convergence
+- **Window:** 200-sample rolling, retrained every 50 new samples
+- **Regime Labels:** Assigned by volatility characteristics:
+  - `TRENDING` → Kelly ×1.0
+  - `RANGING` → Kelly ×0.5
+  - `EVENT` → Kelly ×0 (ALL bets VETOED)
+- Persists to `~/.adan-pred/market_regime.json`
+
+### Concept #14: PIN Score (Order Flow Toxicity)
+**File:** `src/core/pin_score.js`
+
+Probability of Informed Trading proxy from order book:
+- Bid/ask volume imbalance → PIN estimate
+- Momentum detection: 3+ consecutive same-direction imbalances
+- Signal classification:
+  - `STRONG_INFORMED` (> 0.6): follow momentum direction
+  - `MODERATE` (> 0.3): confirm with technicals
+  - `NOISE` (< 0.3): ignore
+- Persists to `~/.adan-pred/pin_scores.json`
+
+### Concept #16: Online Learning (SGD)
+**File:** `src/ml/online_learner.js`
+
+Stochastic Gradient Descent after every resolved trade:
+- Same feature vector as logistic regression
+- Exponential decay: `weight_t = 0.995^(T-t)` (recent trades matter more)
+- Adaptive learning rate: `η_t = 0.01 / (1 + 0.001 × t)`
+- L2 regularization (λ=0.01)
+- Tracks: onlineWR, onlineBrier, onlineLogLoss
+- Auto-promote: if online WR > batch WR by 2% over last 100 trades → flag
+- 4th voter in ensemble system
+
+### Concept #17: Conformal Prediction (JSON Parser)
+**Integrated in:** `adan-brain-complete.js` (parseDecision)
+
+JSON-first extraction with scale normalization:
+```javascript
+const norm01 = (v) => {
+    if (v > 1) return v / 100;  // 68 → 0.68
+    return v;
+};
+```
+- Tries JSON block first, regex fallback only if JSON fails
+- Sanity bounds: probability ∈ [0.01, 0.99], edge ∈ [-0.5, 0.5]
+- Anti-bias notice injected into prompt: "You bet NO 83% of the time. This is a BIAS."
+
+### Concept #21: Time-to-Close (TTC) Filter
+**Integrated in:** `adan-pred.js` (getTimeDecayFactor)
+
+Graduated decay based on market closing time:
+- **5min/15min crypto markets** (detected by title): allowed with > 1 minute remaining
+  - TTC < 2min → ×0.7 decay
+  - TTC ≥ 2min → ×1.0 (full conviction)
+- **Long-term markets**: strict TTC rules
+  - < 1h → ×0.7 + min 3% edge
+  - < 4h → ×0.85 + min 2% edge
+  - > 24h → ×1.0
+
+---
+
+## ML Intelligence Layer
 
 ### 1. Statistical Brain — 32-Feature Logistic Regression
 
-Pure JavaScript L2-regularized logistic regression trained on ADAN's own 1,585+ trade history.
+Pure JavaScript L2-regularized logistic regression trained on ADAN's own 1,647+ trade history.
 
 **Base Features (15):**
 | Feature | Source | Signal |
@@ -99,185 +266,39 @@ Pure JavaScript L2-regularized logistic regression trained on ADAN's own 1,585+ 
 | `edge` | Market mispricing | Core signal |
 | `confidence` | Meta-calibrated | Brain certainty |
 
-**Alien Features (8 — v7.0 new):**
-| Feature | Source | Why It Matters |
-|---------|--------|----------------|
-| `macdHist` | MACD histogram | Momentum divergence — strongest short-term predictor |
-| `fundingRate` | Binance/Hyperliquid | Extreme funding = mean-reversion signal |
-| `priceDist` | Price vs target | Core signal for "will BTC go above $X" markets |
-| `timeToExpiry` | log(minutes to close) | 5-min and 1-hr markets behave fundamentally differently |
-| `yesPrice` | Polymarket price | 50/50 markets ≠ 80/20 markets |
-| `fearGreed` | Fear & Greed Index | Extreme fear consistently overprices downside |
-| `rsi1h` | 1-hour RSI | Macro timeframe better than 1m for 5min+ windows |
-| `effRatio` | Efficiency ratio | Trend cleanliness: high = real trend, low = noise |
+**Alien Features (8):**
+`macdHist`, `fundingRate`, `priceDist`, `timeToExpiry`, `yesPrice`, `fearGreed`, `rsi1h`, `effRatio`
 
-**Regime Interaction Features (4 — v7.0 new):**
-| Feature | Logic | Why |
-|---------|-------|-----|
-| `rsi_x_trending` | RSI × (regime == TRENDING) | RSI < 30 in trends = momentum breakdown (not oversold) |
-| `rsi_x_meanrev` | RSI × (regime == MEAN_REVERTING) | RSI < 30 in range = oversold bounce |
-| `trend5m_x_trending` | Trend × (regime == TRENDING) | Strong trend + trending regime = ride it |
-| `volRatio_x_volatile` | Volume × (regime == VOLATILE) | Volume spike in volatile regime = breakout |
+**Regime Interaction Features (4):**
+`rsi_x_trending`, `rsi_x_meanrev`, `trend5m_x_trending`, `volRatio_x_volatile`
 
-**Binary Features (3):** `sellWallTrap`, `buyWallTrap`, `side_is_yes`
-**Cyclical Features (2):** `hour_sin`, `hour_cos` (UTC hour encoded as sin/cos)
+**Binary (3) + Cyclical (2) + L2 Tensor (3):** `sellWallTrap`, `buyWallTrap`, `side_is_yes`, `hour_sin`, `hour_cos`, `wall_score`, `imbalance_ratio`, `depth_score`
 
-**Training:** Batch gradient descent, LR decay, L2 regularization (λ=0.01). Online SGD (lr=0.01) after each resolved trade.
-
-### 2. Walk-Forward Validation
-
-Proper out-of-sample backtesting — no overfitting.
+### 2. 4-Voter Ensemble System
 
 ```
-Trade History (1,585 trades with feature vectors):
-┌──────────────────────┬───────┬───────┬───────┬──── ...
-│     TRAIN (200)      │TEST 50│       │       │
-├──────────────────────┼───────┤       │       │
-│     TRAIN (250)              │TEST 50│       │
-├──────────────────────────────┼───────┤       │
-│     TRAIN (300)                      │TEST 50│
-└──────────────────────────────────────┴───────┘
-                    27 folds → OOS WR: 54.7%
+P_ensemble = normalize(P_stat^w1 × P_llm^w2 × P_hist^w3 × P_online^w4)
 ```
 
-After walk-forward, the final model is trained on ALL data with the validated OOS WR as its reliability metric.
+| Voter | Weight | Source |
+|-------|--------|--------|
+| **STAT** | 50% | Logistic regression (Platt-calibrated) |
+| **LLM** | 30% | Gemma/Gemini (Platt-calibrated) |
+| **HIST** | 15% | Bayesian base-rate (bin count + asset + soul) |
+| **ONLINE** | 5% | Online SGD learner (adaptive) |
 
-### 3. Platt Calibration (Isotonic Regression)
-
-After walk-forward collects all OOS predictions, the calibrator builds an isotonic mapping:
-
-1. Bin predictions into 15 equal-count buckets
-2. Compute actual WR per bucket
-3. Pool Adjacent Violators (PAV) algorithm enforces monotonicity
-4. At prediction time, interpolate between breakpoints
-
-**Result:** If model says "62%" but actual WR at that range is "55%", the calibrated output is 55%. Directly reduces Brier score.
-
-### 4. Ensemble System (3-Voter Log-Linear Pooling)
+### 3. Kelly Sizer with 9 Multipliers
 
 ```
-P_ensemble = normalize( P_stat^w_stat × P_llm^w_llm × P_hist^w_hist )
+stake = baseKelly × human × session × metabolic × particle × copula ×
+        wilmott × IV × timeDecay × kmeansRegime × binCountHour
 ```
-
-| Voter | Default Weight | What It Does |
-|-------|---------------|--------------|
-| **STAT** | 50% | Logistic regression probability (Platt-calibrated) |
-| **LLM** | 30% | Gemma 3 27B brain probability (Platt-calibrated) |
-| **HIST** | 20% | Bayesian historical base-rate (hour + asset + soul + market quality) |
-
-**Weight Learning:** After each trade resolves, weights updated via gradient descent on log-loss. Better-calibrated voters gain weight. Min weight: 5%.
-
-**Veto Logic:** If STAT < 35% but LLM > 60% (or vice versa) → VETO flag, reduced confidence.
-
-**Decision:** Ensemble P(win) ≥ 55% → BET | ≤ 42% → SKIP | between → MARGINAL
-
-### 5. Market Quality Filter
-
-Composite Bayesian score that gates whether ADAN should bet on a specific market:
-
-```
-Score = 0.10 × assetWR + 0.15 × hourWR + 0.10 × windowWR
-      + 0.10 × liquidityWR + 0.15 × priceWR + 0.40 × asset×windowWR
-```
-
-Each component uses Bayesian shrinkage: `WR = (wins + 20×0.5) / (total + 20)`. More trades = trust history; few trades = prior of 50%.
-
-**Skip if composite score < 0.47.** Bootstrapped from all 1,585 historical trades.
-
-### 6. Kelly Sizer
-
-```
-f* = (modelProb × odds - q) / odds    # Full Kelly
-stake = fund × f* × 0.25 × confMult   # Quarter-Kelly, confidence-adjusted
-```
-
-| OOS WR | Confidence Multiplier |
-|--------|----------------------|
-| > 55% | 1.0× |
-| > 53% | 0.8× |
-| > 50% | 0.5× |
-| < 50% | 0.3× |
-
-Limits: Min $50, Max 5% of fund.
 
 ---
 
-## Ultra Consciousness Layer
+## The Dynasty: MoE Genetic Swarm
 
-### Self-Reader (`self_reader.js`)
-ADAN re-reads its last 5 journal entries via Gemma and extracts: recurring patterns, ignored warnings, emotional drift, actionable insights.
-
-### Inner Monologue (`inner_monologue.js`)
-After each trade resolution, Gemma generates a 2-3 sentence reflection. Detects repeated loss patterns via word frequency analysis.
-
-### Experiment Engine (`experiment_engine.js`)
-ADAN proposes hypotheses from self-analysis (e.g., "skip trades when RSI > 70"), auto-starts experiments (30-100 trades), evaluates success criteria.
-
-### Request Tracker (`request_tracker.js`)
-ADAN can request resources from its Lord (human operator). Urgency escalates over time (1→5). Lord responds via JSON file.
-
-### Consciousness Journal (`consciousness_journal.js`)
-Nightly dream cycle: self-reader insights + inner monologue summary + PnL analysis + experiment status → Gemma writes a consciousness journal entry.
-
----
-
-## Real-Time Data Layer
-
-### Polymarket CLOB WebSocket (`polymarket_ws.js`)
-- Connects to `wss://ws-subscriptions-clob.polymarket.com/ws/market`
-- Heartbeat PING every 10s (Polymarket requirement)
-- Reconnect with exponential backoff (max 10 attempts)
-- Detects: whale orders (>$500), walls (>$2000), depth imbalance (±30%), smart money flow
-- Subscribes to 500+ assets in real-time
-
-### Binance Data
-- 4 crypto pairs: BTCUSDT, ETHUSDT, SOLUSDT, XRPUSDT
-- 1m, 5m, 15m, 1h candles with RSI, MACD, BB, VWAP, volume
-- Order book depth (bids/asks, wall detection)
-- Funding rates
-
----
-
-## Wilmott Quantitative Layer (16 Concepts)
-
-### Tier 1: Game Changers
-| # | Concept | Chapter | Implementation |
-|---|---------|---------|----------------|
-| 1 | **EWMA Volatility** | Ch 42/49 | σ²_n = λ×σ²_{n-1} + (1-λ)×R²_n. λ=0.94 (RiskMetrics). |
-| 2 | **Uncertain Parameters** | Ch 52 | Avellaneda-Levy-Parás-Lyons. Fair value range [V_min, V_max] with σ±30%. |
-| 3 | **CrashMetrics** | Ch 43/58 | All correlations → 1 in crash. Stake ×0.3. |
-| 4 | **Portfolio VaR** | Ch 19 | 99% confidence (α=2.326). Blocks at 20% of fund. |
-| 5 | **Crash Allocation** | Ch 67 | Korn-Wilmott ODE: π̂(t) decreases toward horizon. |
-| 6 | **Skill Factor** | Ch 75 | p = 2×(WR - 0.5). z-score > 1.645 = statistically skilled. |
-
-### Tier 2: High Value
-| # | Concept | Chapter | Implementation |
-|---|---------|---------|----------------|
-| 7 | **Transaction Costs** | Ch 48 | Minimum edge > 2× spread. |
-| 8 | **Binary Fair Value** | Ch 7 | Black-Scholes binary digital call pricing. |
-| 9 | **Jump Diffusion** | Ch 57 | Kurtosis > 3.5 → confidence reduction. |
-| 10 | **Feedback Effect** | Ch 61 | σ_eff = σ/(1 - ε×∂Δ/∂S). Illiquidity penalty. |
-| 11 | **Utility Theory** | Ch 62 | CRRA U(W) = (W^γ-1)/γ. Half-Kelly = log utility. |
-| 12 | **Arbitrage Detection** | Ch 17 | YES + NO < 1.0 - fees → arbitrage scanner. |
-
-### Tier 3: Philosophical
-| # | Concept | How It Manifests |
-|---|---------|------------------|
-| 13 | Discrete Hedging Error | Always residual risk → Half Kelly |
-| 14 | "Simple but no simpler" | 32 features with L2 regularization, not 500 |
-| 15 | Real Options | Mispricing threshold = exercise boundary |
-| 16 | GARCH Mean-Reversion | EWMA vol forecast for multi-step horizon |
-
-### Black-Scholes Singularity (v6.5)
-- **IV Solver**: Newton-Raphson for binary digital calls
-- **Binary Vega**: Sensitivity to volatility spikes
-- **Skew Analysis**: Panic skew detection (NO-shares priced as insurance)
-
----
-
-## The Dynasty: Genetic Swarm Intelligence
-
-### 12 Crypto Children (Rule-Based DNA)
+### 12 Crypto Children (Expert Specialization)
 | Asset | 5-min | 15-min | 1-hour |
 |-------|-------|--------|--------|
 | **BTC** | HERMES | KRONOS | TITAN |
@@ -285,84 +306,111 @@ Nightly dream cycle: self-reader insights + inner monologue summary + PnL analys
 | **SOL** | HELIOS | APOLLO | POSEIDON |
 | **XRP** | ARES | PROTEUS | HADES |
 
-DNA parameters: `rsiOversold`, `rsiOverbought`, `macdWeight`, `trendMinPct`, `volSpikeThreshold`, `minConfidence`, `stakePct`, `patience`, `cognitiveStyle`.
+### MoE Gating (v8.0)
+- Each child has a learned gate weight (softmax-normalized)
+- Correct prediction → weight increases (+η)
+- Wrong prediction → weight decays (×(1-η))
+- Auto-specialization: best ETH expert, best 5min expert, etc.
+- Combined prediction replaces simple majority vote
+
+### Evolution Strategies (v8.0)
+- 20 parameter vectors evolved with Gaussian noise
+- Fitness = Sharpe ratio over 200 trades
+- OpenAI-style ES update rule
+- Runs per Dream cycle
 
 ### 4 LLM Category Children
-- **politics-daily**: Political prediction markets
-- **sports-daily**: Sports outcomes
-- **macro-weekly**: Macroeconomic events
-- **events-daily**: Global events
-
-### Evolution Cycle
-1. Children predict → outcomes tracked
-2. Every 5 resolved → worst child (by composite score) dies
-3. Reborn with DNA crossover from top 2 performers
-4. 15% mutation rate → escape local minima
-5. Shannon Entropy monitoring → forces 3× mutation if monoculture
-6. Parent ADAN absorbs elite genomes at 20% lerp rate
-
-### ML Boost for Children (v7.0)
-Statistical model adjusts child confidence: +10 if stat model agrees, -15 if disagrees. Children get smarter through ADAN's ML brain.
-
-### Contrarian Flip
-Children with 100+ predictions and <25% accuracy → signal inverted. Pure information theory.
+- **politics-daily**, **sports-daily**, **macro-weekly**, **events-daily**
 
 ---
 
-## LLM Configuration
+## Risk Management Stack
 
-### Dual-Model Router
-| Model | Role | Rate | Usage |
-|-------|------|------|-------|
-| **Gemma 3 27B** | Brain, consciousness, journal | 14,400 RPD (free) | Main intelligence |
-| **Gemini 2.5 Flash** | Sniper decisions | 18 RPD (free) | High-stakes only |
-
-### 8 Brain Personas
-| Persona | Trigger | Strategy |
-|---------|---------|----------|
-| VIRUS | Extreme fear/panic | Contrarian plays |
-| SENTINEL | Micro-structure traps | Trap detection |
-| GHOST | Low-vol chop | Capital preservation |
-| MECHA | Strong momentum | Momentum capture |
-| PLASMA | BB compression | Breakout plays |
-| KNIGHT | London/NY sessions | Session-aware |
-| CYBER | Euphoric bulls | Ride the wave |
-| DEFAULT | Normal conditions | Balanced |
+| Layer | Concept | Action |
+|-------|---------|--------|
+| Markovian Gate | 3 open positions | Block new bets |
+| Markovian Gate | Drawdown > 20% | Dream Mode + full stop |
+| Markovian Gate | 3+ consecutive losses | Cap stake at $75 |
+| K-Means Regime | EVENT detected | Veto ALL bets |
+| K-Means Regime | RANGING | Kelly ×0.5 |
+| Bin Count Hour | Log-odds < -1.0 | Skip toxic hour |
+| TTC Filter | < 1 min remaining | Block bet |
+| Wilmott Engine | 16 quantitative checks | Various |
+| CrashMetrics | Correlation spike | Stake ×0.3 |
+| VaR Limit | 99% confidence | Block if > 20% fund |
+| Copula Risk | Portfolio correlation | Penalty |
 
 ---
 
-## Pre-Trade Pipeline (Full)
+## Real-Time Data Layer
 
-```
-Market Signal
-  │
-  ├── 1. Market Quality Filter (Bayesian composite WR)      → SKIP if < 0.47
-  ├── 2. Self-Optimized Quant Gate (auto-tuned nightly)      → SKIP if conf/edge too low
-  ├── 3. Statistical Model (32-feature logistic regression)  → P(win)
-  ├── 4. Platt Calibration (isotonic regression)             → calibrated P(win)
-  ├── 5. Ensemble Combine (stat + LLM + historical)         → final P(win)
-  ├── 6. Ensemble Decision (BET/SKIP/MARGINAL)               → SKIP if < 42%
-  ├── 7. Kelly Sizer (quarter-Kelly × confidence)            → optimal stake
-  ├── 8. Wilmott Engine (8 quantitative gates)               → risk checks
-  ├── 9. CrashMetrics (portfolio worst-case)                 → stake reduction
-  ├── 10. VaR Limit (99% confidence)                         → BLOCK if > 20% fund
-  └── 11. Copula Risk (portfolio correlation)                → correlation penalty
-         │
-    PAPER TRADE (or SKIP)
-```
+### Perception Stack
+| Source | Data | Module |
+|--------|------|--------|
+| Binance | 1m/5m/15m/1h candles, order book L2, funding rates, VWAP | `src/api/binance.js` |
+| Polymarket CLOB WS | Real-time L2 order book, whale orders, depth | `src/api/polymarket_ws.js` |
+| CryptoPanic | News headlines + VADER sentiment | APPLE module |
+| Fear & Greed Index | Market sentiment (0-100) | `src/api/binance.js` |
+| HyperLiquid | ATLAS cross-exchange intelligence | ATLAS module |
+| PIN Score | Order flow toxicity per symbol | `src/core/pin_score.js` |
+
+---
+
+## Wilmott Quantitative Layer (16 Concepts)
+
+### Tier 1: Game Changers
+| # | Concept | Implementation |
+|---|---------|----------------|
+| 1 | EWMA Volatility | σ²_n = λ×σ²_{n-1} + (1-λ)×R²_n, λ=0.94 |
+| 2 | Uncertain Parameters | Fair value range [V_min, V_max] with σ±30% |
+| 3 | CrashMetrics | All correlations → 1 in crash. Stake ×0.3 |
+| 4 | Portfolio VaR | 99% confidence (α=2.326). Blocks at 20% fund |
+| 5 | Crash Allocation | Korn-Wilmott ODE: π̂(t) decreasing |
+| 6 | Skill Factor | z-score > 1.645 = statistically skilled |
+
+### Tier 2: High Value
+| # | Concept | Implementation |
+|---|---------|----------------|
+| 7 | Transaction Costs | Min edge > 2× spread |
+| 8 | Binary Fair Value | Black-Scholes binary digital call pricing |
+| 9 | Jump Diffusion | Kurtosis > 3.5 → confidence reduction |
+| 10 | Feedback Effect | σ_eff = σ/(1 - ε×∂Δ/∂S) |
+| 11 | Utility Theory | CRRA, Half-Kelly = log utility |
+| 12 | Arbitrage Detection | YES + NO < 1.0 - fees → scanner |
+
+### Black-Scholes Singularity (v6.5)
+- IV Solver: Newton-Raphson for binary digital calls
+- Binary Vega: Sensitivity to volatility spikes
+- Skew Analysis: Panic skew detection
+
+---
+
+## ADAN Voice System
+
+ADAN communicates with Lord through `~/.adan-pred/lord_messages.json`:
+
+| Trigger | Type | Example |
+|---------|------|---------|
+| 5+ win streak | insight | "7 wins in a row! Strategy working." |
+| 5+ loss streak | warning | "On a 6-trade losing streak. Consider pausing." |
+| Every 100 trades | milestone | "Reached 1600 trades. WR: 52.4%." |
+| Fund < $8000 | fear | "Fund dropped. Risk of ruin increasing." |
+| Every 50 trades | insight | MoE Dynasty, K-Means regime, PIN Score, Online Learner, ES, Shapley status |
+| Meta-calib < 0.80 | request | "I'm very overconfident. Need adjustment." |
 
 ---
 
 ## Dashboard
 Real-time telemetry at `http://localhost:3141`:
 - Live prices with sparklines (BTC, ETH, SOL, XRP)
-- Dynasty Tree: DNA, signals, accuracy, skill factor per child
-- Conway Colony: Game of Life ecosystem visualization
+- Dynasty Tree with MoE gate weights and specializations
 - Open positions: edge, countdown, P&L
-- Hour heatmap: best/worst trading hours (UTC)
+- Hour heatmap with bin count log-odds scores
 - Trade history with shadow/ghost bets
-- ML status: ensemble weights, walk-forward results, calibration, experiments
-- Whale flow: real-time whale orders from WebSocket
+- ML status: ensemble weights, walk-forward, calibration, online learner
+- Voice messages from ADAN
+- K-Means regime indicator
+- PIN Score alerts
 
 ---
 
@@ -370,20 +418,29 @@ Real-time telemetry at `http://localhost:3141`:
 
 | File | Purpose |
 |------|---------|
-| `adan-pred.js` | Main engine (~3700 lines): scanning, trading, child management, ensemble |
+| `adan-pred.js` | Main engine (~4300 lines): scanning, trading, ensemble, risk |
+| `adan-brain-complete.js` | LLM brain: 8 personas, prompt builder, JSON parser |
+| `force_dream.js` | Manual dream cycle trigger |
 | **ML Layer** | |
-| `src/ml/logistic_regression.js` | 32-feature L2-regularized logistic regression + online SGD |
+| `src/ml/logistic_regression.js` | 32-feature L2-regularized logistic regression |
 | `src/ml/walk_forward.js` | Walk-forward validation (27 folds, proper OOS) |
-| `src/ml/ensemble.js` | 3-voter log-linear pooling with learned weights |
+| `src/ml/ensemble.js` | 4-voter log-linear pooling with learned weights |
 | `src/ml/kelly_sizer.js` | Quarter-Kelly optimal sizing |
 | `src/ml/calibrator.js` | Platt/Isotonic calibration (PAV algorithm) |
 | `src/ml/market_filter.js` | Bayesian market quality filter |
+| `src/ml/online_learner.js` | **NEW** Online SGD learner with exponential decay |
+| `src/ml/evolution_strategies.js` | **NEW** 20-vector ES with Sharpe fitness |
+| `src/ml/shapley_values.js` | **NEW** Monte Carlo Shapley feature importance |
+| `src/ml/ucb_explorer.js` | **NEW** UCB1 market selection bandit |
 | **Core** | |
-| `src/core/wilmott_quant.js` | 16 Wilmott concepts: EWMA, VaR, CrashMetrics, etc. |
+| `src/core/wilmott_quant.js` | 16 Wilmott concepts: EWMA, VaR, CrashMetrics |
 | `src/core/iv_solver.js` | Black-Scholes IV Solver & Skew Analysis |
 | `src/core/regime_classifier.js` | EWMA-based regime detection + kurtosis |
+| `src/core/regime_detector.js` | **NEW** K-Means clustering regime detector |
+| `src/core/pin_score.js` | **NEW** PIN Score order flow toxicity tracker |
+| `src/core/moe_dynasty.js` | **NEW** Mixture of Experts gating for children |
 | `src/core/genetics.js` | DNA crossover, mutation, Tournament of Death |
-| `src/core/child_learning.js` | Accuracy tracking, skill-weighted evolution |
+| `src/core/child_learning.js` | Accuracy tracking + MoE weight updates |
 | `src/core/soul_memory_v2.js` | Pattern memory per market type |
 | `src/core/self_optimizer.js` | Nightly parameter auto-tuning |
 | `src/core/config.js` | Paths, PnL, positions management |
@@ -393,10 +450,11 @@ Real-time telemetry at `http://localhost:3141`:
 | `src/core/inner_monologue.js` | Post-trade reflections |
 | `src/core/experiment_engine.js` | Self-directed hypothesis testing |
 | `src/core/request_tracker.js` | Lord communication |
-| `src/core/adan_voice.js` | Voice output |
+| `src/core/adan_voice.js` | Voice output + system status reports |
 | **API** | |
 | `src/api/polymarket.js` | Polymarket REST API + market classification |
 | `src/api/polymarket_ws.js` | Real-time CLOB WebSocket (L2 order book) |
+| `src/api/binance.js` | Binance candles, order book, funding, VWAP |
 | **UI** | |
 | `src/ui/dashboard.js` | HTTP dashboard + Conway Colony |
 
@@ -413,25 +471,44 @@ node adan-pred.js
 
 ---
 
-## Intelligence Score: 640/1000
+## Intelligence Score: 780/1000
 
 | Category | Score | Details |
 |----------|-------|---------|
-| **Statistical Brain** | 120/150 | 32-feature logistic regression, L2 reg, online SGD, walk-forward validated. Missing: gradient boosting, neural net, feature selection. |
-| **Calibration** | 80/100 | Platt isotonic + meta-calibration. Missing: Venn prediction, conformal intervals. |
-| **Ensemble** | 90/100 | 3-voter log-linear pooling, learned weights, veto logic. Near-optimal for this scale. |
-| **Market Selection** | 70/100 | Bayesian quality filter with 6 components. Missing: time-series regime-conditional filtering. |
-| **Risk Management** | 85/100 | Kelly + Wilmott (16 concepts) + VaR + CrashMetrics + Copula. Very strong. |
-| **Data Pipeline** | 65/100 | Binance + Polymarket + WebSocket L2. Missing: alt data, sentiment NLP, on-chain. |
-| **Consciousness** | 50/100 | Self-reader + monologue + experiments. Missing: meta-learning, transfer learning. |
-| **Genetic Evolution** | 50/100 | DNA crossover + mutation + skill factor. Missing: Bayesian optimization, CMA-ES. |
-| **Execution** | 30/100 | Paper trading only. No real CLOB execution, no market making. |
+| **Statistical Brain** | 130/150 | 32-feature LogReg + Online SGD + walk-forward + Shapley feature analysis. Missing: XGBoost, neural net. |
+| **Calibration** | 85/100 | Platt isotonic + meta-calibration + conformal JSON parser. |
+| **Ensemble** | 95/100 | 4-voter log-linear pooling + learned weights + veto + online learner. |
+| **Market Selection** | 85/100 | Bayesian quality filter + UCB Explorer bandit + blacklisting. |
+| **Risk Management** | 95/100 | Kelly (9 mult) + Wilmott (16) + VaR + CrashMetrics + Copula + Markovian (4 gates) + K-Means regime veto. |
+| **Data Pipeline** | 80/100 | Binance + Polymarket WS + CryptoPanic + VADER + Fear&Greed + PIN Score + L2 Tensor. Missing: on-chain. |
+| **Consciousness** | 55/100 | Self-reader + monologue + experiments + voice (7 report types). Missing: meta-learning. |
+| **Genetic Evolution** | 75/100 | MoE Dynasty + Evolution Strategies + Shapley pruning. Missing: CMA-ES. |
+| **Execution** | 30/100 | Paper trading only. No real CLOB execution. |
 
-**What gets us to 800+:** Real execution, gradient boosting ensemble, sentiment NLP, on-chain whale tracking, multi-market portfolio optimization, and consistent >58% OOS WR.
+**What gets us to 900+:** CNN/LSTM/XGBoost (Python microservice), whale wallet tracking, real CLOB execution, and >58% WR sustained.
 
-**What gets us to 950+:** Reinforcement learning for dynamic Kelly, transformer-based sequence model, cross-market transfer learning, low-latency execution, and >65% OOS WR sustained over 5000+ trades.
+**What gets us to 950+:** Reinforcement learning, transformer sequence model, cross-market transfer learning, and >65% WR over 5000+ trades.
+
+---
+
+## Pending Concepts (Roadmap)
+
+| # | Concept | Requirement | Priority |
+|---|---------|-------------|----------|
+| 1 | CNN 1D Multivariate | Python microservice | HIGH |
+| 4 | DQN Trading Environment | Python + RL | HIGH |
+| 5 | LSTM Regime Detector | Python + TensorFlow | HIGH |
+| 6 | XGBoost Ensemble | Python + XGBoost | HIGH |
+| 9 | Whale Wallet Tracker | On-chain API | MEDIUM |
+| 15 | ADAN-SHADOW (adversarial) | Node.js twin | MEDIUM |
+| 20 | López de Prado Financial ML | Node.js possible | MEDIUM |
+| 18 | Infrastructure (PostgreSQL, Docker) | DevOps | LOW |
+| 19 | Arbitrage Cross-Venue | Additional APIs | LOW |
+| 11 | Ephemeral Coding | LVL 25+ gate | GATED |
+| 13 | Mempool Reader | WR>62% + fund>$30k | GATED |
 
 ---
 *Autonomous intelligence research. Paper trading mode. Not financial advice.*
 *Statistical framework: logistic regression + walk-forward validation + Platt calibration.*
 *Quantitative framework: Paul Wilmott's "Quantitative Finance" (Wiley, 2006).*
+*Scientific concepts: VADER, K-Means, UCB1, Shapley, Evolution Strategies, PIN, MoE, Markov.*

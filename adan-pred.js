@@ -86,16 +86,20 @@ const ivSolver = new IVSolverEngine();
 import { copulaRisk } from './src/core/copula_risk.js';
 import { smartMoney } from './src/core/smart_money.js';
 import { orderBook } from './src/core/order_book.js';
+import { pinTracker } from './src/core/pin_score.js';
 import { featureTracker } from './src/core/feature_attribution.js';
 import { oracle } from './src/core/oracle_front_run.js';
 import { childLearning } from './src/core/child_learning.js';
 import { regimeDetector } from './src/core/regime_classifier.js';
+import { kmeansRegime } from './src/core/regime_detector.js';
 import { featureImportance } from './src/core/feature_importance.js';
+import { shapleyAnalyzer } from './src/ml/shapley_values.js';
 import { riskOfRuin } from './src/core/risk_of_ruin.js';
 import { wilmott } from './src/core/wilmott_quant.js';
 import { soulMemory } from './src/core/soul_memory_v2.js';
 import { selfOptimizer } from './src/core/self_optimizer.js';
 import { journal } from './src/core/consciousness_journal.js';
+import { moeDynasty } from './src/core/moe_dynasty.js';
 import { adanVoice } from './src/core/adan_voice.js';
 // ── Ultra Consciousness Layer v2.0 ──────────────────────────────────────────
 import { selfReader } from './src/core/self_reader.js';
@@ -109,9 +113,99 @@ import { kellySizer } from './src/ml/kelly_sizer.js';
 import { ensemble } from './src/ml/ensemble.js';
 import { calibrator } from './src/ml/calibrator.js';
 import { marketFilter } from './src/ml/market_filter.js';
+import { ucbExplorer } from './src/ml/ucb_explorer.js';
+import { evolutionStrategies } from './src/ml/evolution_strategies.js';
+import { onlineLearner } from './src/ml/online_learner.js';
 
 let consecutiveLosses = 0;
+let lastWinTime = null; // Markovian: timestamp of last winning trade
 let lastHumanState = 'RATIONAL_MARKET';
+
+// ── Concept #12C: Bin Count Score for Hour Filter ─────────────────────────────
+// Replaces boolean hour_filter with continuous log-odds score.
+// Uses Laplace smoothing: p_win = (wins + 1) / (total + 2)
+// Returns log(p / (1-p)) — positive = winning hour, negative = losing hour.
+function binCountScore(hourStats, hour) {
+  const h = hourStats?.[hour.toString()];
+  const wins = h?.wins || 0;
+  const losses = h?.losses || 0;
+  const total = wins + losses;
+  const pWin = (wins + 1) / (total + 2); // Laplace smoothing
+  const score = Math.log(pWin / (1 - pWin));
+  return { score, pWin, total, wins, losses };
+}
+
+// Applies bin count score to Kelly fraction
+// score > 0.3 → Kelly * 1.1 (good hour bonus)
+// score < -0.3 → Kelly * 0.7 (bad hour penalty)
+// Between → Kelly * 1.0
+function hourKellyMultiplier(hourScore) {
+  if (hourScore > 0.3) return 1.1;
+  if (hourScore < -0.3) return 0.7;
+  return 1.0;
+}
+
+// ── Markovian State Tracker (Concept #8D) ─────────────────────────────────────
+// Computes a full risk state snapshot for gating and prompt injection.
+function computeMarkovianState() {
+  const pnl = loadPnL();
+  const pos = loadPositions();
+  const fund = pnl.fund ?? 10000;
+
+  // 1. positions_open: count of currently open bets
+  const positions_open = pos.open.length;
+
+  // 2. capital_deployed_pct: total staked in open positions / fund
+  const totalStaked = pos.open.reduce((sum, p) => sum + (p.stake || 0), 0);
+  const capital_deployed_pct = fund > 0 ? parseFloat((totalStaked / fund).toFixed(4)) : 0;
+
+  // 3. consecutive_losses: current loss streak (uses module-level var)
+  const consecutive_losses = consecutiveLosses;
+
+  // 4. hours_since_last_win: hours since last winning trade
+  let hours_since_last_win = 0;
+  if (lastWinTime) {
+    hours_since_last_win = parseFloat(((Date.now() - lastWinTime) / 3600000).toFixed(2));
+  } else {
+    // Bootstrap from persisted pnl.lastWinTime (survives restarts)
+    if (pnl.lastWinTime) {
+      lastWinTime = new Date(pnl.lastWinTime).getTime();
+      hours_since_last_win = parseFloat(((Date.now() - lastWinTime) / 3600000).toFixed(2));
+    } else {
+      // Fallback: scan closed positions for last win
+      const closedWins = (pos.closed || []).filter(p => p.won === true);
+      if (closedWins.length > 0) {
+        const lastWin = closedWins[closedWins.length - 1];
+        const resolvedAt = lastWin.resolvedAt ? new Date(lastWin.resolvedAt).getTime() : 0;
+        if (resolvedAt > 0) {
+          hours_since_last_win = parseFloat(((Date.now() - resolvedAt) / 3600000).toFixed(2));
+          lastWinTime = resolvedAt; // cache it
+        }
+      }
+    }
+  }
+
+  // 5. current_drawdown_pct: (peak_fund - current_fund) / peak_fund
+  const peakFund = pnl.peakFund || fund;
+  const current_drawdown_pct = peakFund > 0
+    ? parseFloat(((peakFund - fund) / peakFund).toFixed(4))
+    : 0;
+
+  // 6. free_capital: fund minus deployed capital
+  const free_capital = parseFloat(Math.max(0, fund - totalStaked).toFixed(2));
+
+  return {
+    positions_open,
+    capital_deployed_pct,
+    consecutive_losses,
+    hours_since_last_win,
+    current_drawdown_pct,
+    free_capital,
+    fund,
+    peak_fund: peakFund,
+    total_staked: parseFloat(totalStaked.toFixed(2)),
+  };
+}
 
 // ── Helper: Get Polymarket WebSocket context for brain prompt ──
 function _getPolyWsContext(candidates) {
@@ -242,6 +336,30 @@ async function fetchOrderBookWalls(symbol) {
     const askWallDist = topAsk.price > 0 ? ((topAsk.price - midPrice) / midPrice * 100).toFixed(2) : '?';
     const bidWallDist = topBid.price > 0 ? ((midPrice - topBid.price) / midPrice * 100).toFixed(2) : '?';
 
+    // === Concept #8A: L2 Order Book Tensor ===
+    // (a) wall_score: max cluster density on ask-side (0-1)
+    const clusterWidth = midPrice * 0.001; // 0.1% width
+    const askClusters = {};
+    for (const a of asks) {
+      const bucket = Math.floor(a.price / clusterWidth);
+      askClusters[bucket] = (askClusters[bucket] || 0) + a.qty * a.price;
+    }
+    const clusterVals = Object.values(askClusters);
+    const maxCluster = clusterVals.length > 0 ? Math.max(...clusterVals) : 0;
+    const avgCluster = clusterVals.length > 0 ? clusterVals.reduce((s, v) => s + v, 0) / clusterVals.length : 1;
+    const wall_score = Math.min(1, maxCluster / (avgCluster * 5 || 1)); // normalize: 5x avg = 1.0
+
+    // (b) imbalance_ratio: ask_vol / bid_vol (>1 = selling pressure, <1 = buying pressure)
+    const totalBidVol = bids.reduce((s, b) => s + b.qty * b.price, 0);
+    const totalAskVol = asks.reduce((s, a) => s + a.qty * a.price, 0);
+    const imbalance_ratio = totalBidVol > 0 ? parseFloat((totalAskVol / totalBidVol).toFixed(4)) : 1;
+
+    // (c) depth_score: liquidity within 0.5% of mid price (0-1)
+    const depthVol = nearBids.reduce((s, b) => s + b.qty * b.price, 0) + nearAsks.reduce((s, a) => s + a.qty * a.price, 0);
+    const typicalDepth = (totalBidVol + totalAskVol) * 0.3; // expect ~30% of total within 0.5%
+    const depth_score = Math.min(1, depthVol / (typicalDepth || 1));
+    // === End Concept #8A ===
+
     return {
       support: topBid.price,
       resistance: topAsk.price,
@@ -254,9 +372,16 @@ async function fetchOrderBookWalls(symbol) {
       buyWallTrap,    // true = massive buy wall 2x asks within 0.5% → price bounces UP
       bidVolUSD: Math.round(bidVol),
       askVolUSD: Math.round(askVol),
+      // Concept #12A: log1p transform on raw order book volumes
+      bidVolLog: Math.log1p(bidVol),
+      askVolLog: Math.log1p(askVol),
       ratio: totalVol > 0 ? parseFloat((bidVol / askVol).toFixed(2)) : 1,
       askWallDist,  // % distance of biggest sell wall from price
       bidWallDist,   // % distance of biggest buy wall from price
+      // Concept #8A: L2 tensor scores
+      wall_score,         // 0-1: max ask cluster density
+      imbalance_ratio,    // >1 selling pressure, <1 buying pressure
+      depth_score,        // 0-1: liquidity concentration near mid
       _rawBids: bids,
       _rawAsks: asks
     };
@@ -297,11 +422,23 @@ async function fetchAllPrices() {
     // Order book imbalance: numeric -1 to +1 scale for Level 2 signals
     const obImbalance = orderBook ? ((orderBook.buyPressure || 50) - 50) / 50 : 0;
 
+    // Concept #14: PIN Score — Order Flow Toxicity
+    const pinScore = orderBook ? pinTracker.calculateFromOrderBook(sym, orderBook._rawBids, orderBook._rawAsks) : { pin_score: 0, signal: 'NONE' };
+
     // ── Update Regime Classifier + Wilmott EWMA (Ch 42/49) ──
     const assetName = sym.replace('USDT', '').toLowerCase();
     regimeDetector.updatePrice(assetName, price);
     wilmott.updatePrice(assetName, price);
     const regimeInfo = regimeDetector.detectRegime(assetName);
+
+    // ── Concept #12D: K-Means Regime Detector ──
+    const kmeansResult = kmeansRegime.detect({
+      bb_width: bb?.width || 0.01,
+      vol_ratio: vol?.ratio || 1,
+      rsi_14: calcRSI(closes5m),
+      funding_rate: funding?.rate || 0,
+      vwap_deviation: vwap5m?.pct || 0
+    });
 
     const d = {
       price,
@@ -325,9 +462,11 @@ async function fetchAllPrices() {
       volAccel,
       orderBook,
       obImbalance,
+      pinScore,
       funding,
       regime: regimeInfo.regime,
       regimeMetrics: regimeInfo.metrics,
+      kmeansRegime: kmeansResult,  // Concept #12D
       klines5m,  // Needed for volume/price analysis in brain
       klines1h,  // Needed for macro candles in brain
       _rawBids: orderBook?._rawBids || [], // For depth analysis
@@ -581,6 +720,84 @@ async function runChildScanner(spec, allPrices, allMarkets) {
     return intel;
   } catch (e) { return null; }
 }
+
+// ── Concept #21: Time-to-Close Decay Factor ──────────────────────────────────
+// Markets near expiry have accelerating theta decay and convergence to 0/1.
+// This function gates and adjusts bets based on hours remaining.
+// ── SHADOW BRAIN: Record predictions when fear/rules block real trades ──────
+function recordAdanShadow(decision, market, reason) {
+  if (!decision || !market) return;
+  try {
+    const side = (decision.action || decision.side || 'YES').replace('BET ', '');
+    const myProb = decision.probability || decision.myProb || 0.5;
+    const confidence = decision.confidence || 0;
+    
+    console.log(`[SHADOW BRAIN] 👻 Recording shadow bet for training: ${side} (prob: ${myProb.toFixed(2)}) | Reason: ${reason}`);
+    
+    // Feed into childLearning as a specialized "ADAN-MAIN" agent shadow
+    childLearning.recordPrediction('ADAN-MAIN', {
+      direction: side,
+      confidence: confidence,
+      asset: market.asset || 'btc',
+      marketId: market.id || `shadow_${Date.now()}`,
+      marketCloseTime: market.closesAt || new Date(Date.now() + 60*60*1000).toISOString(),
+      reasons: [reason, decision.primary_reason || 'ADAN logic skip'],
+      track: 'main_brain',
+      category: 'crypto_prediction',
+      entryPrice: side === 'YES' ? market.yesPrice : (1 - market.yesPrice),
+      isShadow: true
+    });
+  } catch (e) {
+    console.log('[SHADOW BRAIN] Error recording shadow:', e.message);
+  }
+}
+
+function getTimeDecayFactor(market) {
+  // Concept #21 — Time-to-close as feature
+  // ADAN is an EXPERT in 5min and 15min markets — these are the core business
+  // TTC filter only applies to LONG-TERM markets (daily, weekly, event-based)
+  const closeDate = market.closesAt || market.endDate;
+  if (!closeDate) return { factor: 1.0, canBet: true, time_to_close_hours: null, note: 'no close date' };
+
+  const time_to_close_hours = (new Date(closeDate) - Date.now()) / 3600000;
+
+  // Already expired
+  if (time_to_close_hours <= 0) {
+    return { factor: 0, canBet: false, closeExisting: true, time_to_close_hours, note: 'market expired' };
+  }
+
+  // Detect market type from title/slug — 5min and 15min markets are SHORT by design
+  const title = (market.title || market.question || market.slug || '').toLowerCase();
+  const is5min = title.includes('5min') || title.includes('5 min') || /\d+:\d+[ap]m.*\d+:\d+[ap]m/i.test(title);
+  const is15min = title.includes('15min') || title.includes('15 min');
+  const isShortTermCrypto = is5min || is15min || title.includes('up or down');
+
+  if (isShortTermCrypto) {
+    // Short-term crypto: ADAN's specialty — always tradeable if > 1min left
+    if (time_to_close_hours < 1/60) { // < 1 minute
+      return { factor: 0, canBet: false, closeExisting: true, time_to_close_hours, note: 'expiring in <1min' };
+    }
+    // Slight decay in last 2 minutes but still tradeable
+    const factor = time_to_close_hours < 2/60 ? 0.7 : 1.0;
+    return { factor, canBet: true, time_to_close_hours, note: isShortTermCrypto ? 'short-term crypto — core' : 'standard' };
+  }
+
+  // LONG-TERM markets (politics, events, daily): apply strict TTC rules
+  if (time_to_close_hours < 0.25) {
+    return { factor: 0, canBet: false, closeExisting: true, time_to_close_hours, note: 'long-term market <15min — close existing' };
+  }
+  if (time_to_close_hours < 1) {
+    return { factor: 0.3, canBet: true, minEdge: 0.10, time_to_close_hours, note: 'long-term <1h — high edge only' };
+  }
+  if (time_to_close_hours < 4) {
+    return { factor: 0.5, canBet: true, minEdge: 0.08, time_to_close_hours, note: 'reduced Kelly 1-4h' };
+  }
+  if (time_to_close_hours <= 48) {
+    return { factor: 1.0, canBet: true, time_to_close_hours, note: 'whale/PIN signals weight more' };
+  }
+  return { factor: 1.0, canBet: true, time_to_close_hours, note: 'standard' };
+}
+
 
 // ── Award EXP to a child when father wins on the asset that child reported ────
 function awardChildExp(asset, won) {
@@ -1648,11 +1865,19 @@ function buildFeatureVector(priceData, extra = {}) {
     trend15m: priceData.trend15m || 0, trend1h: priceData.trend1h || 0,
     bbPct: priceData.bb?.pct || 50,
     volRatio, volAccel: priceData.volAccel || 0,
+    // Concept #12A: log1p-scaled volume features for stable magnitude
+    volumeLog: priceData.vol?.volumeLog || 0,
+    bidVolLog: priceData.orderBook?.bidVolLog || 0,
+    askVolLog: priceData.orderBook?.askVolLog || 0,
     vwapPct: priceData.vwap5m?.pct || 0,
     buyPressure: priceData.orderBook?.buyPressure || 50,
     obRatio: priceData.orderBook?.ratio || 1,
     sellWallTrap: priceData.orderBook?.sellWallTrap ? 1 : 0,
     buyWallTrap: priceData.orderBook?.buyWallTrap ? 1 : 0,
+    // Concept #8A: L2 tensor scores
+    wall_score: priceData.orderBook?.wall_score || 0,
+    imbalance_ratio: priceData.orderBook?.imbalance_ratio || 1,
+    depth_score: priceData.orderBook?.depth_score || 0,
     volatility: priceData.volatility || 0,
     // v7: Alien Intelligence features
     macdHist: priceData.macd?.hist || 0,
@@ -2156,6 +2381,7 @@ async function think(markets, prices, pnl, openPos, state) {
 
   // Build price context for Claude
   // ── Build full intelligence context for Claude ──
+  const _hourBin = binCountScore(pnl.hourStats, new Date().getUTCHours());
   const hourData = pnl.hourStats?.[new Date().getUTCHours().toString()];
   const fg = prices._meta?.fearGreed;
   const fgContext = fg ? `Fear & Greed: ${fg.value} (${fg.label}) — direction: ${fg.direction > 0 ? 'improving' : 'worsening'}` : 'Fear & Greed: unavailable';
@@ -2203,21 +2429,25 @@ async function think(markets, prices, pnl, openPos, state) {
   VOL:    trend=${d.vol?.trend || '?'}  spike=${d.vol?.spike ? 'YES' : 'no'}  ratio=${d.vol?.ratio?.toFixed(1) || '?'}x avg  accel=${d.volAccel > 0 ? '+' + d.volAccel : d.volAccel ?? '?'} (${d.volAccel >= 2 ? 'ACCELERATING' : d.volAccel <= -2 ? 'DYING' : 'flat'})
   VWAP5m: $${d.vwap5m?.vwap?.toFixed(2) || '?'} | price ${d.vwap5m?.pct != null ? (d.vwap5m.pct >= 0 ? '+' : '') + d.vwap5m.pct.toFixed(2) + '%' : '?'} ${d.vwap5m?.above ? 'ABOVE VWAP ▲' : 'BELOW VWAP ▼'}
   ORDER BOOK WALLS: ${wallInfo}
+  L2 TENSOR: wall_score=${ob?.wall_score?.toFixed(2) || '?'} (ask cluster density) | imbalance=${ob?.imbalance_ratio?.toFixed(2) || '?'} (>1=sell pressure) | depth=${ob?.depth_score?.toFixed(2) || '?'} (liquidity near mid)
   VOLATILITY: ${d.volatility.toFixed(4)}% per candle
   INTEL SCORE: ${d.intelScore}/100 — ${d.intelScore >= 65 ? 'BULLISH SIGNAL' : d.intelScore >= 45 ? 'NEUTRAL' : d.intelScore >= 35 ? 'BEARISH' : 'STRONG BEAR'}
   ${funding ? `FUNDING: ${funding.rate.toFixed(4)}% — ${funding.label} ${Math.abs(funding.rate) > 0.01 ? '⚠ EXTREME — correction imminent' : ''}${funding.rate > 0.005 ? ' (longs overleveraged → SHORT squeeze risk)' : funding.rate < -0.005 ? ' (shorts overleveraged → LONG squeeze risk)' : ''}` : ''}
-  HOUR FILTER: UTC ${new Date().getUTCHours()}h — ${hourData ? `WR: ${Math.round((hourData.wins / (hourData.wins + hourData.losses) || 0) * 100)}% over ${hourData.wins + hourData.losses} trades` : 'no history'}
+  HOUR FILTER (#12C): UTC ${new Date().getUTCHours()}h — log-odds=${_hourBin.score.toFixed(2)} pWin=${Math.round(_hourBin.pWin*100)}% (n=${_hourBin.total}) ${_hourBin.score > 0.3 ? '✅ WINNING HOUR' : _hourBin.score < -0.3 ? '⚠ LOSING HOUR (reduce stake)' : '— NEUTRAL'}
   Last 6 closes (1m): ${d.closes.slice(-6).map(c => '$' + c.toLocaleString()).join(' → ')}`;
     }).filter(Boolean).join('\n\n');
 
   const marketsText = candidates.map((m, i) => {
     const closes = m.closesAt ? new Date(m.closesAt).toLocaleString() : 'unknown';
     const timeLeft = m.closesAt ? Math.round((new Date(m.closesAt) - Date.now()) / 60000) + ' min' : '?';
+    const decay = getTimeDecayFactor(m);
+    const ttcHours = decay.time_to_close_hours != null ? decay.time_to_close_hours.toFixed(1) + 'h' : '?';
+    const decayWarning = decay.factor < 1.0 ? ` | TIME DECAY: ${decay.factor}x Kelly — ${decay.note}` : '';
     const symData = m.priceData;
     const distStr = m.targetPrice && symData ?
       `dist from target: ${((m.targetPrice - symData.price) / symData.price * 100).toFixed(2)}% (${symData.price > m.targetPrice ? 'ABOVE target — NO favored' : 'BELOW target — YES favored'})` : '';
     return `[${i + 1}] "${m.title}"
-  YES price: ${(m.yesPrice * 100).toFixed(1)}% | Liquidity: $${m.liquidity.toFixed(0)} | Closes in: ${timeLeft}
+  YES price: ${(m.yesPrice * 100).toFixed(1)}% | Liquidity: $${m.liquidity.toFixed(0)} | Closes in: ${timeLeft} (${ttcHours})${decayWarning}
   Asset: ${m.asset.toUpperCase()} | Target: ${m.targetPrice ? '$' + m.targetPrice.toLocaleString() : 'unspecified'}
   ${distStr}`;
   }).join('\n\n');
@@ -2261,19 +2491,17 @@ async function think(markets, prices, pnl, openPos, state) {
     if (bp && bp.length > 10) beliefCtx = bp;
   } catch(e) { /* soul memory not ready */ }
 
-  // Level 3: Data-driven hour filter — skip hours where historical WR < 48%
-  // Uses ADAN's own hourStats to dynamically block bad hours
+  // Level 3: Bin Counting Hour Filter (#12C) — continuous log-odds replaces boolean
   const utcHour = new Date().getUTCHours();
-  const _hData = pnl.hourStats?.[utcHour.toString()];
-  const hourTrades = _hData ? (_hData.wins + _hData.losses) : 0;
-  const hourWR = hourTrades >= 10 ? _hData.wins / hourTrades : 0.5;
+  const hourBinResult = binCountScore(pnl.hourStats, utcHour);
   const _optH = selfOptimizer.loadParams();
-  if (hourTrades >= _optH.hourMinN && hourWR < _optH.hourThr) {
-    state.thought = `🌙 Hour filter: ${utcHour}:00 UTC has ${Math.round(hourWR*100)}% WR over ${hourTrades} trades — skipping`;
+  // Only hard-skip if bin count score is severely negative AND enough samples
+  if (hourBinResult.total >= (_optH.hourMinN || 10) && hourBinResult.score < -1.0) {
+    state.thought = `🌙 Hour filter (#12C): ${utcHour}:00 UTC log-odds=${hourBinResult.score.toFixed(2)} (WR=${Math.round(hourBinResult.pWin*100)}%, n=${hourBinResult.total}) — toxic hour, skipping`;
     state.mode = 'result'; state.lastScan = new Date().toLocaleTimeString();
     state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
     render(state);
-    return { action: 'SKIP', thought: `Hour filter: ${utcHour}:00 UTC WR=${Math.round(hourWR*100)}% (n=${hourTrades})` };
+    return { action: 'SKIP', thought: `Hour filter #12C: ${utcHour}:00 UTC logOdds=${hourBinResult.score.toFixed(2)} (n=${hourBinResult.total})` };
   }
 
   // ── BRAIN SWITCH SYSTEM V2.1 INTEGRATION ────────────────────────────────────
@@ -2284,7 +2512,10 @@ async function think(markets, prices, pnl, openPos, state) {
   // Create the questions string for Claude
   const marketQuestion = candidates.map((m, i) => {
     const title = (m.title || '').slice(0, 65);
-    return `[${i + 1}] "${title}" | P:${(m.yesPrice * 100).toFixed(1)}% | ${m.asset.toUpperCase()}`;
+    const decay = getTimeDecayFactor(m);
+    const ttcStr = decay.time_to_close_hours != null ? `${decay.time_to_close_hours.toFixed(1)}h` : '?';
+    const decayNote = decay.factor < 1.0 ? ` [DECAY:${decay.factor}x — ${decay.note}]` : '';
+    return `[${i + 1}] "${title}" | P:${(m.yesPrice * 100).toFixed(1)}% | ${m.asset.toUpperCase()} | TTC:${ttcStr}${decayNote}`;
   }).join('\n');
 
     // ── CHILD LEARNING: Weighted consensus (Dynasty v4.0) ──
@@ -2295,9 +2526,15 @@ async function think(markets, prices, pnl, openPos, state) {
         if (intel) activeChildren.push(intel);
     }
     const consensus = childLearning.getWeightedConsensus(activeChildren);
-    const childConsensus = consensus.direction === 'UP' ? (0.5 + (consensus.weightedConfidence / 200)) 
-                         : consensus.direction === 'DOWN' ? (0.5 - (consensus.weightedConfidence / 200)) 
-                         : 0.5;
+    // MoE Dynasty: use gated expert combination instead of simple weighted consensus
+    const moeCombined = moeDynasty.combine(activeChildren.map(c => ({
+      childId: c.childId || c.spec,
+      direction: c.direction || c.signal?.dir,
+      confidence: c.confidence || c.signal?.conf || 50,
+      asset: c.asset,
+      timeframe: c.timeframe || c.windowMin,
+    })));
+    const childConsensus = moeCombined.probability;
 
     let decision;
     try {
@@ -2325,6 +2562,7 @@ async function think(markets, prices, pnl, openPos, state) {
       totalTrades: pnl.trades || 0,
       coins: ['BTC', 'ETH', 'SOL'],
       oracleContext: oracle.getPromptContext(prices) + _getPolyWsContext(candidates) + _getStatModelContext(candidates),
+      pinScoreCtx: pinTracker.getPromptContext(primaryCoin),
       intelSummary,
       cascadeSignal,
       dynWeightsCtx,
@@ -2332,9 +2570,15 @@ async function think(markets, prices, pnl, openPos, state) {
       metaCalibCtx,
       episodicAccuracy,
       featureImportanceCtx: featureImportance.getPromptContext(),
+      shapleyCtx: shapleyAnalyzer.getPromptContext(),
       riskOfRuinCtx: riskOfRuin.getDashboardStr(pnl, PAPER_BET_SIZE),
+      markovianStateCtx: (() => {
+        const mkv = computeMarkovianState();
+        return `Positions Open: ${mkv.positions_open}/3 | Capital Deployed: ${(mkv.capital_deployed_pct * 100).toFixed(1)}% | Consecutive Losses: ${mkv.consecutive_losses} | Hours Since Last Win: ${mkv.hours_since_last_win.toFixed(1)}h | Drawdown: ${(mkv.current_drawdown_pct * 100).toFixed(1)}% | Free Capital: $${mkv.free_capital}`;
+      })(),
       brainManager,
       skillsBlock,
+      kmeansRegimeCtx: kmeansRegime.getPromptContext(),
       onStatus: (msg) => {
         state.status = msg;
         _startThinkSpin(msg); // Update terminal spinner with current step
@@ -2456,8 +2700,11 @@ async function think(markets, prices, pnl, openPos, state) {
           ? (assetStats.wins + bayesPrior * 0.5) / (assetStats.total + bayesPrior)
           : 0.5;
         // Combine hour WR + soul prediction + asset WR via Bayesian pooling
+        // #12C: Use bin count log-odds for hour influence instead of raw WR
+        const hourBinEnsemble = binCountScore(pnl.hourStats, utcH);
+        const hourBinProb = hourBinEnsemble.pWin; // Laplace-smoothed probability
         let historicalProb = 0.5;
-        historicalProb += (hWR - 0.5) * 0.35;  // hour influence
+        historicalProb += (hourBinProb - 0.5) * 0.35;  // hour influence (bin count smoothed)
         historicalProb += (assetWR - 0.5) * 0.35; // asset influence
         if (soulPred.recommendation === 'STRONG_AVOID') historicalProb -= 0.12;
         else if (soulPred.recommendation === 'CAUTION') historicalProb -= 0.06;
@@ -2470,7 +2717,11 @@ async function think(markets, prices, pnl, openPos, state) {
         tradeData.rulesProb = historicalProb;
         tradeData.statProb = statProb;
 
-        // 4. Ensemble combines all three (calibrated)
+        // 3b. Online Learner voter (Concept #16)
+        const onlinePred = onlineLearner.predict(tradeData.entryVec ? LogisticRegression.extractFeatures(tradeData) : {});
+        const onlineProb = onlinePred.ready ? onlinePred.probability : null;
+
+        // 4. Ensemble combines all voters (calibrated) + online learner blend
         ensembleResult = ensemble.combine(statProb, llmProb, historicalProb);
         // Store component probs for resolution learning
         ensembleResult.statProb = statProb;
@@ -2537,9 +2788,10 @@ function kellyStake(pnl, side, myProb, marketYesPrice, edge, confidence = 50) {
 
   // Fractional Kelly — TRAINING MODE: aggressive to maximize data
   // Real mode would use 1/4 Kelly, but paper = learn fast
-  let kellyFraction = 0.50; // TRAINING: 1/2 Kelly base
-  if (confidence >= 90) kellyFraction = 0.75; // TRAINING: 3/4 Kelly
-  else if (confidence < 70) kellyFraction = 0.35; // TRAINING: still decent size
+  const esParams = evolutionStrategies.getBestParams();
+  let kellyFraction = esParams.kellyBase; // ES-evolved Kelly base (default 0.50)
+  if (confidence >= 90) kellyFraction = Math.min(esParams.kellyBase * 1.5, 1.0); // 1.5x ES base, cap 1.0
+  else if (confidence < 70) kellyFraction = esParams.kellyBase * 0.70; // 70% of ES base
 
   // Drawdown-based Kelly scaling: reduce when in drawdown
   const fund = pnl.fund || 10000;
@@ -2571,11 +2823,37 @@ function kellyStake(pnl, side, myProb, marketYesPrice, edge, confidence = 50) {
 
 // ── 4. Agent evaluate_and_trade (Master System Prompt) ──────────────────────
 async function evaluate_and_trade(decision, prices, state) {
-  let { market, side, myProb, edge, confidence, thought } = decision;
+  let { market, side, myProb, edge, confidence, thought, ensembleResult } = decision;
   const pnlNow = loadPnL();
   const xpData = expProgress(pnlNow.exp || 0);
   const kellyOn = xpData.level >= 4;
   const level = xpData.level || 0;
+
+  // ═══ MARKOVIAN RISK GATE (Concept #8D) ═══
+  // Compute full state vector and apply hard risk rules BEFORE any bet logic.
+  const markov = computeMarkovianState();
+
+  // Rule 1: Max 3 open positions — prevent over-exposure
+  if (markov.positions_open >= 3) {
+    console.log(`[MARKOV] ⛔ MAX POSITIONS (${markov.positions_open}/3) — skipping new bet`);
+    recordAdanShadow(decision, market, 'MAX_POSITIONS_OPEN');
+    return;
+  }
+
+  // Rule 2: Drawdown > 20% → full stop + trigger Dream Mode
+  if (markov.current_drawdown_pct > 0.20) {
+    console.log(`[MARKOV] 🔴 DRAWDOWN STOP: ${(markov.current_drawdown_pct * 100).toFixed(1)}% > 20% threshold — entering Dream Mode`);
+    recordAdanShadow(decision, market, 'HIGH_DRAWDOWN_VETO');
+    try { await dreamMode(pnlNow); } catch (e) { console.log('[MARKOV] Dream mode error:', e.message); }
+    return;
+  }
+
+  // Rule 3: 3+ consecutive losses → cap stake at $75 (applied later in stake calc)
+  // Rule 4: Capital deployed > 40% → Kelly on free capital only (applied in kellyStake override)
+  // These are checked again at stake computation time below.
+
+  // Persist markov state for prompt injection
+  state._markovState = markov;
 
   // ═══ SOUL MEMORY v2: Predictive recall — "I've been here before" ═══
   const entryFeatures = market.priceData ? {
@@ -2591,10 +2869,12 @@ async function evaluate_and_trade(decision, prices, state) {
   const soulPrediction = soulMemory.predict({ asset: market.asset || 'btc', side, features: entryFeatures });
   if (soulPrediction.recommendation === 'STRONG_AVOID') {
     console.log(`[SOUL v2] ⛔ STRONG AVOID: memory says this pattern loses. ${soulPrediction.promptContext.trim()}`);
+    recordAdanShadow(decision, market, 'SOUL_STRONG_AVOID');
     return;
   }
   if (soulPrediction.recommendation === 'CAUTION' && (edge || 0) < 0.05) {
     console.log(`[SOUL v2] ⚠ CAUTION + low edge (${((edge||0)*100).toFixed(1)}%) — skipping`);
+    recordAdanShadow(decision, market, 'SOUL_CAUTION_LOW_EDGE');
     return;
   }
   if (soulPrediction.promptContext) {
@@ -2786,6 +3066,7 @@ async function evaluate_and_trade(decision, prices, state) {
   const minEV = gatesCfg.evGateMin ?? -0.10;
   if (ev < minEV) {
     console.log(`[EV GATE] ⛔ ${ev <= 0 ? 'NEGATIVE' : 'INSUFFICIENT'} EV: ${ev.toFixed(4)} (min: ${minEV}). Market: ${(market.title || '').slice(0, 30)}...`);
+    recordAdanShadow(decision, market, 'INSUFFICIENT_EV');
     try {
       const evLogPath = path.join(DIR, 'ev_blocks.jsonl');
       fs.appendFileSync(evLogPath, JSON.stringify({ ts: new Date().toISOString(), marketId: market.id, title: market.title, ev, p, rawOdds, side }) + '\n');
@@ -2799,7 +3080,39 @@ async function evaluate_and_trade(decision, prices, state) {
   const humanMult = (lastHumanState === 'NEWS_SHOCK') ? 0 : 1.0;
   const sessionMult = sessionAdj.stakeMultiplier;
   const metabolicMult = metabolism.getStakeMultiplier(pnlNow.fund || 0, lastHumanState);
-  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult * ivStakeMult);
+  // Concept #21: Apply time decay factor to stake sizing
+  const timeDecay = market._timeDecay || getTimeDecayFactor(market);
+  const timeDecayMult = timeDecay.factor;
+  if (timeDecayMult < 1.0) {
+    console.log(`[TIME DECAY] ⏰ Stake reduced by ${((1 - timeDecayMult) * 100).toFixed(0)}% — ${timeDecay.note} (TTC: ${timeDecay.time_to_close_hours?.toFixed(1)}h)`);
+  }
+  // Concept #21: Block bets that don't meet minimum edge for 1-4h window
+  if (timeDecay.minEdge && Math.abs(edge) < timeDecay.minEdge) {
+    console.log(`[TIME DECAY] ⛔ Edge ${(Math.abs(edge) * 100).toFixed(1)}% < ${(timeDecay.minEdge * 100).toFixed(0)}% required for TTC ${timeDecay.time_to_close_hours?.toFixed(1)}h — VETOED`);
+    return;
+  }
+  // ── Concept #12D: K-Means Regime Kelly Multiplier ──
+  const kmeansKelly = kmeansRegime.getKellyMultiplier();
+  const kmeansRegimeMult = kmeansKelly.mult;
+  if (kmeansKelly.regime === 'EVENT') {
+    console.log(`[K-MEANS] ⛔ EVENT regime detected — all bets VETOED (confidence: ${(kmeansRegime.lastResult?.confidence * 100 || 0).toFixed(0)}%)`);
+    recordAdanShadow(decision, market, 'KMEANS_EVENT_REGIME');
+    return;
+  }
+  if (kmeansKelly.minEdge && Math.abs(edge) < kmeansKelly.minEdge) {
+    console.log(`[K-MEANS] ⛔ ${kmeansKelly.regime} regime requires ${(kmeansKelly.minEdge * 100).toFixed(0)}% min edge, got ${(Math.abs(edge) * 100).toFixed(1)}% — VETOED`);
+    return;
+  }
+  if (kmeansRegimeMult < 1.0) {
+    console.log(`[K-MEANS] Regime: ${kmeansKelly.regime} — Kelly ×${kmeansRegimeMult}`);
+  }
+  // Concept #12C: Bin Count hour Kelly multiplier
+  const hourBinForKelly = binCountScore(pnlNow.hourStats, new Date().getUTCHours());
+  const hourBinMult = hourKellyMultiplier(hourBinForKelly.score);
+  if (hourBinMult !== 1.0) {
+    console.log(`[BIN-COUNT] Hour ${new Date().getUTCHours()}:00 log-odds=${hourBinForKelly.score.toFixed(2)} → Kelly ×${hourBinMult}`);
+  }
+  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult * ivStakeMult * timeDecayMult * kmeansRegimeMult * hourBinMult);
   let stake = Math.round(Math.max(100, baseStake * combined) / 25) * 25; // TRAINING: min $100 per bet
 
   // v5.3 Wilmott: Child-direct trades use Half Kelly + Copula correlation penalty
@@ -2822,6 +3135,39 @@ async function evaluate_and_trade(decision, prices, state) {
     console.log(`[CATEGORY TRADE] 📉 Stake capped to $${stake} (max $${CATEGORY_MAX_STAKE})`);
   }
 
+  // ═══ Concept #8C: UCB Exploration stake cap — max 3% of fund on exploration markets ═══
+  if (market._ucb && market._ucb.is_exploration) {
+    const explorationMax = ucbExplorer.getExplorationMaxStake(pnlNow.fund || 5000);
+    const prevStake = stake;
+    stake = Math.min(stake, Math.max(25, Math.round(explorationMax / 25) * 25));
+    if (stake < prevStake) {
+      console.log(`[UCB EXPLORER] 🔬 Exploration market (${market._ucb.trades || 0} trades) — stake capped $${prevStake} → $${stake} (3% fund cap)`);
+    }
+  }
+
+  // ═══ MARKOVIAN STAKE RULES (Concept #8D) ═══
+  {
+    const mkv = state._markovState || computeMarkovianState();
+
+    // Rule 3: 3+ consecutive losses → max stake $75
+    if (mkv.consecutive_losses >= 3) {
+      const prevStake = stake;
+      stake = Math.min(stake, 75);
+      if (prevStake !== stake) {
+        console.log(`[MARKOV] 📉 LOSS STREAK (${mkv.consecutive_losses}) — stake capped $${prevStake} → $${stake}`);
+      }
+    }
+
+    // Rule 4: Capital deployed > 40% → Kelly on free capital only
+    if (mkv.capital_deployed_pct > 0.40) {
+      const freeCapitalStake = Math.round(Math.min(stake, mkv.free_capital * 0.05) / 25) * 25;
+      if (freeCapitalStake < stake) {
+        console.log(`[MARKOV] 📉 HIGH EXPOSURE (${(mkv.capital_deployed_pct * 100).toFixed(0)}%) — stake reduced $${stake} → $${freeCapitalStake} (free capital: $${mkv.free_capital})`);
+        stake = Math.max(25, freeCapitalStake);
+      }
+    }
+  }
+
   if (humanMult === 0) {
     console.log('[MOTHER CODE] ⛔ NEWS_SHOCK — skipping all bets');
     return;
@@ -2833,6 +3179,7 @@ async function evaluate_and_trade(decision, prices, state) {
     '× Particle:', particleStakeAdj,
     '× Copula:', copulaStakeAdj,
     '× Wilmott:', wilmottStakeMult,
+    '× KMeans:', kmeansRegimeMult,
     '= Final:', stake);
 
   cls();
@@ -2891,6 +3238,7 @@ async function evaluate_and_trade(decision, prices, state) {
       oiChange: 0,
       whaleWalls: pd?.orderBook ? (pd.orderBook.buyPressure > 60 ? 1 : pd.orderBook.buyPressure < 40 ? -1 : 0) : 0,
       regime: pd?.regime || 'NORMAL',
+      kmeansRegime: pd?.kmeansRegime?.regime || 'UNKNOWN',
       sessionEdge: sessionAdj.multiplier || 1,
       humanState: lastHumanState || 'RATIONAL_MARKET',
       oracleSignal: pd?.obImbalance === 'BUY_WALL' ? 1 : pd?.obImbalance === 'SELL_WALL' ? -1 : 0,
@@ -3142,7 +3490,7 @@ async function checkResolutions() {
     metabolism.recordTradePnL(pnlVal || 0);
     // Record return for dynamic copula correlations
     try { copulaRisk.recordReturn(p.asset || 'btc', pnlVal / Math.max(p.stake, 1)); } catch (e) { }
-    if (won) { consecutiveLosses = 0; } else { consecutiveLosses++; }
+    if (won) { consecutiveLosses = 0; lastWinTime = Date.now(); } else { consecutiveLosses++; }
 
     // ═══ ML ONLINE LEARNING: Update stat model + ensemble weights after each trade ═══
     try {
@@ -3159,6 +3507,20 @@ async function checkResolutions() {
         const llmProb = p.myProb || 0.5;
         const rulesProb = p.rulesProb || 0.5; // v7: now stored per-trade
         ensemble.updateWeights(statProb, llmProb, rulesProb, won);
+
+        // Concept #16: Online Learner SGD update after every resolved trade
+        try {
+          const onlineFeatures = LogisticRegression.extractFeatures({
+            entryVec: p.entryVec, side: p.side, edge: p.edge,
+            confidence: p.confidence, entryTime: p.entryTime,
+          });
+          onlineLearner.update(onlineFeatures, won, statProb);
+          if (onlineLearner.shouldPromote()) {
+            console.log('[ONLINE-LEARNER] *** PROMOTION FLAG: Online model beating batch by 2%+ over last 100 trades ***');
+          }
+        } catch (olErr) {
+          console.log('[ONLINE-LEARNER] Update error:', olErr.message);
+        }
       }
       // v7: Record in market filter for future quality scoring
       try {
@@ -3167,6 +3529,13 @@ async function checkResolutions() {
           windowMin: p.windowMin || 5, liquidity: p.marketLiquidity || 0,
           yesPrice: p.marketPrice || 0.5, side: p.side || 'YES', won,
         });
+      } catch {};
+      // Concept #8C: Record in UCB Explorer for exploration scoring
+      try {
+        ucbExplorer.recordTrade({
+          id: p.marketId, conditionId: p.conditionId,
+          title: p.title || p.marketTitle || '', asset: p.asset || 'unknown',
+        }, won, p.edge || 0);
       } catch {};
     } catch (e) { console.log('[ML-ONLINE] Error:', e.message); }
 
@@ -3250,6 +3619,9 @@ async function checkResolutions() {
     }
     // Sync vault = fund (available cash excluding open stakes)
     pnl2.vault = pnl2.fund;
+    // Markovian: persist peak fund for drawdown tracking
+    if (!pnl2.peakFund || pnl2.fund > pnl2.peakFund) pnl2.peakFund = pnl2.fund;
+    if (won) pnl2.lastWinTime = new Date().toISOString();
     const h = new Date().getUTCHours().toString();
     if (!pnl2.hourStats) pnl2.hourStats = {};
     if (!pnl2.hourStats[h]) pnl2.hourStats[h] = { wins: 0, losses: 0 };
@@ -3422,6 +3794,12 @@ async function doScan(state) {
           marketFilter.bootstrap(posData.closed || []);
         } catch (mfErr) { console.log('[MKT-FILTER] Bootstrap error:', mfErr.message); }
 
+        // 2b2. UCB EXPLORER: Bootstrap from closed trades (Concept #8C)
+        try {
+          const posDataUcb = loadPositions();
+          ucbExplorer.bootstrap(posDataUcb.closed || []);
+        } catch (ucbErr) { console.log('[UCB EXPLORER] Bootstrap error:', ucbErr.message); }
+
         // 2c. SELF-OPTIMIZER: Grid search (unchanged)
         const optimResult = selfOptimizer.run();
         if (optimResult) {
@@ -3537,20 +3915,16 @@ async function doScan(state) {
     render(state); return;
   }
 
-  // 2.7 HOUR FILTER — skip hours with historically terrible WR (< 30% over 3+ samples)
+  // 2.7 HOUR FILTER (#12C) — Bin Count continuous log-odds replaces boolean filter
   const curHour = new Date().getUTCHours().toString();
-  const hourData = pnl.hourStats?.[curHour];
-  if (hourData) {
-    const hourTotal = (hourData.wins || 0) + (hourData.losses || 0);
-    const hourWR = hourTotal > 0 ? (hourData.wins || 0) / hourTotal : 0.5;
-    const _optH2 = selfOptimizer.loadParams();
-    if (gatesConfig.hourFilter && hourTotal >= _optH2.hourMinN && hourWR < _optH2.hourThr) {
-      state.thought = `⏸ HOUR FILTER — UTC hour ${curHour} has ${Math.round(hourWR * 100)}% WR over ${hourTotal} trades (< 30% threshold).\nHistorically a losing hour. Skipping to protect capital. Better to wait for a high-WR window.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
-      state.mode = 'result';
-      state.lastScan = new Date().toLocaleTimeString();
-      state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
-      render(state); return;
-    }
+  const scanHourBin = binCountScore(pnl.hourStats, parseInt(curHour));
+  const _optH2 = selfOptimizer.loadParams();
+  if (gatesConfig.hourFilter && scanHourBin.total >= (_optH2.hourMinN || 10) && scanHourBin.score < -1.0) {
+    state.thought = `⏸ HOUR FILTER (#12C) — UTC hour ${curHour} log-odds=${scanHourBin.score.toFixed(2)} (WR=${Math.round(scanHourBin.pWin*100)}%, n=${scanHourBin.total}).\nToxic hour by bin counting. Skipping to protect capital.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
+    state.mode = 'result';
+    state.lastScan = new Date().toLocaleTimeString();
+    state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
+    render(state); return;
   }
 
   // 3. CAPITAL LOCKUP MANAGER (Risk Guard)
@@ -3581,6 +3955,44 @@ async function doScan(state) {
   const availableMarkets = (state.markets || []).filter(m =>
     m.closesAt && new Date(m.closesAt) > new Date() && m.yesPrice >= 0.10 && m.yesPrice <= 0.90
   );
+
+  // ═══ Concept #21: Time-to-Close Filter — skip markets too close to expiry ═══
+  // Applied BEFORE Gemini call to save API tokens on untradeable markets
+  for (const m of availableMarkets) {
+    const decay = getTimeDecayFactor(m);
+    m._timeDecay = decay; // attach for downstream use (Kelly adjustment, prompt context)
+  }
+  const timeFilteredOut = availableMarkets.filter(m => !m._timeDecay.canBet);
+  if (timeFilteredOut.length > 0) {
+    console.log(`[TIME DECAY] ⏰ Filtered out ${timeFilteredOut.length} market(s) too close to expiry: ${timeFilteredOut.map(m => `${(m.title || '').slice(0, 30)} (${m._timeDecay.time_to_close_hours?.toFixed(1)}h — ${m._timeDecay.note})`).join(', ')}`);
+  }
+  // Remove untradeable markets from the available pool
+  const tradeableMarkets = availableMarkets.filter(m => m._timeDecay.canBet);
+
+  // ═══ Concept #8C: UCB Market Explorer — rank markets by exploration/exploitation balance ═══
+  try {
+    const ucbRanked = ucbExplorer.rankMarkets(tradeableMarkets);
+    const ucbBlacklisted = tradeableMarkets.length - ucbRanked.length;
+    if (ucbBlacklisted > 0) {
+      console.log(`[UCB EXPLORER] ⛔ ${ucbBlacklisted} market(s) blacklisted (WR < 40% after 15+ trades)`);
+    }
+    for (const item of ucbRanked) {
+      item.market._ucb = item._ucb;
+      item.market._ucbKey = item._ucbKey;
+    }
+    const ucbTop = ucbRanked.slice(0, 3);
+    if (ucbTop.length > 0) {
+      console.log(`[UCB EXPLORER] Top markets: ${ucbTop.map(r => `${(r.market.title || '').slice(0, 25)} UCB:${r._ucb.ucb_score === Infinity ? 'NEW' : r._ucb.ucb_score.toFixed(3)} (${r._ucb.trades}t)`).join(' | ')}`);
+    }
+    const ucbOrderedIds = new Set(ucbRanked.map(r => r.market.id || r.market.conditionId));
+    const ucbReordered = ucbRanked.map(r => r.market);
+    for (const m of tradeableMarkets) {
+      if (!ucbOrderedIds.has(m.id || m.conditionId)) ucbReordered.push(m);
+    }
+    state.markets = ucbReordered;
+  } catch (ucbErr) {
+    console.log('[UCB EXPLORER] Ranking error:', ucbErr.message);
+  }
 
   // ═══ Wilmott v6.0: Arbitrage Scanner (Ch 17) ═══
   try {
@@ -3632,7 +4044,7 @@ async function doScan(state) {
 
     // Find matching market for this child's asset
     const assetLower = (spec.assetName || '').toLowerCase();
-    const matchingMarket = availableMarkets.find(m => {
+    const matchingMarket = tradeableMarkets.find(m => {
       const mAsset = (m.asset || '').toLowerCase();
       return mAsset === assetLower && !childTradedMarkets.has(m.id || m.conditionId);
     });
@@ -3868,6 +4280,20 @@ async function main() {
   render(state);
   await checkResolutions();
 
+  // ── AGI: Acknowledge Lord's fulfillment of previous requests ──
+  try {
+    const unread = adanVoice.getUnread();
+    const clobReq = unread.find(m => m.type === 'request' && m.message.includes('CLOB'));
+    if (clobReq) {
+      // We don't check connected here as it might still be asyncing, 
+      // but the fact it's unread and we are starting means Lord worked on it.
+      adanVoice.speak('milestone', "Lord, I see the Polymarket CLOB WebSocket is now active! My order book intelligence is now live and detecting whale flow. Request fulfilled.", { category: 'data_source' });
+      // Mark as read manually
+      adanVoice.messages.forEach(m => { if (m.type === 'request' && m.message.includes('CLOB')) m.read = true; });
+      adanVoice._save();
+    }
+  } catch (e) { console.log('[VOICE] Init check error:', e.message); }
+
   const loop = async () => {
     try {
       state.pnl = loadPnL();
@@ -3989,8 +4415,12 @@ async function main() {
             const edge = Math.abs(nm.yesPrice - 0.5);
             if (edge < 0.05) continue; // need 5%+ edge
             console.log(`[FAST PATH] ⚡ Found 5min market closing in ${minsLeft.toFixed(1)}min: ${nm.title.slice(0, 50)} edge=${(edge * 100).toFixed(1)}%`);
-            // Use child consensus instead of full LLM brain
-            const childIntel = readLatestChildIntel(nm.asset === 'btc' ? 'BTC-5min' : nm.asset === 'sol' ? 'SOL-5min' : 'ETH-5min');
+            // v7: Apply meta-calibration to fast path too
+            const childId = nm.asset === 'btc' ? 'BTC-5min' 
+                          : nm.asset === 'sol' ? 'SOL-5min' 
+                          : nm.asset === 'xrp' ? 'XRP-5min' 
+                          : 'ETH-5min';
+            const childIntel = readLatestChildIntel(childId);
             // v7: Apply meta-calibration to fast path too
             const mcFast = loadMetaCalib();
             const calibFastConf = Math.round((childIntel?.confidence || 0) * (mcFast.multiplier || 1.0));

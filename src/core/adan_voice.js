@@ -99,6 +99,64 @@ export class AdanVoice {
         this.speak('request', `My meta-calibration is ${mc.multiplier.toFixed(3)} — I'm very overconfident. I need Lord to either lower my base confidence estimates or adjust my brain prompts to be more conservative.`, { multiplier: mc.multiplier });
       }
     } catch {}
+
+    // ── SYSTEM STATUS REPORTS (every 50 trades) ──
+    if (trades > 0 && trades % 50 === 0) {
+      // MoE Dynasty status
+      try {
+        const moe = JSON.parse(fs.readFileSync(path.join(DIR, 'moe_weights.json'), 'utf8'));
+        const topExpert = Object.entries(moe.experts || {})
+          .sort((a, b) => (b[1].gateScore || 0) - (a[1].gateScore || 0))[0];
+        if (topExpert) {
+          this.speak('insight', `MoE Dynasty: Top expert is ${topExpert[0]} (gate=${(topExpert[1].gateScore||0).toFixed(3)}, WR=${topExpert[1].trades > 0 ? Math.round(topExpert[1].wins/topExpert[1].trades*100) : '?'}%, spec: ${topExpert[1].specialization || 'none'}). ${Object.keys(moe.experts).length} experts active.`);
+        }
+      } catch {}
+
+      // K-Means Regime status
+      try {
+        const regime = JSON.parse(fs.readFileSync(path.join(DIR, 'market_regime.json'), 'utf8'));
+        if (regime.lastResult) {
+          this.speak('insight', `K-Means Regime: ${regime.lastResult.regime} (confidence: ${Math.round((regime.lastResult.confidence||0)*100)}%). Samples: ${regime.sampleCount || 0}. ${regime.lastResult.regime === 'EVENT' ? '⚠️ EVENT mode = all bets vetoed!' : ''}`);
+        }
+      } catch {}
+
+      // PIN Score status
+      try {
+        const pins = JSON.parse(fs.readFileSync(path.join(DIR, 'pin_scores.json'), 'utf8'));
+        const symbols = Object.keys(pins.scores || {});
+        const alerts = symbols.filter(s => (pins.scores[s]?.pin_score || 0) > 0.5);
+        if (alerts.length > 0) {
+          this.speak('insight', `PIN Score Alert: ${alerts.map(s => `${s}=${pins.scores[s].pin_score.toFixed(2)} ${pins.scores[s].signal}`).join(', ')}. Informed trading detected!`);
+        }
+      } catch {}
+
+      // Online Learner status
+      try {
+        const ol = JSON.parse(fs.readFileSync(path.join(DIR, 'online_model.json'), 'utf8'));
+        if (ol.totalUpdates > 50) {
+          const olWR = ol.correct > 0 ? (ol.correct / ol.totalUpdates * 100).toFixed(1) : '?';
+          this.speak('insight', `Online Learner: WR=${olWR}% over ${ol.totalUpdates} updates. ${ol.shouldPromote ? '🔥 READY TO PROMOTE over batch model!' : 'Training...'}`);
+        }
+      } catch {}
+
+      // Evolution Strategies status
+      try {
+        const es = JSON.parse(fs.readFileSync(path.join(DIR, 'evolution_params.json'), 'utf8'));
+        if (es.generation > 0) {
+          this.speak('insight', `Evolution Strategies: Gen ${es.generation}, best Sharpe=${(es.bestFitness||0).toFixed(3)}. Params: Kelly=${(es.bestParams?.kellyBase||0.25).toFixed(2)}, edgeMin=${((es.bestParams?.edgeMin||0.02)*100).toFixed(1)}%.`);
+        }
+      } catch {}
+
+      // Shapley Values status
+      try {
+        const sv = JSON.parse(fs.readFileSync(path.join(DIR, 'shapley_values.json'), 'utf8'));
+        if (sv.topFeatures?.length > 0) {
+          const top3 = sv.topFeatures.slice(0, 3).map(f => f.feature || f.name).join(', ');
+          const harmful = (sv.harmfulFeatures || []).length;
+          this.speak('insight', `Shapley Analysis: Top features = ${top3}. ${harmful > 0 ? `⚠️ ${harmful} HARMFUL features detected — hurting predictions!` : 'All features positive.'}`);
+        }
+      } catch {}
+    }
   }
 
   // Get unread messages for Lord

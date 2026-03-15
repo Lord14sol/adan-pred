@@ -39,9 +39,9 @@ async function fetchPolymarkets(strat) {
   const seen = new Set();
   const all = [];
 
-  // ── Priority 1: Live 5M/15M/1H/4H "Up or Down" markets — BTC, ETH, SOL ──
+  // ── Priority 1: Live 5M/15M/1H/4H "Up or Down" markets — BTC, ETH, SOL, XRP ──
   // Fetch WITHOUT ordering to get ALL active events including live ones
-  await Promise.all(['bitcoin', 'ethereum', 'solana'].map(async asset => {
+  await Promise.all(['bitcoin', 'ethereum', 'solana', 'ripple'].map(async asset => {
     const data = await polyFetch(`/events?tag_slug=${asset}&limit=200&active=true&closed=false`);
     const events = Array.isArray(data) ? data : (data?.events || data?.data || []);
     for (const ev of events) {

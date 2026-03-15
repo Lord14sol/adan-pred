@@ -132,14 +132,17 @@ function calcVolAccel(klines) {
 }
 
 function calcVolumeProfile(klines) {
-  if (!klines.length) return { trend: 'flat', spike: false };
+  if (!klines.length) return { trend: 'flat', spike: false, volumeLog: 0 };
   const vols = klines.map(k => k.vol);
   const avg = vols.slice(0, -3).reduce((a, b) => a + b, 0) / Math.max(vols.length - 3, 1);
   const last3 = vols.slice(-3).reduce((a, b) => a + b, 0) / 3;
+  // Concept #12A: log1p transform on raw volume for stable feature scaling
+  const volumeLog = Math.log1p(last3);
   return {
     trend: last3 > avg * 1.5 ? 'rising' : last3 < avg * 0.6 ? 'falling' : 'flat',
     spike: last3 > avg * 2.5,
-    ratio: avg > 0 ? last3 / avg : 1
+    ratio: avg > 0 ? last3 / avg : 1,
+    volumeLog
   };
 }
 

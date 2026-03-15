@@ -22,6 +22,9 @@ import path from 'path';
 import https from 'https';
 import { routeLLM, parseAIResponse } from './adan-llm-router.js';
 import { soulManager } from './src/core/soul_manager.js';
+import Sentiment from 'vader-sentiment';
+
+const vaderIntensity = Sentiment.SentimentIntensityAnalyzer;
 
 const STATE_DIR = path.join(process.env.HOME, '.adan-pred');
 const BRAIN_STATS_PATH = path.join(STATE_DIR, 'brain_stats.json');
@@ -233,6 +236,24 @@ const APPLE = {
         // Cap newsScore to avoid minor news accumulating to VIRUS trigger
         const cappedNewsScore = Math.min(newsScore, 12);
 
+        // VADER sentiment analysis on headlines
+        let vaderCompounds = [];
+        let vaderSignal = 'NEUTRAL';
+        for (const item of cryptoPanicItems) {
+            const title = item.title || '';
+            if (title.length > 0) {
+                const scores = vaderIntensity.polarity_scores(title);
+                vaderCompounds.push(scores.compound);
+            }
+        }
+        const avgCompound = vaderCompounds.length > 0
+            ? vaderCompounds.reduce((a, b) => a + b, 0) / vaderCompounds.length
+            : 0;
+        if (avgCompound < -0.7) vaderSignal = 'BLACK_SWAN';
+        else if (avgCompound > 0.6) vaderSignal = 'STRONG_BULLISH';
+        else if (avgCompound < -0.3) vaderSignal = 'BEARISH';
+        else if (avgCompound > 0.3) vaderSignal = 'BULLISH';
+
         // Macro trend
         let macroTrend = 'NEUTRAL';
         if (fg >= 68) macroTrend = 'BULLISH';
@@ -240,12 +261,14 @@ const APPLE = {
         if (fg <= 15) macroTrend = 'EXTREME_FEAR';
         if (fg >= 85) macroTrend = 'EXTREME_GREED';
 
-        const blackSwanDetected = cappedNewsScore >= 7;
-        const positiveNarrative = cappedNewsScore <= -3 && fg >= 60;
+        const blackSwanDetected = cappedNewsScore >= 7 || vaderSignal === 'BLACK_SWAN';
+        const positiveNarrative = (cappedNewsScore <= -3 && fg >= 60) || vaderSignal === 'STRONG_BULLISH';
 
         return {
             fearGreed: fg,
             newsScore: cappedNewsScore,
+            vaderCompound: parseFloat(avgCompound.toFixed(4)),
+            vaderSignal,
             macroTrend,
             blackSwanDetected,
             positiveNarrative,
@@ -312,6 +335,8 @@ const SNAKE = {
         const avgVol = volumes5m.slice(-21, -1).reduce((a, b) => a + b, 0) / 20;
         const curVol = volumes5m[volumes5m.length - 1];
         const volRatio = curVol / Math.max(avgVol, 0.001);
+        // Concept #12A: log1p transform on raw volume for stable scaling
+        const volumeLog = Math.log1p(curVol);
 
         // Volume acceleration: last 3 candles trending up?
         const lastVols = volumes5m.slice(-4);
@@ -341,7 +366,7 @@ const SNAKE = {
         const vwapDeviation = vwap ? (lastClose - vwap) / vwap : 0;
         const priceAboveVwap = vwapDeviation > 0;
 
-        return { volRatio, volAccel, bbWidth, bbCompressionDuration, trendStrength1h, btcTrend1h, vwapDeviation, priceAboveVwap };
+        return { volRatio, volAccel, volumeLog, bbWidth, bbCompressionDuration, trendStrength1h, btcTrend1h, vwapDeviation, priceAboveVwap };
     },
 };
 
@@ -873,7 +898,7 @@ class BrainTransitionManager {
 // Injects brain system prompt + all Golden Round Table data
 // ─────────────────────────────────────────────────────────────
 
-function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, dynWeightsCtx, beliefCtx, metaCalibCtx, episodicAccuracy, featureImportanceCtx, riskOfRuinCtx, skillsBlock, currentWinRate }) {
+function buildPrompt({ brainName, marketData, atlasData, appleSignal, snakeAnalysis, soulRules, childConsensus, marketQuestion, oracleContext, intelSummary, cascadeSignal, dynWeightsCtx, beliefCtx, metaCalibCtx, episodicAccuracy, featureImportanceCtx, shapleyCtx, riskOfRuinCtx, markovianStateCtx, pinScoreCtx, skillsBlock, currentWinRate, kmeansRegimeCtx }) {
     const brain = BRAINS[brainName];
     if (!brain) throw new Error(`Unknown brain: ${brainName}`);
 
@@ -894,30 +919,31 @@ YOU ARE NOT A SIMPLE TRADER. You are a quant who:
 
 ━━━ POLYMARKET QUANT FRAMEWORK ━━━
 MARKET EFFICIENCY: If bid-ask spread < 2% and volume > $5K → market is efficient, need 7%+ edge to overcome fees+slippage
-TIME DECAY: Binary options theta accelerates exponentially in final 30min. Markets closing in <5min: price converges to 0 or 1 fast — only bet with 80%+ confidence
+TIME DECAY (Concept #21): Binary options theta accelerates near expiry.
+  5min/15min/1h markets: EXEMPT from TTC < 1h rule. Attack aggressively if TTC > 2min.
+  Long-term markets (TTC > 24h): standard analysis. TTC 4-24h: Half-Kelly. 
+  Long-term TTC < 1h: DO NOT BET (converging). TTC < 15min: close positions.
+  The TTC (time-to-close) in hours is shown per market. Factor it into your edge calculation.
 LIQUIDITY: Thin books (spread >5%) = adverse fill guaranteed. Reduce confidence by 10% on illiquid markets
 FEE AWARENESS: Taker fee = C × p × 0.25 × (p(1-p))^2, max 1.56% at p=0.50. Net edge AFTER fees must be >3%
 CORRELATION: BTC-ETH tail dependence ~55%. If you're long BTC YES already, discount ETH edge by 30%
 
 ━━━ ANALYTICAL PROTOCOL ━━━
 Before EVERY decision, compute:
-1. Fair probability (from signals + children + LMSR + particle filter)
+1. Fair probability of YES (0.00-1.00 scale, ALWAYS decimal, NEVER percentage)
 2. Market implied probability (from price)
 3. Raw edge = |fair - market|
-4. Net edge = raw edge - estimated fees - slippage (0.5%)
-5. Confidence = how certain you are about YOUR fair probability estimate
-6. EV = net_edge × confidence/100 — if EV < 2%, SKIP
+4. Net edge = raw edge - 0.015 (fees + slippage)
+5. If net edge >= 0.03 → BET in the direction of your edge
 
-CRITICAL RULES:
-- If net edge < 3%, ALWAYS SKIP. Fees + slippage destroy small edges.
-- If you are unsure, SKIP. A missed trade costs $0. A wrong trade costs the stake.
-- When 3+ independent signals agree (technicals + order book + children), BET with conviction.
-- When signals conflict, SKIP. Conflicted signals = coin flip = 50% WR.
-- NEVER bet against BTC momentum on alts. BTC leads, alts lag 2-8 min.
-- The FEAT section shows which signals ACTUALLY predict wins (point-biserial r). Weight top features 2x. IGNORE weak signals.
-- The SOUL section shows beliefs learned from YOUR past trades. These override generic rules.
-- The CALIB section tells you if you're overconfident. If multiplier < 0.9, lower your confidence estimates.
-- ALWAYS state your fair probability AND the market price in your reasoning.
+BALANCE RULES:
+- You currently bet NO 83% of the time. This is a BIAS. YES and NO should be roughly balanced.
+- Asset WR: BTC 50.9%, ETH 56.9%, SOL 50.7%. ETH has the best edge — weight ETH signals higher.
+- When 3+ independent signals agree → BET with conviction. Do NOT second-guess aligned signals.
+- BTC leads alts by 2-8 min. Use BTC momentum to confirm alt direction.
+- The FEAT section shows which signals ACTUALLY predict wins. Weight top features 2x.
+- The SOUL section contains beliefs from YOUR past trades — these override generic rules.
+- ALWAYS state your fair probability (decimal 0.00-1.00) AND the market price in your reasoning.
 
 ━━━ SIGNAL WEIGHTS (${brainName} mode) ━━━
 News: ${brain.weights.news}x | Momentum: ${brain.weights.momentum}x | Order Book: ${brain.weights.orderBook}x
@@ -961,12 +987,15 @@ ${oracleContext || 'None'}
 
 ━━━ NEWS ━━━
 ${JSON.stringify(appleSignal)}
+VADER sentiment: compound=${appleSignal?.vaderCompound ?? 0} signal=${appleSignal?.vaderSignal ?? 'NEUTRAL'}
 
 ━━━ WHALES ━━━
 ${JSON.stringify(atlasData)}
 
 ━━━ MICRO ━━━
 ${JSON.stringify(snakeAnalysis)}
+
+${pinScoreCtx ? `━━━ PIN (Order Flow Toxicity) ━━━\n${pinScoreCtx}\nRULES: PIN>0.6 = STRONG informed trading detected — follow momentum direction. PIN>0.3 = moderate flow — confirm with technicals. PIN<0.3 = noise, ignore.` : ''}
 
 ━━━ DATA ━━━
 ${JSON.stringify({
@@ -975,6 +1004,7 @@ ${JSON.stringify({
         klines5m: marketData.klines5m?.slice(-3)?.map(k => [k.close, k.vol]) || []
     })}
 ${regimeContext}
+${kmeansRegimeCtx || ''}
 ━━━ CHILDREN ━━━
 ${childConsensus >= 0.75 ? `STRONG: ${(childConsensus * 100).toFixed(0)}% → +3% edge` : `WEAK: ${(childConsensus * 100).toFixed(0)}%`}
 
@@ -992,11 +1022,35 @@ ${episodicAccuracy ? `━━━ ACC ━━━\n${episodicAccuracy}` : ''}
 
 ${featureImportanceCtx ? `━━━ FEAT ━━━\n${featureImportanceCtx}` : ''}
 
+${shapleyCtx ? `━━━ FEATURE QUALITY ━━━\n${shapleyCtx}` : ''}
+
 ${riskOfRuinCtx ? `━━━ RUIN ━━━\n${riskOfRuinCtx}` : ''}
+
+${markovianStateCtx ? `━━━ MARKOV STATE ━━━\n${markovianStateCtx}\nRULES: If >=3 open positions → SKIP. If drawdown >20% → SKIP (Dream Mode). If >=3 consecutive losses → reduce conviction. If capital deployed >40% → be conservative.` : ''}
 ${skillsBlock ? `━━━ ${skillsBlock}` : ''}
 
-Analyze as ${brainName} (Expert Polymarket Quant). Show your probabilistic reasoning. Output BET YES/NO/SKIP.
-JSON fields: probability_estimate, market_price, edge_pct, confidence_pct, primary_reason, atlas_risk_note, fair_value_source (which model drove your estimate)`;;
+━━━ CALIBRATION WARNING ━━━
+${(() => {
+    try {
+        const mc = JSON.parse(fs.readFileSync(path.join(STATE_DIR, 'metacalib.json'), 'utf8'));
+        const b = mc.buckets || {};
+        const lines = [];
+        for (const [k, v] of Object.entries(b)) {
+            if (v.pred > 0) lines.push(`When you said ${k}% confidence, you were correct ${(v.correct/v.pred*100).toFixed(1)}% (${v.correct}/${v.pred}).`);
+        }
+        const mult = mc.multiplier || 1;
+        const overconf = ((1 - mult) * 100).toFixed(0);
+        lines.push(`Meta-calibration multiplier: ${mult.toFixed(3)} — you are OVERCONFIDENT by ~${overconf}%.`);
+        lines.push(`ADJUST your probability by multiplying by ${mult.toFixed(2)}.`);
+        return lines.join('\n');
+    } catch { return 'Calibration data unavailable. Be conservative with probability estimates.'; }
+})()}
+
+RESPOND WITH ONLY THIS FORMAT (nothing else before the JSON):
+\`\`\`json
+{"probability_estimate":0.XX,"market_price":0.XX,"edge_pct":X.X,"confidence_pct":XX,"primary_reason":"...","fair_value_source":"..."}
+\`\`\`
+BET YES / BET NO / SKIP`;
 
     return { systemPrompt, userPrompt };
 }
@@ -1060,10 +1114,14 @@ async function runBrainCycle({
     metaCalibCtx,        // string — meta calibration context
     episodicAccuracy,    // string — episodic accuracy
     featureImportanceCtx, // string — feature importance ranking
+    shapleyCtx,          // string — Shapley value feature quality (Concept #7)
     riskOfRuinCtx,       // string — risk of ruin status
+    markovianStateCtx,   // string — Markovian state vector (Concept #8D)
+    pinScoreCtx,         // string — PIN Score order flow toxicity (Concept #14)
     brainManager,        // BrainTransitionManager instance
     onStatus,            // optional callback(status)
     skillsBlock,         // string — active skills from Skill Tree
+    kmeansRegimeCtx,     // string — K-Means regime detector context (Concept #12D)
 }) {
 
     // ── 1. Gather all Golden Round Table signals ───────────────
@@ -1130,9 +1188,13 @@ async function runBrainCycle({
         metaCalibCtx,
         episodicAccuracy,
         featureImportanceCtx,
+        shapleyCtx,
         riskOfRuinCtx,
+        markovianStateCtx,
+        pinScoreCtx,
         skillsBlock,
         currentWinRate,
+        kmeansRegimeCtx,
     });
 
     // ── 5. Call Hybrid Router ─────────────────────────────────
@@ -1224,13 +1286,27 @@ async function runBrainCycle({
 // ─────────────────────────────────────────────────────────────
 
 function parseDecision(text) {
-    // Safe parser — avoids "do NOT BET YES" false positives
-    // Looks for the LAST explicit decision line in the output
+    // v17.0 — JSON-first parser with scale normalization
+    // Priority: parse JSON block → fallback to regex
+    // Fixes: probability stuck at 0.42, scale 0-1 vs 0-100 inconsistency
+
+    // ── 1. Try to extract the JSON block from Gemini's response ──
+    let jsonData = null;
+    try {
+        const jsonMatch = text.match(/```json\s*([\s\S]*?)```/);
+        if (jsonMatch) {
+            jsonData = JSON.parse(jsonMatch[1].trim());
+        } else {
+            const rawMatch = text.match(/\{[\s\S]*?"probability_estimate"[\s\S]*?\}/);
+            if (rawMatch) jsonData = JSON.parse(rawMatch[0]);
+        }
+    } catch {}
+
+    // ── 2. Parse action (same safe logic) ──
     const lines = text.split('\n').map(l => l.trim().toUpperCase());
     let action = 'SKIP';
 
     for (const line of lines.reverse()) {
-        // Must start with or contain the decision as a standalone phrase
         if (/^BET YES$|^\*\*BET YES\*\*$|DECISION:\s*BET YES|OUTPUT:\s*BET YES/.test(line)) {
             action = 'BET YES'; break;
         }
@@ -1245,8 +1321,6 @@ function parseDecision(text) {
         }
     }
 
-    // Fallback: if no structured line found, use safer regex
-    // Only match if NOT preceded by NOT/NEVER/DON'T
     if (action === 'SKIP') {
         const safeYes = /(?<!not |never |don't )bet yes/i.test(text);
         const safeNo = /(?<!not |never |don't )bet no/i.test(text);
@@ -1254,16 +1328,54 @@ function parseDecision(text) {
         else if (safeNo && !safeYes) action = 'BET NO';
     }
 
-    const confMatch = text.match(/confidence[_\s]*(?:level)?[:\s]+([0-9]+)%?/i);
-    const edgeMatch = text.match(/edge[_\s]*(?:pct|percent)?[:\s]+([0-9.]+)%?/i);
-    const probMatch = text.match(/probability[_\s]*(?:estimate)?[:\s]+([0-9.]+)/i);
+    // ── 3. Extract values: JSON block first, regex fallback ──
+    let probability, confidence, edge;
 
-    return {
-        action,
-        confidence: confMatch ? Math.min(100, parseFloat(confMatch[1])) : 60,
-        edge: edgeMatch ? parseFloat(edgeMatch[1]) / (parseFloat(edgeMatch[1]) > 1 ? 100 : 1) : 0.05,
-        probability: probMatch ? (parseFloat(probMatch[1]) > 1 ? parseFloat(probMatch[1]) / 100 : parseFloat(probMatch[1])) : 0.5,
+    // Normalize any value to 0-1 scale
+    const norm01 = (v) => {
+        if (v == null || isNaN(v)) return null;
+        v = parseFloat(v);
+        if (v > 1) return v / 100;  // 68 → 0.68
+        return v;
     };
+
+    if (jsonData) {
+        probability = norm01(jsonData.probability_estimate);
+        confidence = jsonData.confidence_pct != null ? Math.min(100, parseFloat(jsonData.confidence_pct)) : null;
+        edge = jsonData.edge_pct != null ? parseFloat(jsonData.edge_pct) : null;
+        // Normalize edge: if given as percentage like -7.0, convert to decimal
+        if (edge != null && Math.abs(edge) > 1) edge = edge / 100;
+    }
+
+    // Regex fallback for any missing values
+    if (probability == null) {
+        const probMatch = text.match(/"probability_estimate":\s*([0-9.]+)/i)
+            || text.match(/probability[_\s]*(?:estimate)?[:\s]+([0-9.]+)/i);
+        probability = probMatch ? norm01(probMatch[1]) : 0.5;
+    }
+
+    if (confidence == null) {
+        const confMatch = text.match(/"confidence_pct":\s*([0-9]+)/i)
+            || text.match(/confidence[_\s]*(?:level)?[:\s]+([0-9]+)%?/i);
+        confidence = confMatch ? Math.min(100, parseFloat(confMatch[1])) : 60;
+    }
+
+    if (edge == null) {
+        const edgeMatch = text.match(/"edge_pct":\s*(-?[0-9.]+)/i)
+            || text.match(/edge[_\s]*(?:pct|percent)?[:\s]+(-?[0-9.]+)%?/i);
+        if (edgeMatch) {
+            edge = parseFloat(edgeMatch[1]);
+            if (Math.abs(edge) > 1) edge = edge / 100;
+        } else {
+            edge = 0.05;
+        }
+    }
+
+    // ── 4. Sanity bounds ──
+    probability = Math.max(0.01, Math.min(0.99, probability));
+    edge = Math.max(-0.5, Math.min(0.5, Math.abs(edge)));
+
+    return { action, confidence, edge, probability };
 }
 
 function computeKelly({ winRate, edge, fund }) {
@@ -1314,8 +1426,18 @@ Closes: ${market.closesAt || 'unknown'}
 ${contextData}
 
 Analyze this market. Apply evidence-based reasoning.
-Output: BET YES / BET NO / SKIP
-Required: probability_estimate, market_price, edge_pct, confidence_pct, primary_reason`;
+Output your probability as a DECIMAL between 0.00 and 1.00 (NEVER a percentage).
+Then output BET YES / BET NO / SKIP on its own line.
+
+\`\`\`json
+{
+  "probability_estimate": 0.XX,
+  "market_price": 0.XX,
+  "edge_pct": X.X,
+  "confidence_pct": XX,
+  "primary_reason": "one sentence"
+}
+\`\`\``;
 
     return { systemPrompt, userPrompt };
 }

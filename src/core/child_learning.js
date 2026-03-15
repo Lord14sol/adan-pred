@@ -5,6 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import { wilmott } from './wilmott_quant.js';
+import { moeDynasty } from './moe_dynasty.js';
 
 const HOME = process.env.HOME || process.env.USERPROFILE || '/tmp';
 const DIR = process.env.ADAN_DIR || path.join(HOME, '.adan-pred');
@@ -603,6 +604,20 @@ class ChildLearningEngine {
 
         // ═══ GENETIC FIX: Sync resolution to child pnl.json for absorbEliteGenome ═══
         this._syncChildPnl(id, shadow.correct);
+
+        // ═══ MOE DYNASTY: Update expert gate weights ═══
+        try {
+            const asset = shadow.asset || '';
+            const tfMatch = id.match(/(\d+)(min|hr)/);
+            const timeframe = tfMatch ? (tfMatch[2] === 'hr' ? parseInt(tfMatch[1]) * 60 : parseInt(tfMatch[1])) : null;
+            moeDynasty.updateWeights(id, shadow.correct, {
+                asset,
+                timeframe,
+                confidence: shadow.confidence,
+                actualProb: shadow.correct ? 1 : 0,
+                hadEdge: shadow.confidence > 60,
+            });
+        } catch (e) { /* MoE update failure is non-fatal */ }
 
         // Regime-specific tracking
         const regime = shadow.regime || 'UNKNOWN';
