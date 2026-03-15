@@ -3838,7 +3838,7 @@ setInterval(stepAdanWorld, 200);
           tripleBarrier: tb ? { tp: tb.stats?.tp || 0, sl: tb.stats?.sl || 0, time: tb.stats?.time || 0, total: (tb.stats?.tp || 0) + (tb.stats?.sl || 0) + (tb.stats?.time || 0) } : null,
           walkForwardCV: wfcv ? { samples: wfcv.samples?.length || 0, validations: wfcv.validationHistory?.length || 0, reliable: wfcv.lastValidation?.isReliable ?? null, overfit: wfcv.lastValidation?.isOverfit ?? null, testAcc: wfcv.lastValidation ? (wfcv.lastValidation.avgTestAcc * 100).toFixed(1) + '%' : '—' } : null,
           resolutionOracle: resOracle ? { scored: resOracle.totalScored || 0, avoided: resOracle.totalAvoided || 0, history: resOracle.history || {} } : null,
-          moeDynasty: moe ? { experts: Object.keys(moe.gates || {}).length, topExpert: (() => { const g = moe.gates || {}; const sorted = Object.entries(g).sort((a,b) => (b[1]?.weight||0) - (a[1]?.weight||0)); return sorted[0] ? { name: sorted[0][0], weight: (sorted[0][1]?.weight||0).toFixed(3) } : null; })() } : null,
+          moeDynasty: moe ? { experts: Object.keys(moe.experts || moe.gates || {}).length, topExpert: (() => { const g = moe.experts || moe.gates || {}; const sorted = Object.entries(g).sort((a,b) => (b[1]?.gateScore||b[1]?.weight||0) - (a[1]?.gateScore||a[1]?.weight||0)); return sorted[0] ? { name: sorted[0][0], weight: (sorted[0][1]?.gateScore||sorted[0][1]?.weight||0).toFixed(3) } : null; })() } : null,
           onlineLearner: online ? { trained: online.trained, updates: online.totalUpdates || 0, wr: online.onlineWR ? (online.onlineWR * 100).toFixed(1) + '%' : '—' } : null,
         };
       } catch {}
@@ -4038,10 +4038,10 @@ setInterval(stepAdanWorld, 200);
     }
   });
 
-  srv.listen(PORT, '127.0.0.1', () => {
-    // silently started
+  srv.listen(PORT, '0.0.0.0', () => {
+    console.log(`[DASHBOARD] ✅ http://localhost:${PORT} ready`);
   });
-  srv.on('error', () => { }); // ignore port conflicts
+  srv.on('error', (e) => { console.error(`[DASHBOARD] ❌ Server error: ${e.message}`); });
   return srv;
 }
 
