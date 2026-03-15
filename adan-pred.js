@@ -117,6 +117,8 @@ import { marketFilter } from './src/ml/market_filter.js';
 import { ucbExplorer } from './src/ml/ucb_explorer.js';
 import { evolutionStrategies } from './src/ml/evolution_strategies.js';
 import { onlineLearner } from './src/ml/online_learner.js';
+import { metaLabeler } from './src/ml/meta_labeler.js';
+import { adanShadow } from './src/core/adan_shadow.js';
 
 let consecutiveLosses = 0;
 let lastWinTime = null; // Markovian: timestamp of last winning trade
@@ -2597,6 +2599,7 @@ async function think(markets, prices, pnl, openPos, state) {
       brainManager,
       skillsBlock,
       kmeansRegimeCtx: kmeansRegime.getPromptContext(),
+      shadowCtx: adanShadow.getPromptWarning(),
       onStatus: (msg) => {
         state.status = msg;
         _startThinkSpin(msg); // Update terminal spinner with current step
@@ -3130,7 +3133,9 @@ async function evaluate_and_trade(decision, prices, state) {
   if (hourBinMult !== 1.0) {
     console.log(`[BIN-COUNT] Hour ${new Date().getUTCHours()}:00 log-odds=${hourBinForKelly.score.toFixed(2)} → Kelly ×${hourBinMult}`);
   }
-  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult * ivStakeMult * timeDecayMult * kmeansRegimeMult * hourBinMult);
+  // Concept #20E: Meta-Labeler stake reduction
+  const metaLabelMult = decision._metaStakeReduction || 1.0;
+  const combined = Math.max(0.25, humanMult * sessionMult * metabolicMult * particleStakeAdj * copulaStakeAdj * wilmottStakeMult * ivStakeMult * timeDecayMult * kmeansRegimeMult * hourBinMult * metaLabelMult);
   let stake = Math.round(Math.max(100, baseStake * combined) / 25) * 25; // TRAINING: min $100 per bet
 
   // v5.3 Wilmott: Child-direct trades use Half Kelly + Copula correlation penalty
@@ -3302,9 +3307,13 @@ async function evaluate_and_trade(decision, prices, state) {
     statProb: ensembleResult?.statProb || null,    // v7: stored for ensemble learning
     brain: brainManager.currentBrain || 'DEFAULT',
     featureTradeId: tradeId,
-    lmsrPredId: predId
+    lmsrPredId: predId,
+    _metaFeatures: decision?._metaFeatures || null,
   });
   savePositions(pos);
+
+  // Concept #15: ADAN-SHADOW — record opposite bet
+  try { adanShadow.recordTrade(side, market, stake, market.asset, market.windowMin ? market.windowMin + 'min' : '5min', new Date().getUTCHours()); } catch {}
 
   const pnl = loadPnL();
   pnl.fund = parseFloat(((pnl.fund || 100) - stake).toFixed(2));
@@ -3506,6 +3515,8 @@ async function checkResolutions() {
       }
     }
     metabolism.recordTradePnL(pnlVal || 0);
+    // Concept #15: ADAN-SHADOW — resolve shadow trade
+    try { adanShadow.resolveTrade(p.marketId, won); } catch {}
     // Record return for dynamic copula correlations
     try { copulaRisk.recordReturn(p.asset || 'btc', pnlVal / Math.max(p.stake, 1)); } catch (e) { }
     if (won) { consecutiveLosses = 0; lastWinTime = Date.now(); } else { consecutiveLosses++; }
@@ -3538,6 +3549,15 @@ async function checkResolutions() {
           }
         } catch (olErr) {
           console.log('[ONLINE-LEARNER] Update error:', olErr.message);
+        }
+
+        // Concept #20E: Meta-Labeler training — update after every resolved trade
+        try {
+          if (p._metaFeatures) {
+            metaLabeler.update(p._metaFeatures, won);
+          }
+        } catch (mlErr) {
+          console.log('[META-LABELER] Update error:', mlErr.message);
         }
       }
       // v7: Record in market filter for future quality scoring
@@ -4172,6 +4192,36 @@ async function doScan(state) {
       console.log(`[TILT GUARD] ⏸ 2 consecutive losses on ${asset.toUpperCase()} — cooling down 1 cycle`);
       decision = { ...decision, action: 'SKIP', thought: `[TILT GUARD] 2 consecutive ${asset.toUpperCase()} losses — cooldown. ` + (decision.thought || '') };
     }
+  }
+
+  // ── Concept #20E: Meta-Labeler Gate ──
+  if (decision.action === 'BET' && decision.market && metaLabeler.isReady()) {
+    const mktData = decision.market.priceData || {};
+    const metaFeatures = {
+      primary_confidence: (decision.confidence || 50) / 100,
+      ensemble_agreement: decision._ensembleSpread || 0.1,
+      primary_probability: decision.probability || decision.myProb || 0.5,
+      edge_magnitude: Math.abs(decision.edge || 0),
+      volatility: mktData.volatility || 0,
+      volume_ratio: mktData.volRatio || 1,
+      hour_bin_score: binCountScore(loadPnL().hourStats, new Date().getUTCHours()).score,
+      streak: (loadPnL().streak || 0) / 10,
+      time_to_close: Math.log(Math.max(1, decision.market.ttcMinutes || 60)),
+      dynasty_consensus: decision._dynastyConsensus || 0.5,
+      taker_ratio: mktData.futuresSignals?.takerRatio || 1,
+      oi_delta: mktData.futuresSignals?.oiDelta5m || 0,
+    };
+    const metaPred = metaLabeler.predict(metaFeatures);
+    if (metaPred.action === 'VETO') {
+      console.log(`[META-LABEL] ⛔ VETO: P(correct)=${(metaPred.probability*100).toFixed(1)}% — primary model likely wrong`);
+      decision = { ...decision, action: 'SKIP', thought: `⛔ META-LABEL VETO: P(correct)=${(metaPred.probability*100).toFixed(1)}%. ${decision.thought || ''}` };
+    } else if (metaPred.action === 'REDUCE') {
+      console.log(`[META-LABEL] ⚠️ REDUCE: P(correct)=${(metaPred.probability*100).toFixed(1)}% — reducing stake 40%`);
+      decision._metaStakeReduction = 0.6;
+      decision.thought = (decision.thought || '') + `\n⚠️ META-LABEL: P(correct)=${(metaPred.probability*100).toFixed(1)}% — stake ×0.6`;
+    }
+    // Save metaFeatures on decision for resolution training
+    decision._metaFeatures = metaFeatures;
   }
 
   if (decision.action === 'BET' && decision.market) await evaluate_and_trade(decision, prices, state);
