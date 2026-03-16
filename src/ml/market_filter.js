@@ -162,7 +162,7 @@ export class MarketFilter {
         totalFiltered: this.totalFiltered,
         totalPassed: this.totalPassed,
       }, null, 2));
-    } catch {}
+    } catch (e) { console.error('[MKT-FILTER] Save error:', e.message); }
   }
 
   _load() {
@@ -173,7 +173,7 @@ export class MarketFilter {
         this.totalFiltered = data.totalFiltered || 0;
         this.totalPassed = data.totalPassed || 0;
       }
-    } catch {}
+    } catch (e) { console.error('[MKT-FILTER] Load error:', e.message); }
   }
 
   getStatus() {

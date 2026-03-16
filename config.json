@@ -11,7 +11,25 @@
         "role": "Contexto y Oportunidad",
         "specialization": "Polymarket",
         "prompt": "Analizo el sentimiento del mercado, identifico narrativas y encuentro oportunidades de alto potencial en Polymarket. Soy el 'qué' y el 'porqué'.",
-        "influence": 84.8
+        "influence": 64.37,
+        "usurpedBy": "AT1",
+        "usurpedAt": "2026-03-16T17:01:56.562Z",
+        "dna": {
+          "minEdge": 0.0475,
+          "volWeight": 1.0829,
+          "vwapWeight": 1.97,
+          "boredBBMin": 0.0025,
+          "stakePct": 0.1274,
+          "patience": 0.4592,
+          "cognitiveStyle": "volume_vwap",
+          "mutation": 77,
+          "generation": 88,
+          "rebornFrom": "BNB-1hr",
+          "crossoverFrom": [
+            "BTC-1hr",
+            "BTC-15min"
+          ]
+        }
       },
       {
         "id": "snake",
@@ -19,7 +37,25 @@
         "role": "Ejecución y Alpha",
         "specialization": "Solana/Jupiter",
         "prompt": "Busco la ejecución óptima en Solana (usando Jupiter), analizo la liquidez y encuentro el 'cuándo' y 'cómo' para maximizar el alpha. Soy la acción.",
-        "influence": 42.74
+        "influence": 79.73,
+        "usurpedBy": "S1",
+        "usurpedAt": "2026-03-16T03:24:10.897Z",
+        "dna": {
+          "minEdge": 0.043,
+          "volWeight": 0.7671,
+          "vwapWeight": 1.7592,
+          "boredBBMin": 0.0024,
+          "stakePct": 0.0938,
+          "patience": 0.524,
+          "cognitiveStyle": "volume_vwap",
+          "mutation": 77,
+          "generation": 77,
+          "rebornFrom": "BNB-1hr",
+          "crossoverFrom": [
+            "SOL-15min",
+            "ETH-5min"
+          ]
+        }
       },
       {
         "id": "eva",
@@ -27,7 +63,7 @@
         "role": "Riesgo y Presupuesto",
         "specialization": "Control AGI",
         "prompt": "Gestiono el presupuesto de $5, asigno capital a las operaciones, y tengo la última palabra (el 'go' o 'no-go') para asegurar la supervivencia económica del enjambre.",
-        "influence": 79.75
+        "influence": 71.44
       }
     ],
     "competition": {

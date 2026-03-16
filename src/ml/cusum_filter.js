@@ -82,6 +82,9 @@ class CUSUMFilter {
       this._save();
     }
 
+    // Periodic save every 20 updates
+    if (this.totalUpdates % 20 === 0) this._save();
+
     return { event, direction, s_pos: this.sPos, s_neg: this.sNeg, threshold: h };
   }
 

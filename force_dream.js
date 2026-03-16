@@ -5,12 +5,16 @@
 import { walkForward } from './src/ml/walk_forward.js';
 import { calibrator } from './src/ml/calibrator.js';
 import { marketFilter } from './src/ml/market_filter.js';
-import { statModel } from './src/ml/logistic_regression.js';
+import { statModel, LogisticRegression } from './src/ml/logistic_regression.js';
 import { shapleyAnalyzer } from './src/ml/shapley_values.js';
+import { metaLabeler } from './src/ml/meta_labeler.js';
+import { purgedWF } from './src/ml/purged_walkforward.js';
+import { tripleBarrier } from './src/ml/triple_barrier.js';
+import { evolutionStrategies } from './src/ml/evolution_strategies.js';
 import { loadPositions } from './src/core/config.js';
 
 console.log('═'.repeat(60));
-console.log('  FORCED DREAM CYCLE — v7.0 Alien Intelligence');
+console.log('  FORCED DREAM CYCLE — v8.3 Complete Intelligence');
 console.log('═'.repeat(60));
 
 // 1. Walk-forward retrain with 32 features
@@ -102,6 +106,111 @@ try {
   console.log('  ERROR:', e.message);
 }
 
+// 6. SEED META-LABELER with historical trades
+console.log('\n[6/8] SEEDING META-LABELER...');
+try {
+  const posData = loadPositions();
+  const closed = posData.closed || [];
+  let seeded = 0;
+  for (const t of closed) {
+    if (!t.entryVec || t.won === null || t.won === undefined) continue;
+    // Reconstruct meta-features from what we have
+    const metaFeatures = {
+      primary_confidence: (t.confidence || 50) / 100,
+      ensemble_agreement: 0.1,
+      primary_probability: t.myProb || 0.5,
+      edge_magnitude: Math.abs(t.edge || 0),
+      volatility: t.entryVec[10] || 0, // volatility from feature vec
+      volume_ratio: t.entryVec[5] || 1, // volRatio
+      hour_bin_score: 0,
+      streak: 0,
+      time_to_close: Math.log(5 + 1),
+      dynasty_consensus: 0.5,
+      taker_ratio: 0,
+      oi_delta: 0,
+    };
+    metaLabeler.update(metaFeatures, t.won);
+    seeded++;
+  }
+  console.log(`  Seeded ${seeded} samples into Meta-Labeler`);
+  if (metaLabeler.isReady()) {
+    console.log(`  META-LABELER IS NOW ACTIVE!`);
+    const status = metaLabeler.getStatus();
+    console.log(`  Train acc: ${status.trainAcc} | Vetoes: ${status.vetoes} | Veto precision: ${status.vetoPrecision}`);
+  } else {
+    console.log(`  Samples: ${metaLabeler.getStatus().samples} — needs 200 to activate`);
+  }
+} catch (e) {
+  console.log('  ERROR:', e.message);
+}
+
+// 7. SEED PURGED WALK-FORWARD CV with historical trades
+console.log('\n[7/8] SEEDING PURGED WALK-FORWARD CV...');
+try {
+  const posData = loadPositions();
+  const closed = posData.closed || [];
+  let seeded = 0;
+  for (const t of closed) {
+    if (!t.entryVec || t.won === null || t.won === undefined) continue;
+    purgedWF.addSample(t.entryVec, t.won, t.entryTime ? new Date(t.entryTime).getTime() : Date.now());
+    seeded++;
+  }
+  console.log(`  Seeded ${seeded} samples into Purged WF`);
+  const wfStatus = purgedWF.getStatus();
+  console.log(`  Samples: ${wfStatus.samples} | Validations: ${wfStatus.validationRuns}`);
+  if (wfStatus.lastValidation) {
+    console.log(`  Test Acc: ${wfStatus.lastValidation.testAcc} | Overfit: ${wfStatus.lastValidation.overfit} | Reliable: ${wfStatus.lastValidation.reliable}`);
+  }
+} catch (e) {
+  console.log('  ERROR:', e.message);
+}
+
+// 8. SEED TRIPLE BARRIER with historical trades
+console.log('\n[8/8] SEEDING TRIPLE BARRIER...');
+try {
+  const posData = loadPositions();
+  const closed = posData.closed || [];
+  let labeled = 0;
+  for (const t of closed) {
+    if (t.won === null || t.won === undefined) continue;
+    const entryP = t.sniperPrice || t.marketPrice || 0.5;
+    const exitP = t.won ? entryP * 1.01 : entryP * 0.99;
+    const vol = t.entryVec?.[10] || 1;
+    tripleBarrier.labelTrade(entryP, exitP, t.side, 5, vol);
+    labeled++;
+  }
+  // Manually trigger stats recording for the labels
+  console.log(`  Labeled ${labeled} historical trades`);
+  console.log(`  Stats: ${JSON.stringify(tripleBarrier.getStats())}`);
+} catch (e) {
+  console.log('  ERROR:', e.message);
+}
+
+// 9. EVOLUTION STRATEGIES — evolve Kelly/edge/confidence params
+console.log('\n[9/9] EVOLUTION STRATEGIES...');
+try {
+  const posData = loadPositions();
+  const closed = posData.closed || [];
+  const esInput = closed.slice(-200).map(t => ({
+    pnl: t.pnl || 0,
+    edge: t.edge || 0,
+    confidence: t.confidence || 50,
+    stake: t.stake || 100,
+  }));
+  if (esInput.length >= 50) {
+    const result = evolutionStrategies.evolve(esInput);
+    if (result) {
+      const best = evolutionStrategies.getBestParams();
+      console.log(`  Generation: ${result.generation} | Fitness: ${result.fitness?.toFixed(4)}`);
+      console.log(`  Best params: kellyBase=${best.kellyBase.toFixed(3)} edgeMin=${(best.edgeMin*100).toFixed(1)}% confFloor=${best.confidenceFloor}`);
+    }
+  } else {
+    console.log(`  Not enough trades (${esInput.length}/50)`);
+  }
+} catch (e) {
+  console.log('  ERROR:', e.message);
+}
+
 console.log('\n' + '═'.repeat(60));
-console.log('  DREAM COMPLETE');
+console.log('  DREAM COMPLETE — ALL MODULES SEEDED');
 console.log('═'.repeat(60));

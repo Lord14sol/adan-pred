@@ -44,7 +44,8 @@ ${won
 Reply in 2-3 sentences MAX. Be specific about the numbers. Start with "${won ? 'Won because' : 'Lost because'}..."`;
 
     try {
-      const response = await callGemma(prompt, { temperature: 0.15, maxTokens: 200 });
+      const { callFast } = await import('../../adan-llm-router.js');
+      const response = await callFast(prompt, { temperature: 0.15, maxTokens: 200 });
       if (!response || response.length < 20) return null;
 
       const thought = response.trim().split('\n')[0].slice(0, 300); // First line, max 300 chars

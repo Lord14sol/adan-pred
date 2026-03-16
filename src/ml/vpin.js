@@ -58,7 +58,11 @@ class VPINTracker {
       const avgVol = this.recentVolumes.reduce((a, b) => a + b, 0) / this.recentVolumes.length;
       this.bucketSize = avgVol * 10;
     }
-    if (this.bucketSize === 0) return; // Not enough data yet
+    if (this.bucketSize === 0) {
+      // Save calibration progress every 10 trades
+      if (this.totalTrades % 10 === 0) this._save();
+      return;
+    }
 
     // Accumulate into current bucket
     if (side === 'buy') this.currentBuyVol += volume;

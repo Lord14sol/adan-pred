@@ -101,11 +101,15 @@ class TripleBarrier {
       ? (exitPrice - entryPrice) / entryPrice * 100
       : (entryPrice - exitPrice) / entryPrice * 100;
 
-    if (exitPrice >= upper && isLong) return { label: 1, hit: 'tp', pnl };
-    if (exitPrice <= lower && isLong) return { label: -1, hit: 'sl', pnl };
-    if (exitPrice <= lower && !isLong) return { label: 1, hit: 'tp', pnl };
-    if (exitPrice >= upper && !isLong) return { label: -1, hit: 'sl', pnl };
-    return { label: 0, hit: 'time', pnl };
+    let result;
+    if (exitPrice >= upper && isLong) result = { label: 1, hit: 'tp', pnl };
+    else if (exitPrice <= lower && isLong) result = { label: -1, hit: 'sl', pnl };
+    else if (exitPrice <= lower && !isLong) result = { label: 1, hit: 'tp', pnl };
+    else if (exitPrice >= upper && !isLong) result = { label: -1, hit: 'sl', pnl };
+    else result = { label: 0, hit: 'time', pnl };
+
+    this._recordResult(result.hit, result.label, result.pnl);
+    return result;
   }
 
   _recordResult(hit, label, pnl) {

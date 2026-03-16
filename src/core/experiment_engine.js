@@ -85,7 +85,8 @@ REVERT: <parameter>=<current_value>
 ONE experiment only. Be specific.`;
 
     try {
-      const response = await callGemma(prompt, { temperature: 0.3, maxTokens: 300 });
+      const { callFast } = await import('../../adan-llm-router.js');
+      const response = await callFast(prompt, { temperature: 0.3, maxTokens: 300 });
       if (!response || response.length < 30) return null;
 
       const experiment = this._parseProposal(response);
