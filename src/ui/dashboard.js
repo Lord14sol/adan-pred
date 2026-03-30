@@ -719,6 +719,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16
     <div class="topbar-stat"><span class="val" id="top-active">--</span><span class="lbl">Active Pos</span></div>
     <div class="topbar-stat"><span class="val" id="top-wr">--</span><span class="lbl">Win Rate</span></div>
     <div class="topbar-stat"><span class="val" id="top-trades">--</span><span class="lbl">Trades</span></div>
+    <a href="/perps" style="background:var(--bg);border:2px solid var(--border);font-family:var(--pixel);font-size:8px;padding:5px 12px;cursor:pointer;color:var(--text);box-shadow:2px 2px 0px var(--border);text-decoration:none;display:inline-flex;align-items:center;gap:5px;transition:all 0.1s;white-space:nowrap" onmouseover="this.style.background='var(--cyan)';this.style.color='#fff'" onmouseout="this.style.background='var(--bg)';this.style.color='var(--text)'">PERPS ▶</a>
   </div>
 </div>
 
@@ -3535,6 +3536,7 @@ setInterval(stepAdanWorld, 200);
       return;
     }
 
+
     if (req.url === '/api/web4') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       import('./adan-web4-identity.js').then(module => {
@@ -3781,7 +3783,7 @@ setInterval(stepAdanWorld, 200);
         if (fs.existsSync(msgPath)) {
           adanMessages = JSON.parse(fs.readFileSync(msgPath, 'utf8')).slice(-20);
         }
-      } catch {}
+      } catch { }
 
       // ADAN Journal latest entry
       let journalPreview = '';
@@ -3791,14 +3793,14 @@ setInterval(stepAdanWorld, 200);
           const lines = fs.readFileSync(jPath, 'utf8').split('\n');
           journalPreview = lines.slice(-30).join('\n');
         }
-      } catch {}
+      } catch { }
 
       // Self-optimizer params
       let selfOptParams = null;
       try {
         const optPath = path.join(DIR, 'self_optimized_params.json');
         if (fs.existsSync(optPath)) selfOptParams = JSON.parse(fs.readFileSync(optPath, 'utf8'));
-      } catch {}
+      } catch { }
 
       // ── ML Intelligence Layer data ──
       let mlData = null;
@@ -3815,7 +3817,7 @@ setInterval(stepAdanWorld, 200);
           experiments: fs.existsSync(expPath) ? (() => { const e = JSON.parse(fs.readFileSync(expPath, 'utf8')); return { active: (e.active || []).length, proposed: (e.proposed || []).length, completed: (e.completed || []).length, totalRun: e.totalRun || 0 }; })() : null,
           requests: fs.existsSync(reqPath) ? (() => { const r = JSON.parse(fs.readFileSync(reqPath, 'utf8')); return { pending: (r.requests || []).filter(x => x.status === 'pending').length, urgent: (r.requests || []).filter(x => x.status === 'pending' && x.urgency >= 3).length, total: r.totalSent || 0 }; })() : null,
         };
-      } catch {}
+      } catch { }
 
       // ── v8.3 Intelligence Suite ──
       let v83Intel = {};
@@ -3838,10 +3840,10 @@ setInterval(stepAdanWorld, 200);
           tripleBarrier: tb ? { tp: tb.stats?.tp || 0, sl: tb.stats?.sl || 0, time: tb.stats?.time || 0, total: (tb.stats?.tp || 0) + (tb.stats?.sl || 0) + (tb.stats?.time || 0) } : null,
           walkForwardCV: wfcv ? { samples: wfcv.samples?.length || 0, validations: wfcv.validationHistory?.length || 0, reliable: wfcv.lastValidation?.isReliable ?? null, overfit: wfcv.lastValidation?.isOverfit ?? null, testAcc: wfcv.lastValidation ? (wfcv.lastValidation.avgTestAcc * 100).toFixed(1) + '%' : '—' } : null,
           resolutionOracle: resOracle ? { scored: resOracle.totalScored || 0, avoided: resOracle.totalAvoided || 0, history: resOracle.history || {} } : null,
-          moeDynasty: moe ? { experts: Object.keys(moe.experts || moe.gates || {}).length, topExpert: (() => { const g = moe.experts || moe.gates || {}; const sorted = Object.entries(g).sort((a,b) => (b[1]?.gateScore||b[1]?.weight||0) - (a[1]?.gateScore||a[1]?.weight||0)); return sorted[0] ? { name: sorted[0][0], weight: (sorted[0][1]?.gateScore||sorted[0][1]?.weight||0).toFixed(3) } : null; })() } : null,
+          moeDynasty: moe ? { experts: Object.keys(moe.experts || moe.gates || {}).length, topExpert: (() => { const g = moe.experts || moe.gates || {}; const sorted = Object.entries(g).sort((a, b) => (b[1]?.gateScore || b[1]?.weight || 0) - (a[1]?.gateScore || a[1]?.weight || 0)); return sorted[0] ? { name: sorted[0][0], weight: (sorted[0][1]?.gateScore || sorted[0][1]?.weight || 0).toFixed(3) } : null; })() } : null,
           onlineLearner: online ? { trained: online.trained, updates: online.totalUpdates || 0, wr: online.onlineWR ? (online.onlineWR * 100).toFixed(1) + '%' : '—' } : null,
         };
-      } catch {}
+      } catch { }
 
       // ── WebSocket status ──
       let wsStatus = null;
@@ -3851,7 +3853,7 @@ setInterval(stepAdanWorld, 200);
           const lines = fs.readFileSync(whalePath, 'utf8').trim().split('\n').filter(Boolean);
           wsStatus = { whaleEvents: lines.length, lastWhale: lines.length > 0 ? JSON.parse(lines[lines.length - 1]) : null };
         }
-      } catch {}
+      } catch { }
 
       res.end(JSON.stringify({
         ts: new Date().toISOString(),
@@ -3875,6 +3877,10 @@ setInterval(stepAdanWorld, 200);
         ml: mlData,
         ws: wsStatus,
         intel: v83Intel,
+        perp: {
+          pnl: _dashboardState?.perpPnl || {},
+          positions: _dashboardState?.perpPositions || { open: [], closed: [] },
+        },
       }));
     } else if (req.url === '/api/training-metrics') {
       // ── Training Metrics API ───────────────────────────────────────────
@@ -4093,10 +4099,10 @@ function render(s) {
     '  ║' + X + D + '  Dynasty Multi-Market Autonomaton' + X +
     D + '  ·  ' + X + W + bannerEngine + X +
     D + '  ·  ' + X + M + 'by Lord' + X + '       ' + M + BOLD + '║\n' +
-    '  ║' + X + D + '  Polymarket · Binance · ' + X +
-    C + BOLD + 'http://localhost:3141' + X +
-    D + '  ·  Gen ' + X + Y + BOLD + maxGen + X +
-    D + '  ·  ' + X + G + childCount + ' children' + X + '   ' + M + BOLD + '║\n' +
+    '  ║' + X + D + '  Polymarket · Binance · Hyperliquid · ' + X +
+    C + BOLD + 'localhost:3141' + X +
+    D + '  Gen ' + X + Y + BOLD + maxGen + X +
+    D + '  ' + X + G + childCount + ' children' + X + '  ' + M + BOLD + '║\n' +
     '  ╚══════════════════════════════════════════════════════════════════════════╝' + X + '\n');
 
   const timeStr = new Date().toLocaleTimeString();
@@ -4302,12 +4308,69 @@ function render(s) {
     console.log(sep(M));
   }
 
+  // ── HYPERLIQUID PERP POSITIONS (Paper Trading) ──
+  const perpPositions = s.perpPositions?.open || [];
+  const perpPnl = s.perpPnl || {};
+  const perpTrades = perpPnl.trades || 0;
+  const perpWins = perpPnl.wins || 0;
+  const perpNet = perpPnl.net || 0;
+  const perpFund = perpPnl.fund || 10000;
+  const perpWR = perpTrades > 0 ? Math.round(perpWins / perpTrades * 100) : 0;
+  const perpWRCol = perpWR >= 55 ? G : perpWR >= 40 ? Y : R;
+  const perpNetCol = perpNet >= 0 ? G : R;
+
+  if (perpTrades > 0 || perpPositions.length > 0) {
+    console.log(row(C + BOLD + '  ⚡ HYPERLIQUID PERPS (Paper)' + X + D + '  — perpetual futures training' + X));
+    console.log(row(
+      '  ' + D + 'Fund: ' + X + C + BOLD + '$' + perpFund.toFixed(0) + X +
+      D + '  Net: ' + X + perpNetCol + BOLD + (perpNet >= 0 ? '+' : '') + '$' + perpNet.toFixed(2) + X +
+      D + '  Trades: ' + X + W + perpTrades + X +
+      D + '  WR: ' + X + perpWRCol + BOLD + perpWR + '%' + X +
+      D + ' (' + G + perpWins + 'W' + X + '/' + R + (perpPnl.losses || 0) + 'L' + X + ')' + X
+    ));
+    if (perpPositions.length > 0) {
+      console.log(row(D + '  COIN  DIR    LEV  ENTRY      MARK       uPnL     SL         TP' + X));
+      perpPositions.forEach(p => {
+        const dirCol = p.direction === 'LONG' ? G : R;
+        const pnlCol = (p.unrealizedPnl || 0) >= 0 ? G : R;
+        const coinStr = (p.coin || '???').padEnd(5);
+        const dirStr = dirCol + BOLD + (p.direction || '?').padEnd(6) + X;
+        const levStr = (p.leverage + 'x').padEnd(4);
+        const entryStr = (p.entryPx || 0).toFixed(2).padStart(10);
+        const markStr = (p.currentPx || p.entryPx || 0).toFixed(2).padStart(10);
+        const pnlStr = pnlCol + BOLD + ((p.unrealizedPnl || 0) >= 0 ? '+' : '') + '$' + (p.unrealizedPnl || 0).toFixed(2) + X;
+        const slStr = (p.stopLossPx || 0).toFixed(2).padStart(10);
+        const tpStr = (p.takeProfitPx || 0).toFixed(2).padStart(10);
+        console.log(row('  ' + W + coinStr + X + dirStr + levStr + entryStr + markStr + '  ' + pnlStr + D + slStr + tpStr + X));
+      });
+    } else {
+      console.log(row(D + '  No open perp positions' + X));
+    }
+    // Recent perp closes
+    const perpClosed = (s.perpPositions?.closed || []).slice(-3).reverse();
+    if (perpClosed.length > 0) {
+      perpClosed.forEach(c => {
+        const isWin = (c.closedPnl || 0) > 0;
+        const rCol = isWin ? G : R;
+        console.log(row('  ' + rCol + BOLD + (isWin ? '✓' : '✗') + X + ' ' + W + c.coin + ' ' + c.direction + X + ' ' + rCol + (isWin ? '+' : '') + '$' + (c.closedPnl || 0).toFixed(2) + X + D + ' via ' + (c.closeReason || '?') + X));
+      });
+    }
+    console.log(sep(M));
+  }
+
   // ── HISTORY ──
   const allClosed = s.positions?.closed || [];
   const shown = allClosed.slice(-4).reverse();
   if (shown.length > 0 || pnl.trades > 0) {
     const bsPart = pnl.brierScore != null ? D + ' | ' + X + Y + 'Brier: ' + pnl.brierScore.toFixed(3) + X : '';
-    console.log(row(B + BOLD + '  HISTORY' + X + D + '  ' + pnl.trades + ' trades  (' + G + pnl.wins + 'W' + X + '/' + R + pnl.losses + 'L' + X + ')' + bsPart + X));
+    let curveStr = '';
+    if (allClosed.length > 0) {
+      const recentForCurve = allClosed.slice(-40);
+      let run = 0;
+      const curveData = recentForCurve.map(c => { run += (parseFloat(c.pnl) || 0); return run; });
+      curveStr = D + ' | ' + X + M + 'PnL Curve: ' + X + sparkline(curveData);
+    }
+    console.log(row(B + BOLD + '  HISTORY' + X + D + '  ' + pnl.trades + ' trades  (' + G + pnl.wins + 'W' + X + '/' + R + pnl.losses + 'L' + X + ')' + bsPart + curveStr + X));
     shown.forEach(c => {
       const isWin = c.result === 'WIN';
       const rCol = isWin ? G : R;

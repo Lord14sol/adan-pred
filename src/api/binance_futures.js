@@ -37,7 +37,7 @@ class FuturesIntelligence {
 
   async _fetch(url, label = '') {
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
       if (!res.ok) return null;
       return await res.json();
     } catch (e) {

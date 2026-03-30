@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ADAN · Hyperliquid Perps</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=JetBrains+Mono:wght@400;600&display=swap');
+:root{
+  --bg:#ccc8bc;--bg2:#ddd9cc;--bg3:#e8e4d8;--bg4:#f0ece2;
+  --border:#1a1a1a;--border2:#3a3a2a;
+  --purple:#5a1a8a;--cyan:#1a4a8a;--green:#1a5a1a;
+  --red:#8a1a1a;--yellow:#7a5a10;--grey:#666655;--pink:#ec4899;
+  --text:#1a1a1a;--text2:#3a3a2a;--dim:#888878;
+  --shadow:3px 3px 0 #1a1a1a;--shadow-sm:2px 2px 0 #1a1a1a;
+  --font:'VT323',monospace;--mono:'JetBrains Mono',monospace;--pixel:'Press Start 2P',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;min-height:100vh;image-rendering:pixelated}
+
+/* Topbar */
+.topbar{background:var(--bg3);border-bottom:3px solid var(--border);padding:0 16px;height:48px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 3px 0 var(--border)}
+.topbar-left{display:flex;align-items:center;gap:12px}
+.logo{font-size:13px;font-family:var(--pixel);letter-spacing:0;color:var(--text)}
+.logo span{color:var(--purple)}
+.logo .hl{color:var(--cyan)}
+.status-dot{width:8px;height:8px;border-radius:0;background:var(--yellow);animation:pulse 2s infinite;image-rendering:pixelated}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.topbar-right{display:flex;align-items:center;gap:16px;font-size:14px;color:var(--text2);font-family:var(--mono)}
+.topbar-stat{display:flex;flex-direction:column;align-items:flex-end;border:2px solid var(--border);padding:2px 8px;box-shadow:var(--shadow-sm)}
+.topbar-stat .val{font-weight:600;font-size:14px;color:var(--text);font-family:var(--mono)}
+.topbar-stat .lbl{font-size:9px;color:var(--grey);text-transform:uppercase;font-family:var(--pixel)}
+.nav-btn{background:var(--bg);border:2px solid var(--border);font-family:var(--pixel);font-size:8px;padding:4px 10px;cursor:pointer;color:var(--text);box-shadow:2px 2px 0px var(--border);transition:all 0.1s;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.nav-btn:active{box-shadow:0px 0px 0px var(--border);transform:translate(2px,2px)}
+.nav-btn:hover{background:var(--purple);color:#fff}
+.nav-btn.active{background:var(--cyan);color:#fff}
+
+/* Mode pill */
+.mode-pill{font-family:var(--pixel);font-size:7px;padding:3px 8px;border:2px solid var(--yellow);color:var(--yellow);background:var(--bg4);letter-spacing:1px}
+.mode-pill.live{border-color:var(--green);color:var(--green)}
+
+/* Main layout */
+.main{padding:16px;max-width:1400px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+
+/* Cards */
+.card{background:var(--bg3);border:2px solid var(--border);padding:14px;box-shadow:var(--shadow)}
+.card-title{font-size:9px;font-family:var(--pixel);letter-spacing:0;text-transform:uppercase;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:8px;border-bottom:2px solid var(--border);padding-bottom:8px}
+.card-title::before{content:'▶';color:var(--purple);font-size:8px}
+
+/* Stats row */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
+.stat-box{background:var(--bg4);border:2px solid var(--border);padding:10px;text-align:center;box-shadow:var(--shadow-sm)}
+.stat-box .val{font-size:18px;font-weight:700;font-family:var(--mono);color:var(--text)}
+.stat-box .lbl{font-size:7px;font-family:var(--pixel);color:var(--grey);text-transform:uppercase;margin-top:4px;letter-spacing:0.5px}
+.stat-box.green .val{color:var(--green)}.stat-box.red .val{color:var(--red)}
+.stat-box.cyan .val{color:var(--cyan)}.stat-box.yellow .val{color:var(--yellow)}
+.stat-box.purple .val{color:var(--purple)}
+
+/* Two-column layout */
+.row-2{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+@media(max-width:900px){.row-2{grid-template-columns:1fr}}
+
+/* Market grid */
+.market-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.market-card{background:var(--bg4);border:2px solid var(--border);padding:10px;box-shadow:var(--shadow-sm)}
+.market-card .coin{font-size:10px;font-family:var(--pixel);color:var(--cyan)}
+.market-card .price{font-size:18px;font-weight:700;font-family:var(--mono);margin:4px 0}
+.market-card .meta{display:flex;gap:8px;font-size:12px;color:var(--dim);font-family:var(--mono);flex-wrap:wrap}
+.market-card .meta .val{color:var(--text2)}
+.funding-pos{color:var(--green)}.funding-neg{color:var(--red)}
+
+/* Table */
+table{width:100%;border-collapse:collapse;font-size:14px;font-family:var(--font)}
+th{text-align:left;padding:6px 10px;font-size:8px;font-family:var(--pixel);color:var(--grey);text-transform:uppercase;border-bottom:2px solid var(--border);letter-spacing:0.5px}
+td{padding:6px 10px;border-bottom:1px dashed var(--border2)}
+tr:hover{background:var(--bg4)}
+.dir-long{color:var(--green);font-weight:700;font-family:var(--pixel);font-size:10px}
+.dir-short{color:var(--red);font-weight:700;font-family:var(--pixel);font-size:10px}
+.pnl-pos{color:var(--green);font-weight:600;font-family:var(--mono)}
+.pnl-neg{color:var(--red);font-weight:600;font-family:var(--mono)}
+.badge{padding:2px 6px;font-size:8px;font-weight:700;border:2px solid var(--border);font-family:var(--pixel)}
+.badge-tp{background:#c8e8c0;color:var(--green)}.badge-sl{background:#e8c0c0;color:var(--red)}
+.badge-manual{background:var(--bg);color:var(--grey)}
+
+/* Risk items */
+.risk-item{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px dashed var(--border2)}
+.risk-item:last-child{border-bottom:none}
+.risk-item .lbl{color:var(--text2);font-size:13px}
+.risk-item .val{font-weight:700;font-family:var(--mono);font-size:14px}
+.risk-bar{height:8px;background:var(--bg);border:2px solid var(--border);overflow:hidden;margin:4px 0}
+.risk-bar-fill{height:100%;transition:width 0.5s}
+
+/* Equity curve */
+#pnl-chart{width:100%;height:200px}
+#pnl-chart svg{width:100%;height:100%}
+
+/* Decision flow card */
+.decision-card{background:var(--bg4);border:2px solid var(--border);padding:10px;box-shadow:var(--shadow-sm);margin-bottom:8px;position:relative;overflow:hidden}
+.decision-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px}
+.decision-card.long::before{background:var(--green)}
+.decision-card.short::before{background:var(--red)}
+.decision-card.skip::before{background:var(--grey)}
+.decision-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.decision-coin{font-family:var(--pixel);font-size:10px;color:var(--cyan)}
+.decision-dir{font-family:var(--pixel);font-size:9px;padding:2px 8px;border:2px solid var(--border)}
+.decision-dir.long{background:#c8e8c0;color:var(--green)}
+.decision-dir.short{background:#e8c0c0;color:var(--red)}
+.decision-dir.skip{background:var(--bg);color:var(--grey)}
+.decision-meta{display:flex;gap:12px;font-size:12px;font-family:var(--mono);color:var(--text2);flex-wrap:wrap}
+.decision-reason{margin-top:6px;font-size:12px;color:var(--dim);font-family:var(--mono);line-height:1.6;border-left:3px solid var(--border2);padding-left:8px;max-height:60px;overflow:hidden;cursor:pointer;transition:max-height 0.3s}
+.decision-reason.expanded{max-height:none}
+.decision-brain{font-family:var(--pixel);font-size:7px;color:var(--purple);padding:2px 6px;border:1px solid var(--purple);margin-left:auto}
+.decision-time{font-size:10px;color:var(--grey);font-family:var(--mono)}
+
+/* Hour heatmap */
+.hour-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:2px}
+.hour-cell{height:28px;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1px solid var(--border2)}
+.hour-cell .h{font-size:7px;color:var(--grey);font-family:var(--pixel)}
+.hour-cell .v{font-size:12px;font-weight:700;font-family:var(--mono)}
+
+/* Gate pipeline */
+.gate-grid{display:flex;flex-wrap:wrap;gap:4px}
+.gate-chip{font-size:7px;font-family:var(--pixel);padding:3px 6px;border:2px solid var(--border);display:inline-flex;align-items:center;gap:3px}
+.gate-chip.pass{background:#c8e8c0;color:var(--green);border-color:var(--green)}
+.gate-chip.fail{background:#e8c0c0;color:var(--red);border-color:var(--red)}
+.gate-chip.idle{background:var(--bg);color:var(--grey)}
+.gate-chip::before{content:'';width:5px;height:5px;border-radius:0;display:inline-block}
+.gate-chip.pass::before{background:var(--green)}.gate-chip.fail::before{background:var(--red)}.gate-chip.idle::before{background:var(--grey)}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--bg2)}::-webkit-scrollbar-thumb{background:var(--border2)}
+@media(max-width:900px){.stats-grid{grid-template-columns:repeat(3,1fr)}.market-grid{grid-template-columns:1fr 1fr}.hour-grid{grid-template-columns:repeat(6,1fr)}}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo">ADAN<span>-PRED</span> <span class="hl">PERPS</span></div>
+    <div class="mode-pill" id="mode-pill">PAPER</div>
+    <div class="status-dot" id="sdot"></div>
+    <span style="font-size:11px;color:var(--text2)" id="status-txt">Loading...</span>
+  </div>
+  <div class="topbar-right">
+    <div class="topbar-stat"><span class="val" id="h-equity">--</span><span class="lbl">Equity</span></div>
+    <div class="topbar-stat"><span class="val" id="h-pnl">--</span><span class="lbl">Net P&L</span></div>
+    <div class="topbar-stat"><span class="val" id="h-wr">--</span><span class="lbl">Win Rate</span></div>
+    <div class="topbar-stat"><span class="val" id="h-open">--</span><span class="lbl">Open</span></div>
+    <a href="/" class="nav-btn">&#9664; MAIN DASHBOARD</a>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- STATS ROW -->
+  <div class="card">
+    <div class="card-title">Portfolio Overview</div>
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-box cyan"><div class="val" id="s-fund">--</div><div class="lbl">Fund</div></div>
+      <div class="stat-box green"><div class="val" id="s-net">--</div><div class="lbl">Net P&L</div></div>
+      <div class="stat-box"><div class="val" id="s-trades">0</div><div class="lbl">Trades</div></div>
+      <div class="stat-box green"><div class="val" id="s-wins">0</div><div class="lbl">Wins</div></div>
+      <div class="stat-box red"><div class="val" id="s-losses">0</div><div class="lbl">Losses</div></div>
+      <div class="stat-box yellow"><div class="val" id="s-wr">--%</div><div class="lbl">Win Rate</div></div>
+      <div class="stat-box purple"><div class="val" id="s-opencount">0</div><div class="lbl">Open Pos</div></div>
+      <div class="stat-box green"><div class="val" id="s-best">--</div><div class="lbl">Best Trade</div></div>
+      <div class="stat-box red"><div class="val" id="s-worst">--</div><div class="lbl">Worst Trade</div></div>
+    </div>
+  </div>
+
+  <!-- BRAIN THINKING PANEL — Shows ADAN's current focus and reasoning -->
+  <div class="card" style="border-color:var(--purple);position:relative;overflow:hidden">
+    <div style="position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--purple)"></div>
+    <div class="card-title" style="padding-left:8px">ADAN Brain — Live Thinking</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+      <!-- Focus & Brain -->
+      <div>
+        <div style="font-family:var(--pixel);font-size:7px;color:var(--grey);margin-bottom:6px">CURRENT FOCUS</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span id="brain-focus-coin" style="font-family:var(--pixel);font-size:14px;color:var(--cyan)">--</span>
+          <span id="brain-active" style="font-family:var(--pixel);font-size:8px;color:var(--purple);border:2px solid var(--purple);padding:2px 6px">--</span>
+          <span id="brain-regime" style="font-family:var(--pixel);font-size:8px;color:var(--yellow);border:2px solid var(--border);padding:2px 6px">--</span>
+        </div>
+        <div style="font-family:var(--pixel);font-size:7px;color:var(--grey);margin-bottom:4px">COIN ROTATION</div>
+        <div id="brain-coin-rotation" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+        <div style="margin-top:8px">
+          <div style="font-family:var(--pixel);font-size:7px;color:var(--grey);margin-bottom:4px">QUANT SIGNALS</div>
+          <div style="display:flex;gap:8px;font-family:var(--mono);font-size:12px">
+            <span>VPIN: <b id="brain-vpin" style="color:var(--cyan)">--</b></span>
+            <span>CUSUM: <b id="brain-cusum" style="color:var(--yellow)">--</b></span>
+          </div>
+        </div>
+      </div>
+      <!-- Macro Context -->
+      <div>
+        <div style="font-family:var(--pixel);font-size:7px;color:var(--grey);margin-bottom:6px">MACRO REFERENCE (not traded)</div>
+        <div id="brain-macro" style="font-family:var(--mono);font-size:12px;line-height:2">
+          <div>SP500: <span id="macro-spx">--</span></div>
+          <div>NASDAQ: <span id="macro-ndx">--</span></div>
+          <div>VIX: <span id="macro-vix">--</span></div>
+          <div>DXY: <span id="macro-dxy">--</span></div>
+        </div>
+      </div>
+      <!-- Evolved DNA -->
+      <div>
+        <div style="font-family:var(--pixel);font-size:7px;color:var(--grey);margin-bottom:6px">EVOLVED DNA (Genetic)</div>
+        <div id="brain-dna" style="font-family:var(--mono);font-size:11px;line-height:1.8;color:var(--text2)">
+          Waiting for first evolution cycle...
+        </div>
+      </div>
+      <!-- Hierarchical Genetic Tree -->
+      <div style="margin-top:8px">
+        <div style="font-family:var(--pixel);font-size:7px;color:var(--purple);margin-bottom:6px">GENETIC DYNASTY — A/B Lineages per Coin</div>
+        <div id="genetic-tree" style="font-family:var(--mono);font-size:10px;line-height:1.6;color:var(--text2);max-height:200px;overflow-y:auto">
+          Spawning children...
+        </div>
+      </div>
+    </div>
+    <!-- Last Decision Raw Thought -->
+    <div style="margin-top:10px;border-top:2px dashed var(--border2);padding-top:8px">
+      <div style="font-family:var(--pixel);font-size:7px;color:var(--grey);margin-bottom:4px">LAST LLM THOUGHT (raw)</div>
+      <div id="brain-thought" style="font-family:var(--mono);font-size:11px;color:var(--dim);line-height:1.5;max-height:60px;overflow:hidden;cursor:pointer;border-left:3px solid var(--purple);padding-left:8px" onclick="this.style.maxHeight=this.style.maxHeight==='none'?'60px':'none'">Waiting for first brain cycle...</div>
+    </div>
+  </div>
+
+  <!-- MARKETS + RISK -->
+  <div class="row-2">
+    <!-- Live Markets — Only focus coins -->
+    <div class="card">
+      <div class="card-title">Live Markets — Focus Coins <span id="market-time" style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--dim)"></span></div>
+      <div class="market-grid" id="market-grid"></div>
+    </div>
+    <!-- Risk Monitor -->
+    <div class="card">
+      <div class="card-title">Risk Monitor</div>
+      <div class="risk-item"><span class="lbl">Drawdown</span><span class="val" id="r-dd" style="color:var(--green)">0.0%</span></div>
+      <div class="risk-bar"><div class="risk-bar-fill" id="r-dd-bar" style="width:0%;background:var(--green)"></div></div>
+      <div class="risk-item"><span class="lbl">Portfolio Leverage</span><span class="val" id="r-lev">0.0x</span></div>
+      <div class="risk-bar"><div class="risk-bar-fill" id="r-lev-bar" style="width:0%;background:var(--cyan)"></div></div>
+      <div class="risk-item"><span class="lbl">Margin Used</span><span class="val" id="r-margin">$0</span></div>
+      <div class="risk-item"><span class="lbl">Available Margin</span><span class="val" id="r-avail" style="color:var(--green)">$10,000</span></div>
+      <div class="risk-item"><span class="lbl">Circuit Breaker</span><span class="val" id="r-breaker" style="color:var(--green)">OK</span></div>
+      <div class="risk-item"><span class="lbl">Max Positions</span><span class="val" id="r-maxpos">0 / 3</span></div>
+    </div>
+  </div>
+
+  <!-- OPEN POSITIONS + DECISION TIMELINE -->
+  <div class="row-2">
+    <!-- Open Positions Table -->
+    <div class="card">
+      <div class="card-title">Open Positions <span id="pos-count" style="margin-left:8px;color:var(--cyan);font-family:var(--mono);font-size:13px">0</span></div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Coin</th><th>Dir</th><th>Size</th><th>Entry</th><th>Mark</th><th>Lev</th><th>uPnL</th><th>SL</th><th>TP</th><th>Brain</th></tr></thead>
+          <tbody id="open-tbody"></tbody>
+        </table>
+      </div>
+      <div id="no-positions" style="padding:16px;text-align:center;color:var(--dim);font-family:var(--pixel);font-size:8px">Waiting for signals...</div>
+    </div>
+
+    <!-- Decision Timeline: All recent brain decisions -->
+    <div class="card">
+      <div class="card-title">Decision Timeline (Brain Log)</div>
+      <div id="decisions-wrap" style="max-height:340px;overflow-y:auto"></div>
+      <div id="no-decisions" style="padding:16px;text-align:center;color:var(--dim);font-family:var(--pixel);font-size:8px">Waiting for first decision...</div>
+    </div>
+  </div>
+
+  <!-- EQUITY CURVE -->
+  <div class="row-2">
+    <div class="card">
+      <div class="card-title">Equity Curve <span id="eq-val" style="margin-left:auto;font-family:var(--mono);font-size:16px;font-weight:700;color:var(--cyan)">$10,000</span></div>
+      <div id="pnl-chart"></div>
+    </div>
+    <!-- Hour Heatmap -->
+    <div class="card">
+      <div class="card-title">Performance by Hour (UTC)</div>
+      <div class="hour-grid" id="hour-grid"></div>
+    </div>
+  </div>
+
+  <!-- RISK GATES PIPELINE -->
+  <div class="card">
+    <div class="card-title">Quant Gate Pipeline (Last Decision)</div>
+    <div class="gate-grid" id="gate-grid">
+      <span class="gate-chip idle">PerpRisk</span>
+      <span class="gate-chip idle">Correlation</span>
+      <span class="gate-chip idle">Duplicate</span>
+      <span class="gate-chip idle">Confidence</span>
+      <span class="gate-chip idle">Kelly</span>
+      <span class="gate-chip idle">CUSUM</span>
+      <span class="gate-chip idle">VPIN</span>
+      <span class="gate-chip idle">Margin</span>
+    </div>
+  </div>
+
+  <!-- TRADE HISTORY -->
+  <div class="card">
+    <div class="card-title">Trade History <span id="hist-count" style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--dim)"></span></div>
+    <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
+      <table>
+        <thead><tr><th>Time</th><th>Coin</th><th>Dir</th><th>Lev</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Reason</th><th>Brain</th><th>Regime</th></tr></thead>
+        <tbody id="hist-tbody"></tbody>
+      </table>
+    </div>
+    <div id="no-history" style="padding:16px;text-align:center;color:var(--dim);font-family:var(--pixel);font-size:8px">No closed trades yet — paper trading in progress...</div>
+  </div>
+
+</div>
+
+<script>
+const API = '/api/perps';
+let equityCurve = [10000];
+
+function fmt(n, d=2) { return n != null ? Number(n).toFixed(d) : '--'; }
+function fmtUsd(n) { return n != null ? '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : '--'; }
+
+async function refresh() {
+  try {
+    const res = await fetch(API);
+    const d = await res.json();
+    if (d.error) { console.error(d.error); return; }
+
+    const pnl = d.pnl || {};
+    const positions = d.positions || {open:[], closed:[]};
+    const markets = d.markets || [];
+    const account = d.account || {};
+    const brain = d.brain || {};
+
+    // ── BRAIN THINKING PANEL ──
+    document.getElementById('brain-focus-coin').textContent = brain.focusCoin || '--';
+    document.getElementById('brain-active').textContent = brain.activeBrain || '--';
+    document.getElementById('brain-regime').textContent = brain.cusumRegime || '--';
+    document.getElementById('brain-vpin').textContent = (brain.vpinScore || 0).toFixed(3);
+    document.getElementById('brain-cusum').textContent = brain.cusumRegime || '--';
+
+    // Coin rotation pills
+    const rotDiv = document.getElementById('brain-coin-rotation');
+    rotDiv.innerHTML = '';
+    (brain.coins || ['BTC','ETH','SOL','DOGE','kPEPE']).forEach(c => {
+      const isCurrent = c === brain.focusCoin;
+      const style = isCurrent
+        ? 'background:var(--purple);color:#fff;border-color:var(--purple)'
+        : 'background:var(--bg);color:var(--text);border-color:var(--border)';
+      rotDiv.innerHTML += '<span style="font-family:var(--pixel);font-size:7px;padding:3px 6px;border:2px solid;'+style+'">'+c+'</span>';
+    });
+
+    // Macro
+    const m = brain.macro || {};
+    function macroSpan(data) {
+      if (!data) return '--';
+      const col = data.trend === 'UP' ? 'var(--green)' : data.trend === 'DOWN' ? 'var(--red)' : 'var(--dim)';
+      return '<span style="color:'+col+';font-weight:700">'+data.price+' ('+data.change+'%)</span>';
+    }
+    document.getElementById('macro-spx').innerHTML = macroSpan(m.spx);
+    document.getElementById('macro-ndx').innerHTML = macroSpan(m.ndx);
+    const vixData = m.vix;
+    if (vixData) {
+      const vixCol = parseFloat(vixData.price) > 25 ? 'var(--red)' : parseFloat(vixData.price) > 18 ? 'var(--yellow)' : 'var(--green)';
+      const vixLabel = parseFloat(vixData.price) > 25 ? 'FEAR' : parseFloat(vixData.price) > 18 ? 'ELEVATED' : 'CALM';
+      document.getElementById('macro-vix').innerHTML = '<span style="color:'+vixCol+';font-weight:700">'+vixData.price+'</span> <span style="font-family:var(--pixel);font-size:7px;color:'+vixCol+'">'+vixLabel+'</span>';
+    }
+    document.getElementById('macro-dxy').innerHTML = macroSpan(m.dxy);
+
+    // Evolved DNA (best parent for focus coin)
+    const dna = brain.evolvedDna;
+    if (dna) {
+      document.getElementById('brain-dna').innerHTML =
+        '<div>Lev Base: <b style="color:var(--cyan)">'+((dna.leverageBase||3).toFixed?.(1)||3)+'</b></div>'
+        +'<div>SL Tight: <b>'+((dna.slTightness||1.5).toFixed?.(2)||1.5)+'</b> ATR</div>'
+        +'<div>TP Multi: <b style="color:var(--green)">'+((dna.tpMultiplier||2.5).toFixed?.(2)||2.5)+'</b>x R:R</div>'
+        +'<div>Fund Fade: <b>'+(((dna.fundingFadeThreshold||0.05)*100).toFixed?.(2)||5)+'%</b></div>'
+        +'<div>VPIN Min: <b style="color:var(--yellow)">'+((dna.vpinEntryMin||0.5).toFixed?.(2)||0.5)+'</b></div>'
+        +'<div style="margin-top:4px;font-size:10px;color:var(--dim)">'+((dna.totalResolved||0))+' trades | '+(dna.accuracy||0).toFixed?.(1)+'% acc</div>';
+    }
+
+    // Hierarchical Genetic Tree — show all coin lineages
+    const children = brain.children;
+    if (children && Object.keys(children).length > 0) {
+      let treeHtml = '';
+      for (const coin of ['BTC','ETH','SOL','DOGE','kPEPE']) {
+        const coinData = children[coin];
+        if (!coinData) continue;
+        const isFocus = coin === brain.focusCoin;
+        treeHtml += '<div style="margin-bottom:6px;padding:4px 6px;border-left:3px solid '+(isFocus?'var(--purple)':'var(--border2)')+';background:'+(isFocus?'var(--bg4)':'transparent')+'">';
+        treeHtml += '<span style="font-family:var(--pixel);font-size:7px;color:'+(isFocus?'var(--purple)':'var(--dim)')+'">'+coin+'</span>';
+        for (const lin of ['A','B']) {
+          const c = coinData[lin];
+          if (!c) continue;
+          const accColor = c.accuracy >= 55 ? 'var(--green)' : c.accuracy >= 45 ? 'var(--yellow)' : 'var(--red)';
+          treeHtml += '<div style="margin-left:10px;font-size:10px">';
+          treeHtml += '<span style="color:var(--cyan)">'+lin+'</span> ';
+          treeHtml += 'G<b>'+c.generation+'</b> ';
+          treeHtml += '<span style="color:'+accColor+'">'+c.accuracy.toFixed?.(1)+'%</span> ';
+          treeHtml += '('+c.totalResolved+' trades) ';
+          treeHtml += 'lev='+((c.leverageBase||3).toFixed?.(1)||'3')+' ';
+          if (c.grandchildSims > 0) {
+            treeHtml += '<span style="color:var(--purple)" title="Grandchild simulations">🧬'+c.grandchildSims+'</span> ';
+            treeHtml += '<span style="color:var(--dim);font-size:9px">fit='+c.bestGcFitness.toFixed?.(2)+'</span>';
+          }
+          treeHtml += '</div>';
+        }
+        treeHtml += '</div>';
+      }
+      document.getElementById('genetic-tree').innerHTML = treeHtml;
+    }
+
+    // Last thought
+    if (brain.lastThought) {
+      document.getElementById('brain-thought').textContent = brain.lastThought;
+    }
+
+    // Status
+    document.getElementById('status-txt').textContent = brain.focusCoin ? 'Analyzing '+brain.focusCoin : positions.open.length > 0 ? 'Trading' : 'Scanning...';
+    document.getElementById('sdot').style.background = positions.open.length > 0 ? 'var(--green)' : 'var(--yellow)';
+
+    // Header
+    const eq = account.equity || pnl.fund || 10000;
+    document.getElementById('h-equity').textContent = fmtUsd(eq);
+    const net = pnl.net || 0;
+    const hPnl = document.getElementById('h-pnl');
+    hPnl.textContent = (net >= 0 ? '+' : '') + fmtUsd(net);
+    hPnl.style.color = net >= 0 ? 'var(--green)' : 'var(--red)';
+    const wr = pnl.trades > 0 ? Math.round(pnl.wins / pnl.trades * 100) : 0;
+    const hWr = document.getElementById('h-wr');
+    hWr.textContent = pnl.trades > 0 ? wr + '%' : '--';
+    hWr.style.color = wr >= 55 ? 'var(--green)' : wr >= 45 ? 'var(--yellow)' : 'var(--red)';
+    document.getElementById('h-open').textContent = positions.open.length;
+
+    // Stats grid
+    document.getElementById('s-fund').textContent = fmtUsd(pnl.fund || 10000);
+    const sNet = document.getElementById('s-net');
+    sNet.textContent = (net >= 0 ? '+' : '') + fmtUsd(net);
+    sNet.parentElement.className = 'stat-box ' + (net >= 0 ? 'green' : 'red');
+    document.getElementById('s-trades').textContent = pnl.trades || 0;
+    document.getElementById('s-wins').textContent = pnl.wins || 0;
+    document.getElementById('s-losses').textContent = pnl.losses || 0;
+    document.getElementById('s-wr').textContent = pnl.trades > 0 ? wr + '%' : '--%';
+    document.getElementById('s-opencount').textContent = positions.open.length;
+    document.getElementById('s-best').textContent = fmtUsd(pnl.largestWin || 0);
+    document.getElementById('s-worst').textContent = fmtUsd(pnl.largestLoss || 0);
+
+    // Markets
+    const mg = document.getElementById('market-grid');
+    mg.innerHTML = '';
+    document.getElementById('market-time').textContent = new Date().toLocaleTimeString();
+    // Only the 5 coins ADAN actually trades
+    const focusCoins = ['BTC','ETH','SOL','DOGE','kPEPE'];
+    const shownCoins = markets.filter(m => focusCoins.includes(m.coin));
+    if (shownCoins.length === 0) {
+      mg.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--dim);padding:20px;font-family:var(--pixel);font-size:8px">Loading market data...</div>';
+    }
+    shownCoins.forEach(m => {
+      const fc = m.funding >= 0 ? 'funding-pos' : 'funding-neg';
+      const hasPos = positions.open.some(p => p.coin === m.coin);
+      const isCurrent = brain.focusCoin === m.coin;
+      const borderCol = isCurrent ? 'border-color:var(--purple);border-width:3px' : hasPos ? 'border-color:var(--cyan)' : '';
+      const focusTag = isCurrent ? ' <span style="font-size:7px;color:var(--purple);font-family:var(--pixel)">ANALYZING</span>' : '';
+      mg.innerHTML += '<div class="market-card" style="'+borderCol+'">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center">'
+        +'<span class="coin">'+m.coin+(hasPos?' ●':'')+focusTag+'</span>'
+        +'<span style="font-size:9px;color:var(--dim);font-family:var(--pixel)">'+m.maxLeverage+'x</span>'
+        +'</div>'
+        +'<div class="price">$'+Number(m.markPx).toLocaleString('en-US',{maximumFractionDigits:m.markPx>100?0:2})+'</div>'
+        +'<div class="meta">'
+        +'<div>Fund: <span class="'+fc+'">'+(m.funding*100).toFixed(4)+'%</span></div>'
+        +'<div>OI: <span class="val">'+(m.openInterest/1000).toFixed(0)+'K</span></div>'
+        +'</div>'
+        +'<div class="meta" style="margin-top:2px">'
+        +'<div>Vol: <span class="val">$'+(m.dayVolume/1e6).toFixed(0)+'M</span></div>'
+        +'</div>'
+        +'</div>';
+    });
+
+    // Open Positions
+    const ot = document.getElementById('open-tbody');
+    ot.innerHTML = '';
+    document.getElementById('pos-count').textContent = positions.open.length;
+    document.getElementById('no-positions').style.display = positions.open.length > 0 ? 'none' : 'block';
+    positions.open.forEach(p => {
+      const dc = p.direction === 'LONG' ? 'dir-long' : 'dir-short';
+      const pc = (p.unrealizedPnl||0) >= 0 ? 'pnl-pos' : 'pnl-neg';
+      const holdTime = p.entryTime ? Math.round((Date.now() - new Date(p.entryTime).getTime()) / 60000) : 0;
+      const holdStr = holdTime >= 60 ? Math.floor(holdTime/60)+'h '+holdTime%60+'m' : holdTime+'m';
+      ot.innerHTML += '<tr>'
+        +'<td style="font-weight:700;font-family:var(--pixel);font-size:10px">'+p.coin+'</td>'
+        +'<td class="'+dc+'">'+p.direction+'</td>'
+        +'<td style="font-family:var(--mono)">'+fmt(Math.abs(p.size),4)+'</td>'
+        +'<td style="font-family:var(--mono)">'+fmt(p.entryPx)+'</td>'
+        +'<td style="font-family:var(--mono)">'+fmt(p.currentPx || p.entryPx)+'</td>'
+        +'<td style="font-family:var(--pixel);font-size:10px">'+p.leverage+'x</td>'
+        +'<td class="'+pc+'">'+(((p.unrealizedPnl||0)>=0)?'+':'')+fmtUsd(p.unrealizedPnl||0)+'</td>'
+        +'<td style="color:var(--red);font-family:var(--mono)">'+fmt(p.stopLossPx)+'</td>'
+        +'<td style="color:var(--green);font-family:var(--mono)">'+fmt(p.takeProfitPx)+'</td>'
+        +'<td style="color:var(--purple);font-family:var(--pixel);font-size:8px">'+((p.brain||'?')+'<br><span style="color:var(--dim);font-size:7px">'+holdStr+'</span>')+'</td>'
+        +'</tr>';
+    });
+
+    // Decision Timeline — from brain's decision log (ALL decisions, not just trades)
+    const dw = document.getElementById('decisions-wrap');
+    dw.innerHTML = '';
+    const decLog = brain.decisionLog || [];
+    // Fallback: if no brain log yet, show positions
+    const allDecisions = decLog.length > 0 ? decLog : [
+      ...positions.open.map(p=>({...p, decision: p.direction, brain: p.brain})),
+      ...(positions.closed||[]).slice(-5).reverse().map(p=>({...p, decision: p.direction, brain: p.brain}))
+    ];
+    document.getElementById('no-decisions').style.display = allDecisions.length > 0 ? 'none' : 'block';
+    allDecisions.slice(0, 15).forEach((t, i) => {
+      const dir = t.decision || t.direction || 'SKIP';
+      const dirCls = dir === 'LONG' ? 'long' : dir === 'SHORT' ? 'short' : 'skip';
+      const isSkip = dir === 'SKIP';
+      const conf = t.confidence || 0;
+      const confCol = conf >= 75 ? 'var(--green)' : conf >= 65 ? 'var(--yellow)' : 'var(--red)';
+      const time = t.ts ? new Date(t.ts).toLocaleTimeString() : t.entryTime ? new Date(t.entryTime).toLocaleTimeString() : '';
+      const markStr = t.markPx ? ' @ $'+Number(t.markPx).toLocaleString('en-US',{maximumFractionDigits:0}) : '';
+      dw.innerHTML += '<div class="decision-card '+dirCls+'" style="padding-left:14px">'
+        +'<div class="decision-header">'
+        +'<span class="decision-coin">'+(t.coin||'?')+markStr+'</span>'
+        +'<span class="decision-dir '+dirCls+'">'+dir+'</span>'
+        +(isSkip ? '' : '<span style="font-family:var(--mono);font-size:12px">'+(t.leverage||'?')+'x</span>')
+        +'<span style="font-family:var(--mono);font-size:11px;color:'+confCol+'">'+conf+'%</span>'
+        +'<span class="decision-brain">'+(t.brain||'?')+'</span>'
+        +'<span class="decision-time">'+time+'</span>'
+        +'</div>'
+        +'<div class="decision-meta">'
+        +'<span>Regime: '+(t.regime||t.cusumRegime||'?')+'</span>'
+        +(isSkip ? '' : '<span>SL: '+fmt(t.stop_loss_pct||t.stopLossPct)+'%</span><span>TP: '+fmt(t.take_profit_pct||t.takeProfitPct)+'%</span>')
+        +(t.vpinScore ? '<span>VPIN: '+Number(t.vpinScore).toFixed(2)+'</span>' : '')
+        +(t.atr ? '<span>ATR: '+Number(t.atr).toFixed(2)+'</span>' : '')
+        +'</div>'
+        +(t.reasoning ? '<div class="decision-reason" onclick="this.classList.toggle(\'expanded\')">'+t.reasoning+'</div>' : '')
+        +'</div>';
+    });
+
+    // Risk
+    const dd = (account.drawdown || 0) * 100;
+    document.getElementById('r-dd').textContent = dd.toFixed(1) + '%';
+    document.getElementById('r-dd').style.color = dd > 10 ? 'var(--red)' : dd > 5 ? 'var(--yellow)' : 'var(--green)';
+    const ddBar = document.getElementById('r-dd-bar');
+    ddBar.style.width = Math.min(dd / 15 * 100, 100) + '%';
+    ddBar.style.background = dd > 10 ? '#8a1a1a' : dd > 5 ? '#7a5a10' : '#1a5a1a';
+    const lev = account.equity > 0 ? (account.totalNtl || 0) / account.equity : 0;
+    document.getElementById('r-lev').textContent = lev.toFixed(1) + 'x';
+    const levBar = document.getElementById('r-lev-bar');
+    levBar.style.width = Math.min(lev / 5 * 100, 100) + '%';
+    levBar.style.background = lev > 3 ? '#8a1a1a' : lev > 1.5 ? '#7a5a10' : '#1a4a8a';
+    document.getElementById('r-margin').textContent = fmtUsd(account.marginUsed || 0);
+    document.getElementById('r-avail').textContent = fmtUsd(account.availableMargin || 0);
+    document.getElementById('r-breaker').textContent = dd > 15 ? 'TRIGGERED' : 'OK';
+    document.getElementById('r-breaker').style.color = dd > 15 ? 'var(--red)' : 'var(--green)';
+    document.getElementById('r-maxpos').textContent = positions.open.length + ' / 3';
+
+    // Equity curve
+    const equity = account.equity || pnl.fund || 10000;
+    equityCurve.push(equity);
+    if (equityCurve.length > 200) equityCurve.shift();
+    document.getElementById('eq-val').textContent = fmtUsd(equity);
+    drawEquityCurve(equityCurve);
+
+    // Hour heatmap
+    const hg = document.getElementById('hour-grid');
+    hg.innerHTML = '';
+    for (let h = 0; h < 24; h++) {
+      const hs = (pnl.hourStats || {})[h] || {wins:0, losses:0};
+      const total = hs.wins + hs.losses;
+      const hwr = total > 0 ? Math.round(hs.wins / total * 100) : null;
+      const bgc = hwr === null ? 'var(--bg)' : hwr >= 55 ? '#c8e8c0' : hwr >= 45 ? '#e8e0c0' : '#e8c0c0';
+      const tc = hwr === null ? 'var(--dim)' : hwr >= 55 ? 'var(--green)' : hwr >= 45 ? 'var(--yellow)' : 'var(--red)';
+      hg.innerHTML += '<div class="hour-cell" style="background:'+bgc+'">'
+        +'<span class="h">'+String(h).padStart(2,'0')+'</span>'
+        +'<span class="v" style="color:'+tc+'">'+(hwr !== null ? hwr+'%' : '--')+'</span>'
+        +'</div>';
+    }
+
+    // Trade history
+    const ht = document.getElementById('hist-tbody');
+    ht.innerHTML = '';
+    const closed = (positions.closed || []).slice(-50).reverse();
+    document.getElementById('hist-count').textContent = closed.length + ' / ' + (pnl.trades || 0);
+    document.getElementById('no-history').style.display = closed.length > 0 ? 'none' : 'block';
+    closed.forEach(c => {
+      const won = (c.closedPnl || 0) > 0;
+      const dc = c.direction === 'LONG' ? 'dir-long' : 'dir-short';
+      const pc = won ? 'pnl-pos' : 'pnl-neg';
+      const bc = c.closeReason === 'TAKE_PROFIT' ? 'badge-tp' : c.closeReason === 'STOP_LOSS' ? 'badge-sl' : 'badge-manual';
+      const time = c.exitTime ? new Date(c.exitTime).toLocaleString() : '--';
+      ht.innerHTML += '<tr>'
+        +'<td style="font-size:12px;font-family:var(--mono)">'+time+'</td>'
+        +'<td style="font-weight:700;font-family:var(--pixel);font-size:10px">'+c.coin+'</td>'
+        +'<td class="'+dc+'">'+c.direction+'</td>'
+        +'<td style="font-family:var(--pixel);font-size:10px">'+c.leverage+'x</td>'
+        +'<td style="font-family:var(--mono)">'+fmt(c.entryPx)+'</td>'
+        +'<td style="font-family:var(--mono)">'+fmt(c.exitPx)+'</td>'
+        +'<td class="'+pc+'">'+(won?'+':'')+fmtUsd(c.closedPnl)+'</td>'
+        +'<td><span class="badge '+bc+'">'+(c.closeReason||'?')+'</span></td>'
+        +'<td style="color:var(--purple);font-family:var(--pixel);font-size:8px">'+(c.brain||'?')+'</td>'
+        +'<td style="color:var(--dim);font-size:12px">'+(c.regime||'?')+'</td>'
+        +'</tr>';
+    });
+
+    // Update gate pipeline based on last open position
+    const lastPos = positions.open[positions.open.length-1] || (positions.closed||[]).slice(-1)[0];
+    if (lastPos) {
+      const gates = ['PerpRisk','Correlation','Duplicate','Confidence','Kelly','CUSUM','VPIN','Margin'];
+      const gg = document.getElementById('gate-grid');
+      gg.innerHTML = '';
+      gates.forEach(g => {
+        const passed = lastPos.direction && lastPos.direction !== 'SKIP';
+        gg.innerHTML += '<span class="gate-chip '+(passed?'pass':'idle')+'">'+g+'</span>';
+      });
+    }
+
+  } catch(e) { console.error('Refresh error:', e); }
+}
+
+function drawEquityCurve(data) {
+  const container = document.getElementById('pnl-chart');
+  container.innerHTML = '';
+  if (data.length < 2) return;
+
+  const W = container.clientWidth || 600;
+  const H = 200;
+  const svg = d3.select('#pnl-chart').append('svg').attr('viewBox', '0 0 '+W+' '+H);
+
+  const x = d3.scaleLinear().domain([0, data.length - 1]).range([0, W]);
+  const yMin = d3.min(data) * 0.998;
+  const yMax = d3.max(data) * 1.002;
+  const y = d3.scaleLinear().domain([yMin, yMax]).range([H - 10, 10]);
+
+  // Grid lines
+  svg.selectAll('.grid-h').data(y.ticks(5)).enter().append('line')
+    .attr('x1',0).attr('x2',W).attr('y1',d=>y(d)).attr('y2',d=>y(d))
+    .attr('stroke','#3a3a2a').attr('stroke-width',0.5).attr('stroke-dasharray','4,4');
+
+  // Area fill
+  const isUp = data[data.length-1] >= data[0];
+  const defs = svg.append('defs');
+  const grad = defs.append('linearGradient').attr('id','eq-grad').attr('x1','0').attr('y1','0').attr('x2','0').attr('y2','1');
+  grad.append('stop').attr('offset','0%').attr('stop-color', isUp?'#1a5a1a':'#8a1a1a').attr('stop-opacity',0.3);
+  grad.append('stop').attr('offset','100%').attr('stop-color', isUp?'#1a5a1a':'#8a1a1a').attr('stop-opacity',0.02);
+
+  const area = d3.area().x((d,i)=>x(i)).y0(H).y1(d=>y(d)).curve(d3.curveMonotoneX);
+  svg.append('path').datum(data).attr('d',area).attr('fill','url(#eq-grad)');
+
+  // Line
+  const line = d3.line().x((d,i)=>x(i)).y(d=>y(d)).curve(d3.curveMonotoneX);
+  svg.append('path').datum(data).attr('d',line).attr('fill','none')
+    .attr('stroke', isUp?'#1a5a1a':'#8a1a1a').attr('stroke-width',2);
+
+  // Dot
+  svg.append('circle').attr('cx',x(data.length-1)).attr('cy',y(data[data.length-1]))
+    .attr('r',4).attr('fill',isUp?'#1a5a1a':'#8a1a1a').attr('stroke','#1a1a1a').attr('stroke-width',1);
+
+  // Baseline
+  svg.append('line').attr('x1',0).attr('y1',y(10000)).attr('x2',W).attr('y2',y(10000))
+    .attr('stroke','var(--border2)').attr('stroke-dasharray','4,4').attr('stroke-width',1);
+
+  // Labels
+  svg.append('text').attr('x',4).attr('y',y(yMax)+12).text(fmtUsd(yMax))
+    .attr('fill','var(--dim)').attr('font-size','10px').attr('font-family','JetBrains Mono');
+  svg.append('text').attr('x',4).attr('y',y(yMin)-4).text(fmtUsd(yMin))
+    .attr('fill','var(--dim)').attr('font-size','10px').attr('font-family','JetBrains Mono');
+}
+
+// Auto-refresh
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

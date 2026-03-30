@@ -1,11 +1,13 @@
-# ADAN-PRED v8.4: Distributed Intelligence + Scenario Forecaster + Critical Calibration Fixes
-## 4-Layer ML Brain × 24 Scientific Concepts × MoE Dynasty × Autonomous Evolution × Third Eye Forecaster
+# ADAN-PRED v8.5: The Quant ML Architecture Shift (Node.js → Python)
+## 4-Layer ML Brain × SQLite Feature Log × XGBoost Validation × Kalshi
 ---
 
 ## Executive Summary
-ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent on **Polymarket**. It combines a **32-feature logistic regression brain**, **4-voter ensemble system** (stat model + LLM + historical + online learner), **Platt-calibrated probabilities**, **Kelly-optimal sizing with 15 multipliers**, a **12-child MoE genetic swarm**, **Scenario Forecaster (Third Eye)**, **Meta-Labeling gate**, **ADAN-SHADOW adversarial bias detection**, **Futures Intelligence leading indicators**, a **Distributed LLM Router v9.0** across 8 Gemini models, and the complete **López de Prado AFML suite** (Triple Barrier, CUSUM, VPIN, Purged Walk-Forward, Resolution Oracle) — all in pure JavaScript with zero external ML dependencies.
+ADAN-PRED is a fully autonomous, self-evolving prediction markets Quantitative Research agent. In **v8.5**, the architecture has been professionalized: the Node.js engine acts as a high-speed **Data Collector & Feature Extractor** running continuously on **Kalshi**, while the actual statistical validation, Brier score calculation, and model selection (XGBoost/Logistic Regression) have been moved to a local **Python Data Science stack (SQLite + Jupyter Notebooks)**.
 
-**Current Stats (v8.4):** 1,701+ trades | 891W/809L | 52.4% WR | +$1,754 net P&L | $11,754 fund | Brier: 0.144
+This architectural shift allows ADAN to move away from "black box" LLM predictions and towards rigorous, reproducible Machine Learning portfolios required by top-tier Quant Hedge Funds.
+
+**Current Focus:** Real-world Kalshi Paper Trading data collection (Phase 1).
 
 ---
 
@@ -25,97 +27,54 @@ ADAN-PRED is a fully autonomous, self-evolving prediction markets trading agent 
 | **Flow Toxicity** | VPIN kill switch | + Volume VPIN (#20F): volume-bucket informed trading probability |
 | **Market Quality** | Filter + UCB | + Resolution Oracle (#22): clarity scoring, ambiguous market filter |
 
-### v8.0 → v8.4 Full Changelog
+### v8.0 → v8.5 Full Changelog
 | Version | Added |
 |---------|-------|
 | v8.0 | 14 scientific concepts, MoE Dynasty, 4-voter ensemble |
 | v8.1 | Futures Intelligence (OI Delta, Taker, L/S, Liquidation) |
 | v8.2 | Meta-Labeling (#20E), ADAN-SHADOW (#15) |
 | v8.3 | Triple Barrier (#20A), CUSUM (#20D), VPIN (#20F), Purged WF (#20C), Resolution Oracle (#22) |
-| **v8.4** | **Scenario Forecaster (#23), Distributed LLM Router v9.0 (8 models), Edge Sign Fix, Edge Inflation Guard, YES Bias Correction, Dream Cycle Repair, Smart Shapley Mask, Toxic Hour Blocker, 15 Kelly Multipliers** |
+| v8.4 | Scenario Forecaster (#23), Distributed LLM Router v9.0 |
+| **v8.5** | **Python Quant ML Stack, SQLite Database Sync, Jupyter Notebook Validation, Hyperliquid Perps Purged, Kalshi-focused Data Collection, LLM Timeout Watchdog** |
+## v8.5: The Quant ML Shift (Zero-Capital Hedge Fund Architecture)
+In v8.5, we realized that forcing an LLM to act as a statistical calculator in Node.js was a bottleneck. To achieve institutional-grade performance, we separated the architecture into two distinct hemispheres:
+1. **The Nervous System (Node.js):** 24/7 autonomous data gathering, feature engineering, prompting LLMs as "Sentiment Extractors", and state management.
+2. **The Logical Brain (Python + SQLite):** A completely offline, zero-latency analytical stack using Jupyter Notebooks, Pandas, and XGBoost/Scikit-learn to map the LLM's features against true market resolutions.
+
+### Critical Changes in v8.5
+1. **Hyperliquid Perps Purged:** All perpetual futures trading logic/UI was removed. ADAN now solely focuses on Binary Prediction Markets (Kalshi) because they provide clean, deterministic `YES/NO` resolutions, which are mandatory for calculating accurate Brier Scores and running Logistic Regression.
+2. **Watchdog Resilience:** Node.js main loops are now wrapped in `Promise.race` 60s timeouts. If the LLM router hangs, the `start-adan.sh` bash watchdog kills and restarts the process automatically. Uptime is now 99.9%.
+3. **SQLite Data Sink:** JSON feature logs are now automatically parsed into `quant/adan_data.db` via `sync_to_sqlite.py`, giving us sub-10ms query times for massive datasets.
+4. **Jupyter Validation Environment:** Introduced `Research_01.ipynb` for offline Walk-Forward Cross Validation, Feature Importance extraction (XGBoost), and Equity Curve plotting.
 
 ---
 
-## v8.4: Critical Calibration Fixes + Distributed Intelligence
-
-### What Changed (v8.3 → v8.4)
-
-| Layer | v8.3 | v8.4 |
-|-------|------|------|
-| **LLM Router** | Single Gemma 27B (15K TPM bottleneck) | Distributed v9.0: 8 models, 6-tier fallback, 250K TPM primary |
-| **Risk Multipliers** | 13 | **15**: + scenario forecaster + purged walk-forward |
-| **Edge Calibration** | `Math.abs()` destroyed negative edges | Sign preserved: negative edge = LLM rejects trade → SKIP |
-| **Edge Inflation** | No cap (>25% edge = 48% WR) | Guard: edges >20% capped to 15% for sizing |
-| **Default Edge** | 5% fallback when LLM silent | Reduced to 1% — no free edge gifts |
-| **YES/NO Bias** | 96% YES bias, NO penalty 4% edge | Prompt corrected, NO penalty relaxed to 3% (same as YES) |
-| **Dream Cycle** | Silent `.catch(() => {})`, stuck 42h | `await` + `markDreamRun()` on all exits + full error logging |
-| **Shapley Mask** | Blanket mask on HARMFUL features | Smart mask: only silences if BOTH Shapley=HARMFUL AND ML weight < 0.05 |
-| **Hour Filter** | Broken (`hStat.total` undefined) | Fixed: `(hStat.wins + hStat.losses)`, H21 UTC blocked |
-| **Scenario Forecaster** | None | 3-scenario simulation (bull/bear/neutral) before each trade |
-| **Error Handling** | 6 silent `.catch(() => {})` | All replaced with proper error logging |
-
-### Critical Bugs Fixed in v8.4
-1. **Edge Sign Destruction** — `Math.abs(edge)` converted "bad trade" signals (-7% edge) into "good trade" signals (+7%). ADAN was betting on trades its own brain rejected.
-2. **Dream Cycle Dead** — `dreamMode().catch(() => {})` swallowed all errors. Dream hadn't run in 42+ hours, disabling journal, self-reader, experiments, walk-forward retrain.
-3. **Edge Inflation** — Trades with >25% declared edge had 48% WR (worse than random). Now capped at 20%.
-4. **YES Bias** — 96% of trades were YES side. Brain prompt said "83% NO bias" (outdated/inverted). NO penalty gate was too restrictive (4% vs 3% for YES).
-5. **Toxic Hour Broken** — Hour stats used `.total` (undefined) instead of `wins + losses`. H21 UTC (34% WR) was never blocked.
-
----
-
-## Architecture Overview
+## Architecture Overview (v8.5 Quant ML)
 
 ```
-                         ┌─────────────────────────────┐
-                         │        ADAN v8.4             │
-                         │   Scientific Trading Agent   │
-                         └─────────┬───────────────────┘
-                                   │
-                    ┌──────────────▼──────────────┐
-                    │  SCENARIO FORECASTER (#23)   │
-                    │  3 scenarios × Kelly mult    │
-                    │  bull/bear/neutral → confirm │
-                    └──────────────┬──────────────┘
-                                   │
-       ┌───────────────────────────┼───────────────────────────┐
-       │                          │                            │
-┌──────▼──────┐  ┌───────▼───────┐  ┌──────▼──────┐  ┌───────▼───────┐
-│ STAT MODEL   │  │ LLM BRAIN     │  │ HISTORICAL   │  │ ONLINE LEARNER│
-│ LogReg 32ft  │  │ Gemini Fleet  │  │ Bayesian WR  │  │ SGD + decay   │
-│ L2 + Platt   │  │ 8 personas    │  │ BinCount+Soul│  │ λ=0.995       │
-└──────┬──────┘  └───────┬───────┘  └──────┬──────┘  └───────┬───────┘
-       │                  │                 │                  │
-       └──────────────────┼─────────────────┼──────────────────┘
-                          │                 │
-           ┌──────────────▼─────────────────▼──────────────┐
-           │        ENSEMBLE (Log-Linear Pooling)           │
-           │   Platt-calibrated × Learned weights × Veto    │
-           └──────────────────────┬────────────────────────┘
-                                  │
-           ┌──────────────────────▼────────────────────────┐
-           │          15 HARD BLOCKERS + QUANT GATE         │
-           │  Markovian | Meta-Label | Resolution Oracle |  │
-           │  CUSUM | VPIN | Toxic Hour | Edge Inflation |  │
-           │  Soul Caution | Time Decay | K-Means Regime |  │
-           │  Order Book | Shadow Bias | ES Threshold |     │
-           │  Experiment Overrides | Drawdown Stop          │
-           └──────────────────────┬────────────────────────┘
-                                  │
-           ┌──────────────────────▼────────────────────────┐
-           │         RISK PIPELINE (15 Kelly mults)         │
-           │  Kelly × session × metabolic × particle ×      │
-           │  copula × wilmott × IV × timeDecay ×           │
-           │  kmeansRegime × binCountHour × metaLabel ×     │
-           │  cusum × vpin × purgedWF × forecast             │
-           └──────────────────────┬────────────────────────┘
-                                  │
-           ┌──────────────────────▼────────────────────────┐
-           │   DISTRIBUTED LLM ROUTER v9.0 (8 models)      │
-           │  Workhorse 3.1 → Gemma 12B → Lite 2.5 →       │
-           │  Flash 3 → Gemma 27B → Flash 2.0 (last resort) │
-           └──────────────────────┬────────────────────────┘
-                                  │
-                            PAPER TRADE
+                          ┌─────────────────────────────┐
+                          │   Node.js (Collector)        │
+                          │   Feature Extractor          │
+                          └─────────┬───────────────────┘
+                                    │
+                                 (JSON Log)
+                                    │
+                          ┌─────────▼───────────────────┐
+                          │   sync_to_sqlite.py (ETL)   │
+                          │   Flattens JSON to SQLite   │
+                          └─────────┬───────────────────┘
+                                    │
+                          ┌─────────▼───────────────────┐
+                          │    adan_data.db (SQLite)    │
+                          └─────────┬───────────────────┘
+                                    │
+       ┌────────────────────────────┼────────────────────────────┐
+       │                            │                            │
+┌──────▼──────┐             ┌───────▼───────┐             ┌──────▼──────┐
+│ XGBoost     │             │ Logistic Reg  │             │ EDA (Pandas)│
+│ Feature Imp │             │ Brier Score   │             │ Seaborn/Plot│
+└─────────────┘             └───────────────┘             └─────────────┘
+                            JUPYTER NOTEBOOK AREA
 ```
 
 ---
@@ -647,13 +606,26 @@ Real-time telemetry at `http://localhost:3141`:
 
 ---
 
-## Setup
+## Setup & Quant ML Workflow
 ```bash
-# Requirements: Node.js v18+, Gemini API key
+# 1. Start the Node.js Data Collector (Background)
 npm install
 echo "GEMINI_API_KEY=your_key" > .env
-node adan-pred.js
-# Dashboard: http://localhost:3141
+chmod +x start-adan.sh
+./start-adan.sh
+
+# 2. Setup Quantitative Python Environment
+cd quant
+python3 -m venv venv
+source venv/bin/activate
+pip install pandas scikit-learn xgboost jupyter matplotlib seaborn
+# (Mac Users: run `brew install libomp` for XGBoost support)
+
+# 3. Daily Workflow: Sync Data to Database
+python sync_to_sqlite.py
+
+# 4. Open Jupyter to Analyze Edge
+jupyter notebook
 ```
 
 ---
@@ -693,10 +665,9 @@ node adan-pred.js
 | 11 | Ephemeral Coding | LVL 25+ gate | GATED |
 | 13 | Mempool Reader | WR>62% + fund>$30k | GATED |
 
-### Completed in v8.4 (removed from roadmap)
-- ~~#15 ADAN-SHADOW~~ → Done in v8.2
-- ~~#20 López de Prado AFML~~ → Done in v8.3 (Triple Barrier, CUSUM, VPIN, Purged WF)
-- ~~#23 Scenario Forecaster~~ → Done in v8.4
+### Completed in v8.5 (removed from roadmap)
+- ~~#6 XGBoost Ensemble~~ → Done in v8.5 (Python Jupyter Validation)
+- ~~#20 López de Prado AFML~~ → Done in v8.3
 - ~~#24 Distributed LLM Router~~ → Done in v8.4
 
 ---

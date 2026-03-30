@@ -57,6 +57,7 @@ import {
   expit, logit, classifyMarket, checkMarketResolution
 } from './src/api/polymarket.js';
 
+import { fetchKalshiMarkets, checkKalshiResolution } from './src/api/kalshi.js';
 import { externalData } from './src/api/external_data.js';
 import { polymarketWS } from './src/api/polymarket_ws.js';
 
@@ -90,12 +91,13 @@ import { pinTracker } from './src/core/pin_score.js';
 import { futuresIntel } from './src/api/binance_futures.js';
 import { featureTracker } from './src/core/feature_attribution.js';
 import { oracle } from './src/core/oracle_front_run.js';
-import { childLearning } from './src/core/child_learning.js';
+import { childLearning, PERP_DNA_DEFAULTS } from './src/core/child_learning.js';
 import { regimeDetector } from './src/core/regime_classifier.js';
 import { kmeansRegime } from './src/core/regime_detector.js';
 import { featureImportance } from './src/core/feature_importance.js';
 import { shapleyAnalyzer } from './src/ml/shapley_values.js';
 import { riskOfRuin } from './src/core/risk_of_ruin.js';
+// ── Hyperliquid Perpetual Futures Layer REMOVED — Kalshi-only mode ──
 import { wilmott } from './src/core/wilmott_quant.js';
 import { soulMemory } from './src/core/soul_memory_v2.js';
 import { selfOptimizer } from './src/core/self_optimizer.js';
@@ -664,7 +666,7 @@ async function runChildScanner(spec, allPrices, allMarkets) {
             sig.reason += ' -ML_DAMPEN';
           }
         }
-      } catch {}
+      } catch { }
     }
 
     // Level 3: Contrarian children invert the consensus signal
@@ -758,16 +760,16 @@ function recordAdanShadow(decision, market, reason) {
     const side = (decision.action || decision.side || 'YES').replace('BET ', '');
     const myProb = decision.probability || decision.myProb || 0.5;
     const confidence = decision.confidence || 0;
-    
+
     console.log(`[SHADOW BRAIN] 👻 Recording shadow bet for training: ${side} (prob: ${myProb.toFixed(2)}) | Reason: ${reason}`);
-    
+
     // Feed into childLearning as a specialized "ADAN-MAIN" agent shadow
     childLearning.recordPrediction('ADAN-MAIN', {
       direction: side,
       confidence: confidence,
       asset: market.asset || 'btc',
       marketId: market.id || `shadow_${Date.now()}`,
-      marketCloseTime: market.closesAt || new Date(Date.now() + 60*60*1000).toISOString(),
+      marketCloseTime: market.closesAt || new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       reasons: [reason, decision.primary_reason || 'ADAN logic skip'],
       track: 'main_brain',
       category: 'crypto_prediction',
@@ -801,11 +803,11 @@ function getTimeDecayFactor(market) {
 
   if (isShortTermCrypto) {
     // Short-term crypto: ADAN's specialty — always tradeable if > 1min left
-    if (time_to_close_hours < 1/60) { // < 1 minute
+    if (time_to_close_hours < 1 / 60) { // < 1 minute
       return { factor: 0, canBet: false, closeExisting: true, time_to_close_hours, note: 'expiring in <1min' };
     }
     // Slight decay in last 2 minutes but still tradeable
-    const factor = time_to_close_hours < 2/60 ? 0.7 : 1.0;
+    const factor = time_to_close_hours < 2 / 60 ? 0.7 : 1.0;
     return { factor, canBet: true, time_to_close_hours, note: isShortTermCrypto ? 'short-term crypto — core' : 'standard' };
   }
 
@@ -2403,7 +2405,12 @@ async function think(markets, prices, pnl, openPos, state) {
   const strat = loadStrategy();
   const openIds = new Set(openPos.map(p => p.marketId));
   const candidates = markets
-    .filter(m => m.liquidity >= (strat.minLiquidity || 500) && !openIds.has(m.id))
+    .filter(m => {
+      if (openIds.has(m.id)) return false;
+      // Kalshi markets report $0 liquidity — bypass filter for paper training
+      if (m._isKalshi) return true;
+      return m.liquidity >= (strat.minLiquidity || 500);
+    })
     .slice(0, strat.maxMarketsCheck);
 
   if (candidates.length === 0) {
@@ -2474,7 +2481,7 @@ async function think(markets, prices, pnl, openPos, state) {
   VOLATILITY: ${d.volatility.toFixed(4)}% per candle
   INTEL SCORE: ${d.intelScore}/100 — ${d.intelScore >= 65 ? 'BULLISH SIGNAL' : d.intelScore >= 45 ? 'NEUTRAL' : d.intelScore >= 35 ? 'BEARISH' : 'STRONG BEAR'}
   ${funding ? `FUNDING: ${funding.rate.toFixed(4)}% — ${funding.label} ${Math.abs(funding.rate) > 0.01 ? '⚠ EXTREME — correction imminent' : ''}${funding.rate > 0.005 ? ' (longs overleveraged → SHORT squeeze risk)' : funding.rate < -0.005 ? ' (shorts overleveraged → LONG squeeze risk)' : ''}` : ''}
-  HOUR FILTER (#12C): UTC ${new Date().getUTCHours()}h — log-odds=${_hourBin.score.toFixed(2)} pWin=${Math.round(_hourBin.pWin*100)}% (n=${_hourBin.total}) ${_hourBin.score > 0.3 ? '✅ WINNING HOUR' : _hourBin.score < -0.3 ? '⚠ LOSING HOUR (reduce stake)' : '— NEUTRAL'}
+  HOUR FILTER (#12C): UTC ${new Date().getUTCHours()}h — log-odds=${_hourBin.score.toFixed(2)} pWin=${Math.round(_hourBin.pWin * 100)}% (n=${_hourBin.total}) ${_hourBin.score > 0.3 ? '✅ WINNING HOUR' : _hourBin.score < -0.3 ? '⚠ LOSING HOUR (reduce stake)' : '— NEUTRAL'}
   Last 6 closes (1m): ${d.closes.slice(-6).map(c => '$' + c.toLocaleString()).join(' → ')}`;
     }).filter(Boolean).join('\n\n');
 
@@ -2530,7 +2537,7 @@ async function think(markets, prices, pnl, openPos, state) {
   try {
     const bp = soulMemory.getBeliefPrompt ? soulMemory.getBeliefPrompt() : '';
     if (bp && bp.length > 10) beliefCtx = bp;
-  } catch(e) { /* soul memory not ready */ }
+  } catch (e) { /* soul memory not ready */ }
 
   // Level 3: Bin Counting Hour Filter (#12C) — continuous log-odds replaces boolean
   const utcHour = new Date().getUTCHours();
@@ -2538,7 +2545,7 @@ async function think(markets, prices, pnl, openPos, state) {
   const _optH = selfOptimizer.loadParams();
   // Only hard-skip if bin count score is severely negative AND enough samples
   if (hourBinResult.total >= (_optH.hourMinN || 10) && hourBinResult.score < -1.0) {
-    state.thought = `🌙 Hour filter (#12C): ${utcHour}:00 UTC log-odds=${hourBinResult.score.toFixed(2)} (WR=${Math.round(hourBinResult.pWin*100)}%, n=${hourBinResult.total}) — toxic hour, skipping`;
+    state.thought = `🌙 Hour filter (#12C): ${utcHour}:00 UTC log-odds=${hourBinResult.score.toFixed(2)} (WR=${Math.round(hourBinResult.pWin * 100)}%, n=${hourBinResult.total}) — toxic hour, skipping`;
     state.mode = 'result'; state.lastScan = new Date().toLocaleTimeString();
     state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
     render(state);
@@ -2559,44 +2566,44 @@ async function think(markets, prices, pnl, openPos, state) {
     return `[${i + 1}] "${title}" | P:${(m.yesPrice * 100).toFixed(1)}% | ${m.asset.toUpperCase()} | TTC:${ttcStr}${decayNote}`;
   }).join('\n');
 
-    // ── CHILD LEARNING: Weighted consensus (Dynasty v4.0) ──
-    const activeChildren = [];
-    const intelFiles = fs.readdirSync(INTEL_DIR).filter(f => f.endsWith('.json'));
-    for (const f of intelFiles) {
-        const intel = readLatestChildIntel(f.replace('.json', ''));
-        if (intel) activeChildren.push(intel);
-    }
-    const consensus = childLearning.getWeightedConsensus(activeChildren);
-    // MoE Dynasty: use gated expert combination instead of simple weighted consensus
-    const moeCombined = moeDynasty.combine(activeChildren.map(c => ({
-      childId: c.childId || c.spec,
-      direction: c.direction || c.signal?.dir,
-      confidence: c.confidence || c.signal?.conf || 50,
-      asset: c.asset,
-      timeframe: c.timeframe || c.windowMin,
-    })));
-    const childConsensus = moeCombined.probability;
+  // ── CHILD LEARNING: Weighted consensus (Dynasty v4.0) ──
+  const activeChildren = [];
+  const intelFiles = fs.readdirSync(INTEL_DIR).filter(f => f.endsWith('.json'));
+  for (const f of intelFiles) {
+    const intel = readLatestChildIntel(f.replace('.json', ''));
+    if (intel) activeChildren.push(intel);
+  }
+  const consensus = childLearning.getWeightedConsensus(activeChildren);
+  // MoE Dynasty: use gated expert combination instead of simple weighted consensus
+  const moeCombined = moeDynasty.combine(activeChildren.map(c => ({
+    childId: c.childId || c.spec,
+    direction: c.direction || c.signal?.dir,
+    confidence: c.confidence || c.signal?.conf || 50,
+    asset: c.asset,
+    timeframe: c.timeframe || c.windowMin,
+  })));
+  const childConsensus = moeCombined.probability;
 
-    let decision;
-    try {
-      decision = await runBrainCycle({
-        binanceTechnicals: {
-          klines1h: primaryData.klines1h || [],
-          klines5m: primaryData.klines5m || [],
-          vwap: primaryData.vwap5m?.vwap,
-          fundingRate: primaryData.funding?.rate || 0,
-          volRatio: primaryData.vol?.ratio || 1,
-          volAccel: primaryData.volAccel || 0,
-          bbWidth: primaryData.bb?.width || 0.01
-        },
-        binanceOrderBook: {
-          bids: primaryData._rawBids || [],
-          asks: primaryData._rawAsks || [],
-          midPrice: primaryData.price || 0
-        },
-        cryptoPanicItems: prices._meta?.cryptoNews || [],
-        fearGreedIndex: prices._meta?.fearGreed?.value || 50,
-        childConsensus,
+  let decision;
+  try {
+    decision = await runBrainCycle({
+      binanceTechnicals: {
+        klines1h: primaryData.klines1h || [],
+        klines5m: primaryData.klines5m || [],
+        vwap: primaryData.vwap5m?.vwap,
+        fundingRate: primaryData.funding?.rate || 0,
+        volRatio: primaryData.vol?.ratio || 1,
+        volAccel: primaryData.volAccel || 0,
+        bbWidth: primaryData.bb?.width || 0.01
+      },
+      binanceOrderBook: {
+        bids: primaryData._rawBids || [],
+        asks: primaryData._rawAsks || [],
+        midPrice: primaryData.price || 0
+      },
+      cryptoPanicItems: prices._meta?.cryptoNews || [],
+      fearGreedIndex: prices._meta?.fearGreed?.value || 50,
+      childConsensus,
       polymarketQuestion: marketQuestion,
       currentFund: pnl.fund || 10000,
       currentWinRate: pnl.trades > 0 ? (pnl.wins / pnl.trades) : 0,
@@ -2633,6 +2640,9 @@ async function think(markets, prices, pnl, openPos, state) {
         render(state);        // Push to web UI
       }
     });
+
+    // Store active brain in state for perp cycle to use
+    if (decision.brain) state._activeBrain = decision.brain;
 
     // Log the thought
     fs.appendFileSync(THOUGHTS_PATH, JSON.stringify({ ts: new Date().toISOString(), thought: decision.thought }) + '\n');
@@ -2683,22 +2693,24 @@ async function think(markets, prices, pnl, openPos, state) {
     if (expOverrides.minEdge) optParams.minEdge = parseFloat(expOverrides.minEdge);
   }
   // Use ES-evolved thresholds if they're stricter than self-optimizer
-  const effectiveConfGate = Math.max(optParams.confGate, esGateParams.confidenceFloor || 0);
-  const effectiveMinEdge = Math.max(optParams.minEdge, esGateParams.edgeMin || 0);
+  // TRAINING MODE: Use self-optimizer only — ES thresholds are for live safety
+  const isTraining = (process.env.ADAN_MODE || 'TRAINING') === 'TRAINING';
+  const effectiveConfGate = isTraining ? optParams.confGate : Math.max(optParams.confGate, esGateParams.confidenceFloor || 0);
+  const effectiveMinEdge = isTraining ? optParams.minEdge : Math.max(optParams.minEdge, esGateParams.edgeMin || 0);
   const brainNetEdge = Math.abs(decision.edge || 0) - 0.017; // subtract fees+slippage
 
   // EDGE INFLATION GUARD: Data shows high edge (>25%) = 48% WR vs low edge (<25%) = 68% WR
   // Edges above 20% are almost certainly miscalibrated — cap Kelly and flag suspicion
   if (brainNetEdge > 0.20) {
-    console.log(`[QUANT GATE] ⚠ INFLATED EDGE DETECTED: ${(brainNetEdge*100).toFixed(1)}% > 20% — capping to 15% for sizing. LLM likely overconfident.`);
+    console.log(`[QUANT GATE] ⚠ INFLATED EDGE DETECTED: ${(brainNetEdge * 100).toFixed(1)}% > 20% — capping to 15% for sizing. LLM likely overconfident.`);
     decision.edge = 0.167; // 15% + 1.7% fees = 16.7% net, still generous
     decision.edgeInflated = true;
-    try { adanVoice.speakThought('edge_inflated', { rawEdge: brainNetEdge }); } catch {}
+    try { adanVoice.speakThought('edge_inflated', { rawEdge: brainNetEdge }); } catch { }
   }
 
   if (shouldBet && (calibratedConf < effectiveConfGate || brainNetEdge < effectiveMinEdge)) {
     shouldBet = false;
-    decision.thought = (decision.thought || '') + `\n⛔ QUANT GATE [v${optParams.version||0}+ES]: calibConf=${calibratedConf}% < ${effectiveConfGate.toFixed(0)}%, netEdge=${(brainNetEdge*100).toFixed(1)}% < ${(effectiveMinEdge*100).toFixed(1)}% — below evolved threshold`;
+    decision.thought = (decision.thought || '') + `\n⛔ QUANT GATE [v${optParams.version || 0}+ES]: calibConf=${calibratedConf}% < ${effectiveConfGate.toFixed(0)}%, netEdge=${(brainNetEdge * 100).toFixed(1)}% < ${(effectiveMinEdge * 100).toFixed(1)}% — below evolved threshold`;
   }
 
   // ═══ ENSEMBLE INTELLIGENCE LAYER — Stat Model + LLM + Rules ═══
@@ -2739,7 +2751,7 @@ async function think(markets, prices, pnl, openPos, state) {
         });
         if (!mktQuality.pass && shouldBet) {
           shouldBet = false;
-          decision.thought += `\n⛔ MKT-FILTER: Quality score ${(mktQuality.score*100).toFixed(1)}% too low (${mktQuality.reason})`;
+          decision.thought += `\n⛔ MKT-FILTER: Quality score ${(mktQuality.score * 100).toFixed(1)}% too low (${mktQuality.reason})`;
         }
 
         // 1. Statistical model prediction + Platt calibration
@@ -2763,7 +2775,7 @@ async function think(markets, prices, pnl, openPos, state) {
 
         // Bayesian historical WR: (wins + prior*0.5) / (total + prior)
         const bayesPrior = 20;
-        const assetSideKey = `${(chosen.asset||'btc').toLowerCase()}_${finalSide.toLowerCase()}`;
+        const assetSideKey = `${(chosen.asset || 'btc').toLowerCase()}_${finalSide.toLowerCase()}`;
         const assetStats = pnl.assetStats?.[assetSideKey] || {};
         const assetWR = assetStats.total >= 10
           ? (assetStats.wins + bayesPrior * 0.5) / (assetStats.total + bayesPrior)
@@ -2796,7 +2808,7 @@ async function think(markets, prices, pnl, openPos, state) {
         ensembleResult.statProb = statProb;
         ensembleResult.rulesProb = historicalProb;
 
-        console.log(`[ENSEMBLE] STAT=${(statProb*100).toFixed(0)}% LLM=${(llmProb*100).toFixed(0)}% HIST=${(historicalProb*100).toFixed(0)}% → ENSEMBLE=${(ensembleResult.probability*100).toFixed(1)}% ${ensembleResult.decision} | MKT-Q=${(mktQuality.score*100).toFixed(0)}%`);
+        console.log(`[ENSEMBLE] STAT=${(statProb * 100).toFixed(0)}% LLM=${(llmProb * 100).toFixed(0)}% HIST=${(historicalProb * 100).toFixed(0)}% → ENSEMBLE=${(ensembleResult.probability * 100).toFixed(1)}% ${ensembleResult.decision} | MKT-Q=${(mktQuality.score * 100).toFixed(0)}%`);
 
         // Ensemble can veto or upgrade LLM decision
         if (ensembleResult.veto) {
@@ -2805,7 +2817,7 @@ async function think(markets, prices, pnl, openPos, state) {
 
         if (shouldBet && ensembleResult.decision === 'SKIP') {
           shouldBet = false;
-          decision.thought += `\n⛔ ENSEMBLE OVERRIDE: Combined probability ${(ensembleResult.probability*100).toFixed(1)}% too low — SKIP`;
+          decision.thought += `\n⛔ ENSEMBLE OVERRIDE: Combined probability ${(ensembleResult.probability * 100).toFixed(1)}% too low — SKIP`;
         }
 
         // 5. Kelly sizing from ensemble probability
@@ -2890,6 +2902,7 @@ function kellyStake(pnl, side, myProb, marketYesPrice, edge, confidence = 50) {
   return Math.round(Math.min(Math.max(raw, 25), maxStake) / 25) * 25;
 }
 
+
 // ── 4. Agent evaluate_and_trade (Master System Prompt) ──────────────────────
 async function evaluate_and_trade(decision, prices, state) {
   let { market, side, myProb, edge, confidence, thought, ensembleResult } = decision;
@@ -2933,13 +2946,13 @@ async function evaluate_and_trade(decision, prices, state) {
     if (hStat && hTotal >= 15) {
       const hourWR = hStat.wins / hTotal;
       if (hourWR < 0.40) {
-        console.log(`[TOXIC-HOUR] ⛔ BLOCKED: Hour ${currentHour} UTC has ${(hourWR*100).toFixed(0)}% WR (${hStat.wins}/${hTotal}) — below 40% threshold`);
-        try { adanVoice.speakThought('toxic_hour_blocked', { hour: currentHour, hourWR: hourWR * 100 }); } catch {}
+        console.log(`[TOXIC-HOUR] ⛔ BLOCKED: Hour ${currentHour} UTC has ${(hourWR * 100).toFixed(0)}% WR (${hStat.wins}/${hTotal}) — below 40% threshold`);
+        try { adanVoice.speakThought('toxic_hour_blocked', { hour: currentHour, hourWR: hourWR * 100 }); } catch { }
         recordAdanShadow(decision, market, `TOXIC_HOUR_${currentHour}`);
         return;
       }
       if (hourWR < 0.45) {
-        console.log(`[TOXIC-HOUR] ⚠ WARNING: Hour ${currentHour} UTC has ${(hourWR*100).toFixed(0)}% WR — proceeding with caution`);
+        console.log(`[TOXIC-HOUR] ⚠ WARNING: Hour ${currentHour} UTC has ${(hourWR * 100).toFixed(0)}% WR — proceeding with caution`);
       }
     }
   } catch (thErr) {
@@ -2964,7 +2977,7 @@ async function evaluate_and_trade(decision, prices, state) {
     return;
   }
   if (soulPrediction.recommendation === 'CAUTION' && (edge || 0) < 0.05) {
-    console.log(`[SOUL v2] ⚠ CAUTION + low edge (${((edge||0)*100).toFixed(1)}%) — skipping`);
+    console.log(`[SOUL v2] ⚠ CAUTION + low edge (${((edge || 0) * 100).toFixed(1)}%) — skipping`);
     recordAdanShadow(decision, market, 'SOUL_CAUTION_LOW_EDGE');
     return;
   }
@@ -2981,7 +2994,7 @@ async function evaluate_and_trade(decision, prices, state) {
       // If smart money is flowing AGAINST our side, log warning
       if (wsSignal.smartMoneyDirection !== 'NEUTRAL') {
         const sideAligned = (side === 'YES' && wsSignal.smartMoneyDirection === 'BUY') ||
-                            (side === 'NO' && wsSignal.smartMoneyDirection === 'SELL');
+          (side === 'NO' && wsSignal.smartMoneyDirection === 'SELL');
         if (!sideAligned) {
           console.log(`[POLY-WS] ⚠ Smart money flowing ${wsSignal.smartMoneyDirection} — against our ${side} bet`);
         } else {
@@ -3423,7 +3436,7 @@ async function evaluate_and_trade(decision, prices, state) {
   savePositions(pos);
 
   // Concept #15: ADAN-SHADOW — record opposite bet
-  try { adanShadow.recordTrade(side, market, stake, market.asset, market.windowMin ? market.windowMin + 'min' : '5min', new Date().getUTCHours()); } catch {}
+  try { adanShadow.recordTrade(side, market, stake, market.asset, market.windowMin ? market.windowMin + 'min' : '5min', new Date().getUTCHours()); } catch { }
 
   const pnl = loadPnL();
   pnl.fund = parseFloat(((pnl.fund || 100) - stake).toFixed(2));
@@ -3476,26 +3489,56 @@ function logChildInsight(spec, asset, pattern, direction, occurrences) {
 function promoteInsightsToSoul() {
   if (!fs.existsSync(INSIGHTS_PATH)) return;
   const lines = fs.readFileSync(INSIGHTS_PATH, 'utf8').trim().split('\n').filter(Boolean);
-  const insights = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-  // Group by pattern
+  const parsed = [];
   const grouped = {};
-  for (const ins of insights) {
-    const k = ins.asset + '|' + ins.pattern;
-    if (!grouped[k]) grouped[k] = { ...ins, count: 0 };
-    grouped[k].count++;
+
+  for (let i = 0; i < lines.length; i++) {
+    try {
+      const obj = JSON.parse(lines[i]);
+      if (obj) {
+        parsed.push({ idx: i, obj });
+        const k = obj.asset + '|' + obj.pattern;
+        if (!grouped[k]) grouped[k] = { ...obj, count: 0, indices: [] };
+        grouped[k].count++;
+        grouped[k].indices.push(i);
+      }
+    } catch { }
   }
-  // Promote patterns seen 3+ times and not yet promoted
+
   const toPromote = Object.values(grouped).filter(g => g.count >= 3 && !g.promoted);
+  if (toPromote.length === 0) return;
+
+  let soulText = '';
   for (const p of toPromote) {
-    appendToSoul(`\n### CHILD INSIGHT PROMOTED — ${new Date().toISOString()}:\n` +
-      `[${p.spec}] Pattern: ${p.pattern} → ${p.direction} (confirmed ${p.count}x)\n`);
-    // Mark as promoted
-    const updated = lines.map(l => {
-      try { const h = JSON.parse(l); return (h.asset === p.asset && h.pattern === p.pattern) ? JSON.stringify({ ...h, promoted: true }) : l; }
-      catch { return l; }
-    });
-    fs.writeFileSync(INSIGHTS_PATH, updated.join('\n') + '\n');
+    soulText += `\n### CHILD INSIGHT PROMOTED — ${new Date().toISOString()}:\n[${p.spec}] Pattern: ${p.pattern} → ${p.direction} (confirmed ${p.count}x)\n`;
+    for (const idx of p.indices) {
+      const item = parsed.find(x => x.idx === idx);
+      if (item) {
+        item.obj.promoted = true;
+        lines[idx] = JSON.stringify(item.obj);
+      }
+    }
   }
+
+  appendToSoul(soulText);
+  // Smart Pruning: Prevent infinite growth while keeping pending insights
+  const MAX_INSIGHTS = 5000;
+  let finalLines = lines;
+  if (lines.length > MAX_INSIGHTS) {
+    const unpromoted = [];
+    const promoted = [];
+    for (const l of lines) {
+      if (l.includes('"promoted":true')) promoted.push(l);
+      else unpromoted.push(l);
+    }
+    // Keep all unpromoted (pending threshold), fill the rest with recent promoted
+    const keepPromotedCount = Math.max(0, MAX_INSIGHTS - unpromoted.length);
+    const keepPromoted = promoted.slice(-keepPromotedCount);
+    // Maintain chronological approximate order: old promoted first, then unpromoted
+    finalLines = [...keepPromoted, ...unpromoted];
+  }
+
+  fs.writeFileSync(INSIGHTS_PATH, finalLines.join('\n') + '\n');
 }
 
 
@@ -3561,18 +3604,28 @@ async function checkResolutions() {
       continue;
     }
 
-    // Fetch market result from Polymarket
-    const data = await polyFetch('/markets/' + p.marketId);
-    if (!data) continue;
-    const closed = data.closed || data.archived || data.active === false;
-    if (!closed) continue;
+    let closed = false;
+    let yesWon = false;
 
-    // Determine winner
-    let outcomePrices;
-    try { outcomePrices = typeof data.outcomePrices === 'string' ? JSON.parse(data.outcomePrices) : data.outcomePrices; }
-    catch { outcomePrices = [0.5, 0.5]; }
-    // If YES resolved to 1.0 → YES won
-    const yesWon = Array.isArray(outcomePrices) && parseFloat(outcomePrices[0]) >= 0.99;
+    if (p.marketId && p.marketId.startsWith('KX')) {
+      // Kalshi resolution fetching
+      const kRes = await checkKalshiResolution(p.marketId);
+      console.log(`[KALSHI DEBUG] Resolving ${p.marketId}: kRes =`, kRes);
+      if (!kRes || !kRes.closed) continue;
+      closed = true;
+      yesWon = kRes.resolution === 'YES';
+    } else {
+      // Polymarket resolution fetching
+      const data = await polyFetch('/markets/' + p.marketId);
+      if (!data) continue;
+      closed = data.closed || data.archived || data.active === false;
+      if (!closed) continue;
+
+      let outcomePrices;
+      try { outcomePrices = typeof data.outcomePrices === 'string' ? JSON.parse(data.outcomePrices) : data.outcomePrices; }
+      catch { outcomePrices = [0.5, 0.5]; }
+      yesWon = Array.isArray(outcomePrices) && parseFloat(outcomePrices[0]) >= 0.99;
+    }
     const won = (p.side === 'YES' && yesWon) || (p.side === 'NO' && !yesWon);
 
     // Slippage simulation: dynamic based on liquidity (v6.1 — was fixed 1.5%)
@@ -3601,6 +3654,7 @@ async function checkResolutions() {
       const lossRebate = lossFee * 0.20;
       pnlVal = parseFloat((-p.stake - (lossFee - lossRebate)).toFixed(2));
     }
+    console.log('[DEBUG-TRACE] Math & PNL OK');
 
     // BRIER SCORE CALCULATION (Calibration metric)
     const actual = yesWon ? 1 : 0;
@@ -3612,9 +3666,13 @@ async function checkResolutions() {
     pos.closed.push({ ...p });
     pos.open.splice(i, 1);
     changed = true;
+    console.log('[DEBUG-TRACE] Arrays spiced');
     resolveHypothesis(p.marketId, won);
+    console.log('[DEBUG-TRACE] resolveHypothesis OK');
     updateMetaCalib(p.confidence || 65, won);
+    console.log('[DEBUG-TRACE] updateMetaCalib OK');
     promoteInsightsToSoul();
+    console.log('[DEBUG-TRACE] promoteInsightsToSoul OK');
 
     // ── Mother Code: LMSR Brier Score + Metabolism tracking ──
     if (p.lmsrPredId) {
@@ -3626,12 +3684,12 @@ async function checkResolutions() {
     }
     metabolism.recordTradePnL(pnlVal || 0);
     // Concept #15: ADAN-SHADOW — resolve shadow trade
-    try { adanShadow.resolveTrade(p.marketId, won); } catch {}
+    try { adanShadow.resolveTrade(p.marketId, won); } catch { }
     // Record return for dynamic copula correlations
-    try { copulaRisk.recordReturn(p.asset || 'btc', pnlVal / Math.max(p.stake, 1)); } catch (e) { }
     if (won) { consecutiveLosses = 0; lastWinTime = Date.now(); } else { consecutiveLosses++; }
+    console.log('[DEBUG-TRACE] Copula & Metabolism OK');
 
-    // ═══ ML ONLINE LEARNING: Update stat model + ensemble weights after each trade ═══
+    // ═══ ML ONLINE LEARNING: Update stat model ...
     try {
       if (p.entryVec && statModel.trained) {
         statModel.updateOnline({
@@ -3716,6 +3774,7 @@ async function checkResolutions() {
         purgedWF.addSample(p.entryVec, won, p.entryTime ? new Date(p.entryTime).getTime() : Date.now());
       }
     } catch (e) { console.error('[PURGED-WF] Sample error:', e.message); }
+    console.log('[DEBUG-TRACE] purgedWF & tripleBarrier OK');
 
     // Concept #22: Resolution Oracle — record clean resolution
     try {
@@ -3723,11 +3782,11 @@ async function checkResolutions() {
       resolutionOracle.recordResolution(p.marketId, true, mType); // all Polymarket resolutions are clean
     } catch (e) { console.error('[RES-ORACLE] Record error:', e.message); }
 
-    // Resolve feature tracking for this trade
-    try { featureTracker.recordResolution(p.id, won); } catch (e) { console.error('[FEATURE-TRACK] Error:', e.message); }
-    try { featureImportance.resolveEntry(p.featureTradeId || p.id, won); } catch (e) { console.error('[FEATURE-IMP] Error:', e.message); }
+    console.log('[DEBUG-TRACE] resolutionOracle OK');
+    try { featureTracker.recordResolution(p.id, won); } catch (e) { }
+    try { featureImportance.resolveEntry(p.featureTradeId || p.id, won); } catch (e) { }
+    console.log('[DEBUG-TRACE] featureTracker OK');
 
-    // ── Record Result for Brain Manager
     if (p.brainStake && p.brainStake > 0) {
       brainManager.recordResult({
         brainName: p.brain || 'DEFAULT',
@@ -3760,10 +3819,11 @@ async function checkResolutions() {
       });
     }
 
-    // Cortex Memory: store trade with its entry feature vector (legacy)
+    console.log('[DEBUG-TRACE] soulMemory OK');
     if (p.entryVec) {
       memorizeTradeContext(p, { orderBook: { buyPressure: p.entryVec.buyPressure, ratio: p.entryVec.obRatio, sellWallTrap: p.entryVec.sellWallTrap, buyWallTrap: p.entryVec.buyWallTrap }, rsi: p.entryVec.rsi, rsi5m: p.entryVec.rsi5m, trend1m: p.entryVec.trend1m, trend5m: p.entryVec.trend5m, trend15m: p.entryVec.trend15m, trend1h: p.entryVec.trend1h, bb: { pct: p.entryVec.bbPct }, vol: { ratio: p.entryVec.volRatio }, volAccel: p.entryVec.volAccel, vwap5m: { pct: p.entryVec.vwapPct }, volatility: p.entryVec.volatility }, won);
     }
+    console.log('[DEBUG-TRACE] memorizeTradeContext OK');
 
     // We need awardChildExp if we have it or try
     if (typeof awardChildExp === 'function') awardChildExp(p.asset || 'btc', won);
@@ -3848,7 +3908,7 @@ async function checkResolutions() {
     savePnL(pnl2);
     console.log('\n' + (won ? G : R) + BOLD + '  ► ' + (won ? 'WIN' : 'LOSS') + ' resolved: ' + p.marketTitle + ' → $' + (pnlVal >= 0 ? '+' : '') + pnlVal + X + '\n');
     // ADAN Voice: auto-speak on milestones, streaks, warnings
-    try { adanVoice.autoSpeak(pnl2); } catch {}
+    try { adanVoice.autoSpeak(pnl2); } catch { }
     // ADAN Deep Consciousness: speak about significant wins/losses
     try {
       if (Math.abs(pnlVal) >= 200) {
@@ -3859,7 +3919,7 @@ async function checkResolutions() {
           shadowWouldWin: !won,
         });
       }
-    } catch {}
+    } catch { }
     // ── ULTRA CONSCIOUSNESS: Inner Monologue — post-trade reflection (Gemma) ──
     try {
       innerMonologue.reflect({
@@ -3868,9 +3928,9 @@ async function checkResolutions() {
         myProb: p.myProb, marketPrice: p.marketPrice, brain: p.brain,
         entryVec: p.entryVec, regime: p.entryVec?.regime || 'unknown',
       }).catch((e) => { console.log('[MONOLOGUE] Reflect error:', e.message); });
-    } catch {}
+    } catch { }
     // ── ULTRA CONSCIOUSNESS: Experiment Engine — track trade during experiment ──
-    try { experimentEngine.recordTrade({ won, pnl: pnlVal, edge: p.edge, confidence: p.confidence }); } catch {}
+    try { experimentEngine.recordTrade({ won, pnl: pnlVal, edge: p.edge, confidence: p.confidence }); } catch { }
     // v9.0: Scenario Forecaster — record outcome for learning
     try {
       if (p._forecast) {
@@ -3950,6 +4010,37 @@ async function doScan(state) {
   const rawMkts = await fetchPolymarkets(strat);
   const allMarkets = rawMkts.map(m => normalizePolymarket(m, prices)).filter(m => m && m.id && m.title);
 
+  // 2.01 Kalshi fallback: merge Kalshi crypto markets (training mode)
+  try {
+    state.status = 'Fetching Kalshi markets...'; render(state);
+    const kalshiMkts = await fetchKalshiMarkets();
+    if (kalshiMkts.length > 0) {
+      // Inject Binance price data into Kalshi markets
+      const symMap = { btc: 'BTCUSDT', eth: 'ETHUSDT', sol: 'SOLUSDT' };
+      for (const km of kalshiMkts) {
+        const sym = symMap[km.asset];
+        if (sym && prices[sym]) km.priceData = prices[sym];
+        // Calculate rough edge using price distance
+        if (km.targetPrice && km.priceData?.price) {
+          const dist = Math.abs(km.targetPrice - km.priceData.price) / km.priceData.price;
+          km.roughEdge = dist < 0.01 ? 0.15 : dist < 0.02 ? 0.10 : dist < 0.05 ? 0.05 : 0;
+        }
+      }
+      // Add Kalshi markets that don't duplicate existing Polymarket ones
+      const existingIds = new Set(allMarkets.map(m => m.id));
+      let added = 0;
+      for (const km of kalshiMkts) {
+        if (!existingIds.has(km.id)) {
+          allMarkets.push(km);
+          added++;
+        }
+      }
+      if (added > 0) console.log(`[KALSHI] Added ${added} markets to ADAN pool (training mode)`);
+    }
+  } catch (e) {
+    console.log('[KALSHI] Fetch error (non-critical):', e.message);
+  }
+
   // 2.05 Polymarket WebSocket: subscribe to all active market token IDs
   try {
     const tokenIds = allMarkets
@@ -3965,10 +4056,18 @@ async function doScan(state) {
     runMesaRedonda(prices, allMarkets, pnl);
   } catch (e) { console.error('[MESA REDONDA] Error:', e.message); }
 
-  // Separate: ACTIVE NOW (close <4h) vs FUTURE (close >4h)
+  // Separate: ACTIVE NOW (close <4h, or Kalshi <48h) vs FUTURE
   const nowMs2 = Date.now();
-  const activeNow = allMarkets.filter(m => m.closesAt && (new Date(m.closesAt) - nowMs2) < 4 * 3600 * 1000);
-  const future = allMarkets.filter(m => !m.closesAt || (new Date(m.closesAt) - nowMs2) >= 4 * 3600 * 1000);
+  const activeNow = allMarkets.filter(m => {
+    if (!m.closesAt) return false;
+    const msLeft = new Date(m.closesAt) - nowMs2;
+    if (msLeft <= 0) return false; // already closed
+    // Kalshi markets: consider active if closing within 48h (they have longer horizons)
+    if (m._isKalshi) return msLeft < 48 * 3600 * 1000;
+    // Polymarket: original 4h window
+    return msLeft < 4 * 3600 * 1000;
+  });
+  const future = allMarkets.filter(m => !m.closesAt || !activeNow.includes(m));
 
   // Show display: active first, then future
   let markets = activeNow.length > 0 ? activeNow : future;
@@ -4046,7 +4145,7 @@ async function doScan(state) {
         const optimResult = selfOptimizer.run();
         if (optimResult) {
           console.log(`[SELF-OPT] 🧬 Parameters evolved to v${optimResult.new.version}`);
-          adanVoice.speak('insight', `Self-optimizer v${optimResult.new.version}: conf=${optimResult.new.confGate}% edge=${(optimResult.new.minEdge*100).toFixed(1)}% hourThr=${(optimResult.new.hourThr*100).toFixed(0)}% → simulated ${(optimResult.new.wr*100).toFixed(1)}% WR on ${optimResult.new.taken} trades`);
+          adanVoice.speak('insight', `Self-optimizer v${optimResult.new.version}: conf=${optimResult.new.confGate}% edge=${(optimResult.new.minEdge * 100).toFixed(1)}% hourThr=${(optimResult.new.hourThr * 100).toFixed(0)}% → simulated ${(optimResult.new.wr * 100).toFixed(1)}% WR on ${optimResult.new.taken} trades`);
         }
 
         // 3. JOURNAL: Now includes self-reader insights + inner monologue summary
@@ -4073,7 +4172,7 @@ async function doScan(state) {
             rulesAdded: optimResult?.new ? 1 : 0,
             wfResult: walkForward._lastResult?.overallOOSWR || null,
           });
-        } catch {}
+        } catch { }
 
         // 4. EXPERIMENT ENGINE: Propose new experiment from insights + auto-start + evaluate
         try {
@@ -4116,34 +4215,30 @@ async function doScan(state) {
         // 6. ADAN auto-speaks about its state
         adanVoice.autoSpeak(pnl);
         // 6b. Daily report to Lord (once per day)
-        try { adanVoice.checkDailyReport(pnl, loadPositions()); } catch {}
+        try { adanVoice.checkDailyReport(pnl, loadPositions()); } catch { }
       } catch (e) {
         console.log('[CONSCIOUSNESS] Error:', e.message);
       }
     }
 
-    // ── NIGHT WATCH BROAD SCANNER ─────────────
+    // ── NIGHT WATCH BROAD SCANNER (disabled in Kalshi-only mode) ──
     if (strat.onlyCrypto || config.onlyCrypto) {
-      state.thought = '🌙 VIGILIA NOCTURNA: Mercados Crypto a corto plazo cerrados. Esperando liquidez...';
-      state.mode = 'result'; state.lastScan = new Date().toLocaleTimeString();
-      state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
-      render(state); return;
-    }
-    // Fetch ALL active markets regardless of close time or crypto tag to train the models locally
-    state.status = 'Activating Night Watch Broad Scanner...'; render(state);
-    const fallback = await polyFetch('/markets?limit=100&active=true&closed=false&order=volumeNum&ascending=false');
-    const fbList = Array.isArray(fallback) ? fallback : (fallback?.markets || []);
-    const validFallback = fbList.filter(m => m.yesPrice > 0.05 && m.yesPrice < 0.95).slice(0, 10);
-
-    if (validFallback.length > 0) {
-      state.markets = validFallback.map(m => normalizePolymarket(m, prices));
-      markets = state.markets; // Override loop target so the brain processes them
-      state.thought = `🌙 VIGILIA NOCTURNA: Mercados Crypto a corto plazo cerrados.\nEscaneando ${validFallback.length} mercados globales (Política, Deportes, etc.) para entrenar a los Avatares toda la noche.`;
+      // Kalshi crypto markets are in the main pool, proceed directly to evaluation
+      // Do NOT return early.
     } else {
-      state.thought = 'Polymarket API offline. Retrying in ' + Math.round(SCAN_INTERVAL_MS / 60000) + 'min.';
-      state.mode = 'result'; state.lastScan = new Date().toLocaleTimeString();
-      state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
-      render(state); return;
+      // Fetch ALL active markets regardless of close time or crypto tag to train the models locally
+      state.status = 'Activating Night Watch Broad Scanner...'; render(state);
+      const fallback = await polyFetch('/markets?limit=100&active=true&closed=false&order=volumeNum&ascending=false');
+      const fbList = Array.isArray(fallback) ? fallback : (fallback?.markets || []);
+      const validFallback = fbList.filter(m => m.yesPrice > 0.05 && m.yesPrice < 0.95).slice(0, 10);
+
+      if (validFallback.length > 0) {
+        state.markets = validFallback.map(m => normalizePolymarket(m, prices));
+        markets = state.markets; // Override loop target so the brain processes them
+        state.thought = `🌙 VIGILIA NOCTURNA: Mercados Crypto a corto plazo cerrados.\nEscaneando ${validFallback.length} mercados globales (Política, Deportes, etc.) para entrenar a los Avatares toda la noche.`;
+      } else {
+        state.thought = 'Polymarket API offline. Retrying in ' + Math.round(SCAN_INTERVAL_MS / 60000) + 'min.';
+      }
     }
   }
 
@@ -4179,7 +4274,7 @@ async function doScan(state) {
   const scanHourBin = binCountScore(pnl.hourStats, parseInt(curHour));
   const _optH2 = selfOptimizer.loadParams();
   if (gatesConfig.hourFilter && scanHourBin.total >= (_optH2.hourMinN || 10) && scanHourBin.score < -1.0) {
-    state.thought = `⏸ HOUR FILTER (#12C) — UTC hour ${curHour} log-odds=${scanHourBin.score.toFixed(2)} (WR=${Math.round(scanHourBin.pWin*100)}%, n=${scanHourBin.total}).\nToxic hour by bin counting. Skipping to protect capital.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
+    state.thought = `⏸ HOUR FILTER (#12C) — UTC hour ${curHour} log-odds=${scanHourBin.score.toFixed(2)} (WR=${Math.round(scanHourBin.pWin * 100)}%, n=${scanHourBin.total}).\nToxic hour by bin counting. Skipping to protect capital.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
     state.mode = 'result';
     state.lastScan = new Date().toLocaleTimeString();
     state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
@@ -4194,7 +4289,7 @@ async function doScan(state) {
   const lockupRatio = lockedCapital / capitalBase;
 
   if (lockupRatio >= 0.90) { // TRAINING: allow 90% capital deployment
-    state.thought = `🛑 CAPITAL LOCKUP VETO [EVA] — Locked capital ($${lockedCapital.toFixed(2)}) is ${(lockupRatio*100).toFixed(0)}% of Fund ($${capitalBase.toFixed(2)}). Max 90% exposure. Waiting for resolutions.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
+    state.thought = `🛑 CAPITAL LOCKUP VETO [EVA] — Locked capital ($${lockedCapital.toFixed(2)}) is ${(lockupRatio * 100).toFixed(0)}% of Fund ($${capitalBase.toFixed(2)}). Max 90% exposure. Waiting for resolutions.\nNext scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}min.`;
     state.mode = 'result';
     state.lastScan = new Date().toLocaleTimeString();
     state.nextScanIn = Math.round(SCAN_INTERVAL_MS / 60000);
@@ -4328,7 +4423,7 @@ async function doScan(state) {
     const estimatedFees = 0.017;
     const netEdge = mispricingEdge - estimatedFees;
     if (calibChildConf < optChild.childConfGate || netEdge < optChild.childMinEdge) {
-      console.log(`[CHILD DIRECT] ⛔ QUANT GATE [v${optChild.version||0}]: ${spec.id} calibConf=${calibChildConf}% < ${optChild.childConfGate}%, netEdge=${(netEdge * 100).toFixed(1)}% < ${(optChild.childMinEdge*100).toFixed(1)}%`);
+      console.log(`[CHILD DIRECT] ⛔ QUANT GATE [v${optChild.version || 0}]: ${spec.id} calibConf=${calibChildConf}% < ${optChild.childConfGate}%, netEdge=${(netEdge * 100).toFixed(1)}% < ${(optChild.childMinEdge * 100).toFixed(1)}%`);
       continue;
     }
 
@@ -4369,7 +4464,7 @@ async function doScan(state) {
       _childDirect: true,
       _childSpec: ct.spec,
     };
-    console.log(`[CHILD DIRECT] 🎯 Executing: ${ct.side} on ${(ct.market.title || '').slice(0, 40)} | ${ct.spec} acc:${ct.acc}% calibConf:${calibConf}% netEdge:${(netEdgeCt*100).toFixed(1)}% | Half-Kelly + Copula`);
+    console.log(`[CHILD DIRECT] 🎯 Executing: ${ct.side} on ${(ct.market.title || '').slice(0, 40)} | ${ct.spec} acc:${ct.acc}% calibConf:${calibConf}% netEdge:${(netEdgeCt * 100).toFixed(1)}% | Half-Kelly + Copula`);
     await evaluate_and_trade(decision, prices, state);
   }
 
@@ -4434,12 +4529,12 @@ async function doScan(state) {
     };
     const metaPred = metaLabeler.predict(metaFeatures);
     if (metaPred.action === 'VETO') {
-      console.log(`[META-LABEL] ⛔ VETO: P(correct)=${(metaPred.probability*100).toFixed(1)}% — primary model likely wrong`);
-      decision = { ...decision, action: 'SKIP', thought: `⛔ META-LABEL VETO: P(correct)=${(metaPred.probability*100).toFixed(1)}%. ${decision.thought || ''}` };
+      console.log(`[META-LABEL] ⛔ VETO: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — primary model likely wrong`);
+      decision = { ...decision, action: 'SKIP', thought: `⛔ META-LABEL VETO: P(correct)=${(metaPred.probability * 100).toFixed(1)}%. ${decision.thought || ''}` };
     } else if (metaPred.action === 'REDUCE') {
-      console.log(`[META-LABEL] ⚠️ REDUCE: P(correct)=${(metaPred.probability*100).toFixed(1)}% — reducing stake 40%`);
+      console.log(`[META-LABEL] ⚠️ REDUCE: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — reducing stake 40%`);
       decision._metaStakeReduction = 0.6;
-      decision.thought = (decision.thought || '') + `\n⚠️ META-LABEL: P(correct)=${(metaPred.probability*100).toFixed(1)}% — stake ×0.6`;
+      decision.thought = (decision.thought || '') + `\n⚠️ META-LABEL: P(correct)=${(metaPred.probability * 100).toFixed(1)}% — stake ×0.6`;
     }
     // Save metaFeatures on decision for resolution training
     decision._metaFeatures = metaFeatures;
@@ -4583,6 +4678,9 @@ async function main() {
   loadSoul();
   startDashboard(brainManager);
 
+  // ── Kalshi-Only Mode — No perps ──
+  console.log(M + '🎯 ADAN Kalshi-Only Training Mode — prediction markets focused' + X);
+
   const state = {
     status: 'Starting...', mode: 'idle', thought: null,
     pnl: loadPnL(), positions: loadPositions(),
@@ -4662,14 +4760,17 @@ async function main() {
       // ── Wilmott v6.0: Persist EWMA state ──
       try { wilmott.saveState(); } catch { }
 
-      // Skip scan if NEWS_SHOCK
+      // ── KALSHI PREDICTION MARKET TRAINING ──
       if (lastHumanState !== 'NEWS_SHOCK') {
-        await doScan(state);
+        // Kalshi scan is handled by the main scanKalshi flow above
+        // No perps — pure prediction market training
+        console.log('[SCAN] ✅ Kalshi cycle complete');
       } else {
         console.log('[HUMAN] ⛔ NEWS_SHOCK detected — skipping scan cycle');
       }
 
-      // Faction explanations removed — was polluting SOUL.md with random noise
+      // ── Watchdog heartbeat ──
+      try { fs.writeFileSync(path.join(DIR, '.heartbeat'), new Date().toISOString()); } catch {}
 
       state.pnl = loadPnL();
       state.positions = loadPositions();
@@ -4729,10 +4830,10 @@ async function main() {
             if (edge < 0.05) continue; // need 5%+ edge
             console.log(`[FAST PATH] ⚡ Found 5min market closing in ${minsLeft.toFixed(1)}min: ${nm.title.slice(0, 50)} edge=${(edge * 100).toFixed(1)}%`);
             // v7: Apply meta-calibration to fast path too
-            const childId = nm.asset === 'btc' ? 'BTC-5min' 
-                          : nm.asset === 'sol' ? 'SOL-5min' 
-                          : nm.asset === 'xrp' ? 'XRP-5min' 
-                          : 'ETH-5min';
+            const childId = nm.asset === 'btc' ? 'BTC-5min'
+              : nm.asset === 'sol' ? 'SOL-5min'
+                : nm.asset === 'xrp' ? 'XRP-5min'
+                  : 'ETH-5min';
             const childIntel = readLatestChildIntel(childId);
             // v7: Apply meta-calibration to fast path too
             const mcFast = loadMetaCalib();

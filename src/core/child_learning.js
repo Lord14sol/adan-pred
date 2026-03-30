@@ -14,6 +14,9 @@ const SHADOWS_PATH = path.join(DIR, 'child_shadows.jsonl');
 const CHILDREN_DIR = path.join(DIR, 'children');
 
 const MAX_CHILDREN_PER_PARENT = 3;
+const GRANDCHILD_COUNT = 20;           // Ephemeral grandchildren per simulation round
+const GRANDCHILD_SIM_WINDOW = 50;      // Simulate against last N price candles
+const GRANDCHILD_SURVIVAL_TOP = 3;     // Top N grandchildren whose DNA propagates up
 const MIN_PREDICTIONS_FOR_WEIGHT = 3;    // TRAINING: 3 preds to start weighting
 const MIN_PREDICTIONS_FOR_EVOLUTION = 15; // TRAINING: evolve sooner
 const EVOLUTION_INTERVAL = 5;             // TRAINING: evolve every 5 resolved — hyperspeed
@@ -60,6 +63,25 @@ const LLM_DNA_BOUNDS = {
     newsRecencyHours: { min: 1, max: 72 },
     maxMarketsPerCycle: { min: 1, max: 8 },
     skipIfLiquidityBelow: { min: 100, max: 10000 },
+};
+
+// ═══ PERP-TRACK DNA — Strategy parameters for Hyperliquid perpetual children ═══
+const PERP_DNA_DEFAULTS = {
+    leverageBase: 3,            // base leverage multiplier
+    slTightness: 1.5,           // stop loss as % of ATR (1.0 = tight, 2.0 = loose)
+    tpMultiplier: 2.5,          // TP = SL × this (risk:reward)
+    fundingFadeThreshold: 0.05, // fade when funding > this %
+    vpinEntryMin: 0.5,          // min VPIN to enter
+    oiConfirmation: true,       // require OI expansion for trend trades
+    generation: 1,
+};
+
+const PERP_DNA_BOUNDS = {
+    leverageBase: { min: 1, max: 10 },
+    slTightness: { min: 0.5, max: 3.0 },
+    tpMultiplier: { min: 1.5, max: 5.0 },
+    fundingFadeThreshold: { min: 0.01, max: 0.15 },
+    vpinEntryMin: { min: 0.2, max: 0.8 },
 };
 
 class ChildLearningEngine {
@@ -345,9 +367,11 @@ class ChildLearningEngine {
     // ═══ PHASE 2: EVOLUTIONARY ENGINE ═══
 
     _evolve() {
-        // ── DUAL-POOL EVOLUTION: Crypto (quant) and LLM pools NEVER cross ──
+        // ── TRIPLE-POOL EVOLUTION: Crypto quant, LLM, and Perp pools NEVER cross ──
         this._evolvePool('quant', DNA_BOUNDS, DEFAULT_DNA);
         this._evolvePool('llm', LLM_DNA_BOUNDS, LLM_DNA_DEFAULTS);
+        // Perp children use PERP_DNA_BOUNDS but are already in 'quant' track
+        // The per-coin A/B lineages compete within the quant pool naturally
     }
 
     _evolvePool(trackName, bounds, defaults) {
@@ -759,6 +783,276 @@ class ChildLearningEngine {
         } catch (e) { /* start fresh */ }
     }
 
+    // ═══ PERP SHADOW RECORDING — alias for evaluate_and_trade_perp ═══
+    recordShadow(shadow) {
+        return this.recordPrediction(shadow.childId, shadow);
+    }
+
+    // ═══ PERP RESOLUTION — resolve a closed perp position for child evolution ═══
+    resolvePerp(positionId, won) {
+        const shadow = this.shadows.find(s => s.marketId === positionId && !s.resolved);
+        if (!shadow) return;
+
+        shadow.resolved = true;
+        shadow.correct = won;
+
+        const childId = shadow.childId || `PERP-${shadow.asset?.toUpperCase() || 'BTC'}-A`;
+        if (!this.learning[childId]) {
+            this.learning[childId] = {
+                totalResolved: 0, correct: 0, wrong: 0,
+                accuracy: 0, perSignal: {}, regimes: {},
+                dna: { ...PERP_DNA_DEFAULTS }, track: 'quant', category: 'crypto',
+            };
+        }
+
+        const cl = this.learning[childId];
+        cl.totalResolved++;
+        if (won) cl.correct++; else cl.wrong++;
+        cl.accuracy = cl.totalResolved > 0 ? (cl.correct / cl.totalResolved * 100) : 0;
+
+        // Track per-regime accuracy
+        const regime = shadow.regime || 'UNKNOWN';
+        if (!cl.regimes[regime]) cl.regimes[regime] = { correct: 0, total: 0 };
+        cl.regimes[regime].total++;
+        if (won) cl.regimes[regime].correct++;
+
+        this.globalResolved++;
+        console.log(`[CHILD-LEARN] Perp resolved: ${positionId} → ${won ? 'WIN' : 'LOSS'} | ${childId} acc: ${cl.accuracy.toFixed(1)}% (${cl.totalResolved} trades)`);
+
+        // Trigger evolution if interval reached
+        if (this.globalResolved - this.lastEvolution >= EVOLUTION_INTERVAL) {
+            try { this._evolvePool('quant'); } catch (e) { console.error('[EVOLUTION] Perp evolve error:', e.message); }
+            this.lastEvolution = this.globalResolved;
+        }
+
+        this._save();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // HIERARCHICAL GRANDCHILD SIMULATION ENGINE
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Architecture:
+    //   Level 0: ADAN (master)
+    //   Level 1: 2 parent children per coin (PERP-{COIN}-A, PERP-{COIN}-B) — persistent
+    //   Level 2: N grandchildren per parent (ephemeral) — born, simulate, die, pass DNA up
+    //
+    // Each grandchild is a mutated variant of its parent's DNA. Grandchildren
+    // "trade" against recent price history using a fast simulation. The top
+    // survivors' DNA gets blended back into the parent, making parents smarter
+    // over time without risking real (paper) capital.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Run a grandchild Monte Carlo simulation for a given coin.
+     * Called after every real paper trade to continuously improve parent DNA.
+     *
+     * @param {string} coin - e.g. 'BTC'
+     * @param {number} currentPrice - current mark price
+     * @param {string} direction - 'LONG' or 'SHORT'
+     * @param {string} regime - 'TREND' or 'MEAN_REVERT'
+     */
+    runGrandchildSimulation(coin, currentPrice, direction, regime) {
+        if (!currentPrice || currentPrice <= 0) return;
+
+        console.log(`\n[GRANDCHILD] 🧬 ═══ MONTE CARLO SIMULATION — ${coin} ═══`);
+
+        for (const lineage of ['A', 'B']) {
+            const parentId = `PERP-${coin}-${lineage}`;
+            const parent = this.learning[parentId];
+            if (!parent?.dna) continue;
+
+            // ── Spawn N grandchildren with mutated DNA ──
+            const grandchildren = [];
+            for (let i = 0; i < GRANDCHILD_COUNT; i++) {
+                const gcDna = this._spawnGrandchild(parent.dna);
+                grandchildren.push({
+                    id: `${parentId}-gc${i}`,
+                    dna: gcDna,
+                    fitness: 0,
+                    trades: 0,
+                    wins: 0,
+                    pnl: 0,
+                });
+            }
+
+            // ── Simulate each grandchild against recent price movements ──
+            // We generate synthetic price scenarios based on current conditions
+            const scenarios = this._generatePriceScenarios(currentPrice, regime, GRANDCHILD_SIM_WINDOW);
+
+            for (const gc of grandchildren) {
+                const result = this._simulateGrandchild(gc.dna, scenarios, direction, regime);
+                gc.fitness = result.fitness;
+                gc.trades = result.trades;
+                gc.wins = result.wins;
+                gc.pnl = result.pnl;
+            }
+
+            // ── Sort by fitness (Sharpe-like: return / risk) ──
+            grandchildren.sort((a, b) => b.fitness - a.fitness);
+
+            // ── Top survivors propagate DNA upward to parent ──
+            const survivors = grandchildren.slice(0, GRANDCHILD_SURVIVAL_TOP);
+            const deadCount = grandchildren.length - GRANDCHILD_SURVIVAL_TOP;
+
+            if (survivors.length > 0 && survivors[0].fitness > 0) {
+                // Blend top survivors' DNA into parent (weighted average by fitness)
+                const totalFitness = survivors.reduce((s, gc) => s + Math.max(gc.fitness, 0.001), 0);
+                const blendedDna = {};
+
+                for (const key of Object.keys(PERP_DNA_BOUNDS)) {
+                    let weightedSum = 0;
+                    for (const gc of survivors) {
+                        const weight = Math.max(gc.fitness, 0.001) / totalFitness;
+                        weightedSum += (gc.dna[key] ?? PERP_DNA_DEFAULTS[key]) * weight;
+                    }
+                    // Blend: 70% parent DNA + 30% grandchild discoveries (conservative absorption)
+                    const parentVal = parent.dna[key] ?? PERP_DNA_DEFAULTS[key];
+                    blendedDna[key] = parentVal * 0.7 + weightedSum * 0.3;
+                    // Clamp to bounds
+                    const b = PERP_DNA_BOUNDS[key];
+                    if (b) blendedDna[key] = Math.max(b.min, Math.min(b.max, parseFloat(blendedDna[key].toFixed(3))));
+                }
+
+                // Preserve non-numeric fields
+                blendedDna.generation = (parent.dna.generation || 1);
+                blendedDna.oiConfirmation = survivors[0].dna.oiConfirmation;
+                blendedDna._grandchildSimulations = (parent.dna._grandchildSimulations || 0) + GRANDCHILD_COUNT;
+                blendedDna._bestGrandchildFitness = survivors[0].fitness;
+                blendedDna._lastSimTs = new Date().toISOString();
+
+                // Update parent DNA with blended discoveries
+                parent.dna = { ...parent.dna, ...blendedDna };
+
+                console.log(`[GRANDCHILD] 🏆 ${parentId}: Top ${GRANDCHILD_SURVIVAL_TOP} survivors → parent DNA updated`);
+                console.log(`[GRANDCHILD]   Best: fitness=${survivors[0].fitness.toFixed(3)} pnl=${survivors[0].pnl.toFixed(1)}% wins=${survivors[0].wins}/${survivors[0].trades}`);
+                console.log(`[GRANDCHILD]   DNA absorbed: lev=${blendedDna.leverageBase?.toFixed(1)} sl=${blendedDna.slTightness?.toFixed(2)} tp=${blendedDna.tpMultiplier?.toFixed(2)} vpin=${blendedDna.vpinEntryMin?.toFixed(2)}`);
+            } else {
+                console.log(`[GRANDCHILD] ⚠️ ${parentId}: All ${GRANDCHILD_COUNT} grandchildren had negative fitness — no DNA propagated`);
+            }
+
+            console.log(`[GRANDCHILD] 💀 ${deadCount} grandchildren died. Knowledge absorbed. ${parentId} grows stronger.`);
+        }
+
+        console.log(`[GRANDCHILD] ═══════════════════════════════════════════\n`);
+        this._save();
+    }
+
+    /**
+     * Spawn a single grandchild by heavily mutating parent DNA.
+     * Grandchildren explore more aggressively than normal evolution (3x mutation rate).
+     */
+    _spawnGrandchild(parentDna) {
+        const gcDna = {};
+        for (const key of Object.keys(PERP_DNA_BOUNDS)) {
+            const parentVal = parentDna[key] ?? PERP_DNA_DEFAULTS[key];
+            // 3x mutation rate — grandchildren are explorers, not optimizers
+            gcDna[key] = this._mutateParam(parentVal, key, MUTATION_RATE * 3, PERP_DNA_BOUNDS);
+        }
+        // Boolean gene: 20% flip chance
+        gcDna.oiConfirmation = Math.random() < 0.2
+            ? !(parentDna.oiConfirmation ?? true)
+            : (parentDna.oiConfirmation ?? true);
+        return gcDna;
+    }
+
+    /**
+     * Generate synthetic price scenarios for grandchild simulation.
+     * Uses geometric Brownian motion calibrated to current regime.
+     */
+    _generatePriceScenarios(basePrice, regime, steps) {
+        const scenarios = [];
+        // Generate multiple paths (5 scenarios × steps each)
+        const numPaths = 5;
+        for (let p = 0; p < numPaths; p++) {
+            const path = [basePrice];
+            // Regime-calibrated volatility
+            const dailyVol = regime === 'TREND' ? 0.035 : 0.02; // 3.5% or 2% per step
+            const drift = regime === 'TREND'
+                ? (Math.random() > 0.5 ? 0.002 : -0.002) // slight directional bias
+                : 0; // mean-reverting = no drift
+
+            for (let i = 0; i < steps; i++) {
+                const prev = path[path.length - 1];
+                const noise = (Math.random() * 2 - 1) * dailyVol;
+                const meanRevert = regime === 'MEAN_REVERT'
+                    ? (basePrice - prev) / basePrice * 0.1 // pull back toward base
+                    : 0;
+                const nextPrice = prev * (1 + drift + noise + meanRevert);
+                path.push(Math.max(nextPrice, basePrice * 0.5)); // floor at -50%
+            }
+            scenarios.push(path);
+        }
+        return scenarios;
+    }
+
+    /**
+     * Simulate a grandchild's DNA against price scenarios.
+     * Returns { fitness, trades, wins, pnl }.
+     * Fitness = Sharpe-like metric: mean return / std(returns) adjusted for win rate.
+     */
+    _simulateGrandchild(dna, scenarios, parentDirection, regime) {
+        let totalPnl = 0;
+        let trades = 0;
+        let wins = 0;
+        const returns = [];
+
+        for (const pricePath of scenarios) {
+            const entryPrice = pricePath[0];
+            const slPct = dna.slTightness ?? 1.5;
+            const tpPct = slPct * (dna.tpMultiplier ?? 2.5);
+            const leverage = dna.leverageBase ?? 3;
+
+            // Simulate bracket order
+            for (let i = 1; i < pricePath.length; i++) {
+                const px = pricePath[i];
+                const movePct = ((px - entryPrice) / entryPrice) * 100;
+                const leveragedMove = movePct * leverage;
+
+                // Check direction (grandchild follows parent's direction signal)
+                const isLong = parentDirection === 'LONG';
+                const directedMove = isLong ? leveragedMove : -leveragedMove;
+
+                // Check SL/TP hit
+                if (directedMove <= -slPct) {
+                    // Stop loss hit
+                    totalPnl -= slPct;
+                    returns.push(-slPct);
+                    trades++;
+                    break;
+                } else if (directedMove >= tpPct) {
+                    // Take profit hit
+                    totalPnl += tpPct;
+                    returns.push(tpPct);
+                    trades++;
+                    wins++;
+                    break;
+                }
+
+                // If we reach end of path without hitting SL/TP, close at market
+                if (i === pricePath.length - 1) {
+                    totalPnl += directedMove;
+                    returns.push(directedMove);
+                    trades++;
+                    if (directedMove > 0) wins++;
+                }
+            }
+        }
+
+        // Calculate fitness: Sharpe-like = mean(returns) / std(returns)
+        if (trades === 0) return { fitness: -1, trades: 0, wins: 0, pnl: 0 };
+
+        const mean = returns.reduce((s, r) => s + r, 0) / returns.length;
+        const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / returns.length;
+        const std = Math.sqrt(variance) || 0.01;
+        const winRate = wins / trades;
+
+        // Fitness combines Sharpe ratio with win rate bonus
+        const sharpe = mean / std;
+        const fitness = sharpe * (0.5 + winRate); // win rate scales Sharpe
+
+        return { fitness, trades, wins, pnl: totalPnl };
+    }
+
     _save() {
         try {
             fs.writeFileSync(LEARNING_PATH, JSON.stringify({
@@ -780,4 +1074,4 @@ class ChildLearningEngine {
 }
 
 export const childLearning = new ChildLearningEngine();
-export { MAX_CHILDREN_PER_PARENT, DEFAULT_DNA, LLM_DNA_DEFAULTS, LLM_DNA_BOUNDS };
+export { MAX_CHILDREN_PER_PARENT, DEFAULT_DNA, LLM_DNA_DEFAULTS, LLM_DNA_BOUNDS, PERP_DNA_DEFAULTS, PERP_DNA_BOUNDS };

@@ -3,7 +3,10 @@ import { POLYMARKET_API } from '../core/config.js';
 // ── Polymarket helpers ───────────────────────────────────────────────────────
 async function polyFetch(endpoint) {
   try {
-    const r = await fetch(POLYMARKET_API + endpoint, { headers: { 'Accept': 'application/json' } });
+    const r = await fetch(POLYMARKET_API + endpoint, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(5000)
+    });
     if (!r.ok) return null;
     return await r.json();
   } catch { return null; }
@@ -14,11 +17,11 @@ const CRYPTO_RE = /bitcoin|ethereum|solana|btc|eth|sol|crypto|above|below|matic|
 
 // ── Multi-Category Classification (ADAN v4.0) ──────────────────────────────
 const CATEGORY_PATTERNS = {
-  crypto:   /bitcoin|ethereum|solana|\bbtc\b|\beth\b|\bsol\b|\bxrp\b|ripple|crypto|doge|shib|\babove\b|\bbelow\b/i,
+  crypto: /bitcoin|ethereum|solana|\bbtc\b|\beth\b|\bsol\b|\bxrp\b|ripple|crypto|doge|shib|\babove\b|\bbelow\b/i,
   politics: /president|election|trump|biden|congress|senate|governor|democrat|republican|vote|poll|tariff|impeach|supreme court/i,
-  sports:   /\bnfl\b|\bnba\b|\bmlb\b|\bnhl\b|soccer|football|tennis|\bmma\b|\bufc\b|boxing|championship|playoffs|super bowl|world cup/i,
-  macro:    /fed|interest rate|cpi|inflation|gdp|unemployment|fomc|powell|recession|jobs report/i,
-  events:   /launch|spacex|oscar|grammy|iphone|weather|hurricane|earthquake|netflix|earnings|ipo/i,
+  sports: /\bnfl\b|\bnba\b|\bmlb\b|\bnhl\b|soccer|football|tennis|\bmma\b|\bufc\b|boxing|championship|playoffs|super bowl|world cup/i,
+  macro: /fed|interest rate|cpi|inflation|gdp|unemployment|fomc|powell|recession|jobs report/i,
+  events: /launch|spacex|oscar|grammy|iphone|weather|hurricane|earthquake|netflix|earnings|ipo/i,
 };
 
 function classifyMarket(title) {
@@ -272,7 +275,7 @@ function normalizePolymarket(raw, prices = {}) {
     if (raw.clobTokenIds) {
       clobTokenIds = typeof raw.clobTokenIds === 'string' ? JSON.parse(raw.clobTokenIds) : raw.clobTokenIds;
     }
-  } catch {}
+  } catch { }
   return { id, title, yesPrice, liquidity, closesAt, asset, targetPrice, roughEdge, priceData, windowMin, _isUpDown: raw._isUpDown || false, _category, clobTokenIds };
 }
 

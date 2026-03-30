@@ -1245,6 +1245,12 @@ async function runBrainCycle({
         reason: activeBrain
     });
 
+    if (!thought) {
+        console.error(`[ADAN] ❌ ${activeBrain} LLM returned null (API failed/exhausted). Skipping cycle.`);
+        if (onStatus) onStatus(`❌ LLM API Error — Skip`);
+        return { action: 'SKIP', brain: activeBrain, reason: 'LLM API failed' };
+    }
+
     console.log(`[ADAN] 💭 ${activeBrain}: ${thought.slice(0, 200)}...`);
     if (onStatus) onStatus(`💭 ${activeBrain} complete`);
 

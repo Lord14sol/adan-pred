@@ -35,14 +35,14 @@ async function withRetry(fn, maxRetries = 3, label = '') {
         try {
             return await fn();
         } catch (err) {
-            const is429 = err.message?.includes('429') || err.message?.includes('Resource Exhausted');
-            if (is429 && i < maxRetries - 1) {
+            const isRetryable = err.message?.includes('429') || err.message?.includes('Resource Exhausted') || err.message?.includes('503');
+            if (isRetryable && i < maxRetries - 1) {
                 const wait = Math.pow(2, i + 1) * 1000;
-                console.warn(`[ROUTER] 429 en ${label}. Wait ${wait}ms...`);
+                console.warn(`[ROUTER] 429/503 en ${label}. Wait ${wait}ms...`);
                 await new Promise(r => setTimeout(r, wait));
                 continue;
             }
-            if (is429) { console.error(`[ROUTER] ${label} agotado. Fallback SKIP.`); return null; }
+            if (isRetryable) { console.error(`[ROUTER] ${label} agotado. Fallback SKIP.`); return null; }
             throw err;
         }
     }
@@ -164,30 +164,39 @@ export async function routeLLM({ prompt, systemPrompt, userPrompt, weight = 'Hea
         finalPrompt = `SYSTEM:\n${systemPrompt}\n\nUSER:\n${userPrompt}`;
     }
 
-    // v9.0: Distributed Intelligence — Flash fleet is primary (250K TPM)
-    // Gemma (15K TPM) is RESERVE only
-    switch (weight) {
-        case 'Heavy':
-            // Critical trade decisions → Sniper if available, else distributed fleet
-            return callGemini(finalPrompt, reason);
-        case 'Dream':
-            // Dream mode → Sniper with high temp
-            return callGemini(finalPrompt, 'dream_mode', { maxTokens: 2048, temperature: 0.3 });
-        case 'Light':
-            // Children/scanning → distributed Flash fleet
-            return callDistributed(finalPrompt, { temperature: 0.05 });
-        case 'UltraLight':
-            // Inner monologue, naming → direct to Gemini 2.0 Flash (unlimited)
-            return callFast(finalPrompt, { temperature: 0.1, maxTokens: 512 });
-        case 'Child':
-            // Child scanning → Gemma 12B (15K TPM is fine for small prompts)
-            if (quota.canUseGemma()) {
-                const r = await callModel(MODELS.GEMMA_12B, finalPrompt, { temperature: 0.05, maxTokens: 512 }, '🧒 Gemma-12B');
-                if (r) { quota.consumeGemma(); return r; }
-            }
-            return callDistributed(finalPrompt, { temperature: 0.05 });
-        default:
-            return callDistributed(finalPrompt);
+    // ── SAFETY TIMEOUT: Never hang the main loop ──
+    const LLM_TIMEOUT_MS = 60_000;
+    const withTimeout = (promise) => Promise.race([
+        promise,
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`[LLM TIMEOUT] ${reason}/${weight} exceeded ${LLM_TIMEOUT_MS/1000}s`)), LLM_TIMEOUT_MS)
+        )
+    ]);
+
+    try {
+        // v9.0: Distributed Intelligence — Flash fleet is primary (250K TPM)
+        // Gemma (15K TPM) is RESERVE only
+        switch (weight) {
+            case 'Heavy':
+                return await withTimeout(callGemini(finalPrompt, reason));
+            case 'Dream':
+                return await withTimeout(callGemini(finalPrompt, 'dream_mode', { maxTokens: 2048, temperature: 0.3 }));
+            case 'Light':
+                return await withTimeout(callDistributed(finalPrompt, { temperature: 0.05 }));
+            case 'UltraLight':
+                return await withTimeout(callFast(finalPrompt, { temperature: 0.1, maxTokens: 512 }));
+            case 'Child':
+                if (quota.canUseGemma()) {
+                    const r = await withTimeout(callModel(MODELS.GEMMA_12B, finalPrompt, { temperature: 0.05, maxTokens: 512 }, '🧒 Gemma-12B'));
+                    if (r) { quota.consumeGemma(); return r; }
+                }
+                return await withTimeout(callDistributed(finalPrompt, { temperature: 0.05 }));
+            default:
+                return await withTimeout(callDistributed(finalPrompt));
+        }
+    } catch (e) {
+        console.error(`[ROUTER] ${e.message}`);
+        return null;
     }
 }
 

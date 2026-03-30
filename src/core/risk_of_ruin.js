@@ -99,4 +99,132 @@ export class RiskOfRuin {
     }
 }
 
+// ─── PERP RISK MONITOR (Hyperliquid) ─────────────────────────────────────────
+// Extends base RoR with liquidation monitoring, portfolio leverage caps, drawdown circuit breaker.
+// CRITICAL: In perps, max loss ≠ bet size. Max loss = ENTIRE MARGIN (or worse with socialized loss).
+
+export class PerpRiskMonitor {
+    constructor({
+        maxDrawdownPct = 0.15,
+        maxOpenPositions = 5,   // One per focus coin (BTC, ETH, SOL, DOGE, kPEPE)
+        maxPortfolioLeverage = 5,
+        liqWarningBuffer = 0.05,
+        maxMarginPerTrade = 500,
+    } = {}) {
+        this.config = { maxDrawdownPct, maxOpenPositions, maxPortfolioLeverage, liqWarningBuffer, maxMarginPerTrade };
+        this.isCircuitBreakerOpen = false;
+    }
+
+    /**
+     * Pre-trade risk check — call BEFORE every new perp position.
+     * @param {Object} account  from hlConnector.getAccountState()
+     * @param {Array}  positions from hlConnector.getOpenPositions()
+     * @returns {{ approved: boolean, reason: string, stakeMultiplier: number }}
+     */
+    checkPreTrade(account, positions) {
+        // ── 1. Drawdown circuit breaker ──
+        if (account.drawdown > this.config.maxDrawdownPct) {
+            this.isCircuitBreakerOpen = true;
+            return {
+                approved: false,
+                reason: `CIRCUIT BREAKER: Drawdown ${(account.drawdown * 100).toFixed(1)}% exceeds max ${(this.config.maxDrawdownPct * 100)}%`,
+                stakeMultiplier: 0,
+            };
+        }
+
+        // Reset circuit breaker if drawdown recovered
+        if (this.isCircuitBreakerOpen && account.drawdown < this.config.maxDrawdownPct * 0.5) {
+            this.isCircuitBreakerOpen = false;
+            console.log('[PERP-RoR] Circuit breaker reset — drawdown recovered');
+        }
+
+        if (this.isCircuitBreakerOpen) {
+            return { approved: false, reason: 'CIRCUIT BREAKER ACTIVE', stakeMultiplier: 0 };
+        }
+
+        // ── 2. Max open positions ──
+        if (positions.length >= this.config.maxOpenPositions) {
+            return {
+                approved: false,
+                reason: `Max perp positions: ${positions.length}/${this.config.maxOpenPositions}`,
+                stakeMultiplier: 0,
+            };
+        }
+
+        // ── 3. Available margin check ──
+        if (account.availableMargin < 50) {
+            return {
+                approved: false,
+                reason: `Insufficient margin: $${account.availableMargin.toFixed(2)}`,
+                stakeMultiplier: 0,
+            };
+        }
+
+        // ── 4. Portfolio leverage cap ──
+        const portfolioLeverage = account.equity > 0 ? account.totalNtl / account.equity : 0;
+        if (portfolioLeverage > this.config.maxPortfolioLeverage) {
+            return {
+                approved: false,
+                reason: `Portfolio leverage ${portfolioLeverage.toFixed(1)}x exceeds max ${this.config.maxPortfolioLeverage}x`,
+                stakeMultiplier: 0,
+            };
+        }
+
+        // ── 5. Scaled stake based on proximity to limits ──
+        let stakeMultiplier = 1.0;
+        if (portfolioLeverage > this.config.maxPortfolioLeverage * 0.7) {
+            stakeMultiplier = 0.5; // getting close to limit
+        }
+        if (account.drawdown > this.config.maxDrawdownPct * 0.7) {
+            stakeMultiplier *= 0.5; // getting close to circuit breaker
+        }
+
+        return { approved: true, reason: 'OK', stakeMultiplier };
+    }
+
+    /**
+     * Correlation check — don't stack same-direction trades on correlated assets.
+     * @param {Array} positions  current open perp positions
+     * @param {string} newCoin   coin being considered
+     * @param {string} newSide   'LONG' | 'SHORT'
+     */
+    checkCorrelationRisk(positions, newCoin, newSide) {
+        const CORRELATED = ['BTC', 'ETH', 'SOL', 'AVAX', 'MATIC', 'ARB', 'OP'];
+        if (!CORRELATED.includes(newCoin)) return { approved: true, reason: 'uncorrelated' };
+
+        const sameDir = positions.filter(p =>
+            CORRELATED.includes(p.coin) && p.direction === newSide
+        );
+        if (sameDir.length >= 2) {
+            return {
+                approved: false,
+                reason: `Correlation risk: already ${newSide} on ${sameDir.map(p => p.coin).join(', ')}`,
+            };
+        }
+        return { approved: true, reason: 'OK' };
+    }
+
+    /**
+     * Validate Kelly-computed margin for perps.
+     * Caps at 50% of available margin and hard max per trade.
+     */
+    validateMargin(kellyMarginUSD, account) {
+        const maxFromAvailable = account.availableMargin * 0.5;
+        const capped = Math.min(kellyMarginUSD, maxFromAvailable, this.config.maxMarginPerTrade);
+        return Math.max(50, capped); // minimum $50 (meaningful position size)
+    }
+
+    /**
+     * Dashboard string for perp risk.
+     */
+    getDashboardStr(account, positions) {
+        const dd = (account.drawdown * 100).toFixed(1);
+        const portLev = account.equity > 0 ? (account.totalNtl / account.equity).toFixed(1) : '0.0';
+        const open = positions.length;
+        const breaker = this.isCircuitBreakerOpen ? '🔴 BREAKER' : '🟢 OK';
+        return `DD: ${dd}% | Lev: ${portLev}x | Open: ${open}/${this.config.maxOpenPositions} | ${breaker}`;
+    }
+}
+
 export const riskOfRuin = new RiskOfRuin();
+export const perpRisk = new PerpRiskMonitor();

@@ -3,7 +3,7 @@ import { BINANCE_API, G, Y, R, D, BOLD, X } from '../core/config.js';
 // ── Binance helpers ──────────────────────────────────────────────────────────
 async function fetchBinancePrice(symbol) {
   try {
-    const r = await fetch(`${BINANCE_API}/ticker/price?symbol=${symbol}`);
+    const r = await fetch(`${BINANCE_API}/ticker/price?symbol=${symbol}`, { signal: AbortSignal.timeout(5000) });
     const d = await r.json();
     return parseFloat(d.price) || null;
   } catch { return null; }
@@ -11,7 +11,7 @@ async function fetchBinancePrice(symbol) {
 
 async function fetchBinanceKlines(symbol, interval = '1m', limit = 20) {
   try {
-    const r = await fetch(`${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+    const r = await fetch(`${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`, { signal: AbortSignal.timeout(5000) });
     const d = await r.json();
     if (!Array.isArray(d)) return [];
     // [openTime, open, high, low, close, volume, ...]
